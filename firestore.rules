@@ -3,62 +3,63 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ─── Helper Functions ───────────────────────────────────────────
+
     function isAuthenticated() {
       return request.auth != null;
     }
 
+    function userExists() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
     function isMasterAdmin() {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'master_admin';
+      return userExists() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'master_admin';
     }
 
     function isActiveUser() {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true;
+      // If profile exists, enforce isActive == true; if profile isn't initialized yet, allow authenticated user
+      return isAuthenticated() && (
+        !userExists() || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isActive == true
+      );
     }
 
-    // ─── User Profiles ──────────────────────────────────────────────
+    // ─── 1. User Profiles (/users/{userId}) ─────────────────────────
     match /users/{userId} {
-      // Any authenticated user can read their own profile
-      allow read: if isAuthenticated() && request.auth.uid == userId;
-      // Master admin can read all user profiles
-      allow read: if isMasterAdmin();
-      // Master admin can create and update user profiles
-      allow create, update: if isMasterAdmin();
-      // No one can delete user profiles via client (use Admin SDK)
+      // Any authenticated user can read their own profile; Master Admin can read all profiles
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isMasterAdmin());
+      // Users can create/update their own profile, Master Admin can create/update any user
+      allow create, update: if isAuthenticated() && (request.auth.uid == userId || isMasterAdmin());
+      // Prevent hard deletions from client SDKs
       allow delete: if false;
     }
 
-    // ─── Tenant Data Snapshots ──────────────────────────────────────
+    // ─── 2. Tenant Data Snapshots (/tenants/{companyId}/snapshots/{tenantKey}) ──
     match /tenants/{companyId}/snapshots/{tenantKey} {
-      // Any authenticated user can read tenant data
-      allow read: if isAuthenticated();
-      // Any authenticated user can write tenant data
-      allow write: if isAuthenticated();
+      // Active authenticated users can read tenant snapshots
+      allow read: if isActiveUser();
+      // Active authenticated users can save/update/delete tenant snapshots
+      allow write: if isActiveUser();
     }
 
-    // ─── Businesses ─────────────────────────────────────────────────
+    // ─── 3. Businesses (/businesses/{businessId}) ────────────────────
     match /businesses/{businessId} {
-      // Any authenticated user can read businesses
-      allow read: if isAuthenticated();
-      // Any authenticated user can write businesses (or just master admin if preferred)
-      allow write: if isAuthenticated();
+      // Active authenticated users can read business details
+      allow read: if isActiveUser();
+      // Active authenticated users can sync/update business information
+      allow write: if isActiveUser();
     }
 
-
-    // ─── Audit Logs ─────────────────────────────────────────────────
+    // ─── 4. Audit Logs (/audit_logs/{logId}) ─────────────────────────
     match /audit_logs/{logId} {
       // Any authenticated user can append audit logs
       allow create: if isAuthenticated();
-      // Only master admin can read audit logs
+      // Only Master Admin can view audit logs
       allow read: if isMasterAdmin();
-      // No one can modify or delete audit logs
+      // Audit logs are append-only; update & delete are strictly forbidden
       allow update, delete: if false;
     }
 
-    // ─── Deny everything else ───────────────────────────────────────
+    // ─── 5. Default Catch-All (Deny Unmatched Collections) ───────────
     match /{document=**} {
       allow read, write: if false;
     }
