@@ -105,7 +105,7 @@ export default function PurchaseReturnPage({
   }, [returnItems])
 
   const totalReturnMT = useMemo(() => {
-    return returnItems.reduce((sum, item) => sum + (item.quantityMT || 0), 0)
+    return returnItems.reduce((sum, item) => sum + ((item.baseQuantity || 0) / 1000), 0)
   }, [returnItems])
 
   const calculatedTotalAmount = useMemo(() => {
@@ -171,24 +171,18 @@ export default function PurchaseReturnPage({
       if (rawQty > 0) {
         const item = items.find(i => i.id === itemId)
         const rate = item?.purchasePrice || 0
-        const defaultUnit = item?.unit || 'MT'
+        const defaultUnit = item?.unit || 'KG'
         const activeUnit = pickerUnits[itemId] || defaultUnit
-        
-        let quantityMT = rawQty
-        let entryQuantity = rawQty
-        
-        if (item) {
-          quantityMT = toBaseQuantity(item, rawQty, activeUnit)
-        }
+        const enteredQuantity = rawQty
+        const baseQuantity = item ? toBaseQuantity(item, rawQty, activeUnit) : rawQty
 
-        const qtyForAmt = entryQuantity > 0 ? entryQuantity : quantityMT
         newItems.push({
           itemId,
-          quantityMT,
-          entryQuantity,
-          entryUnit: activeUnit,
+          enteredQuantity,
+          enteredUnit: activeUnit,
+          baseQuantity,
           rate,
-          amount: parseFloat((qtyForAmt * rate).toFixed(2))
+          amount: parseFloat((enteredQuantity * rate).toFixed(2))
         })
       }
     })
@@ -200,15 +194,14 @@ export default function PurchaseReturnPage({
           const idx = prevCopy.findIndex(x => x.itemId === newItem.itemId)
           if (idx !== -1) {
             const existing = prevCopy[idx]
-            const updatedQtyMT = (existing.quantityMT || 0) + newItem.quantityMT
-            const updatedEntryQty = (existing.entryQuantity || 0) + (newItem.entryQuantity || 0)
-            const qtyForAmt = updatedEntryQty > 0 ? updatedEntryQty : updatedQtyMT
+            const updatedEnteredQty = (existing.enteredQuantity || 0) + newItem.enteredQuantity
+            const updatedBaseQty = (existing.baseQuantity || 0) + newItem.baseQuantity
             prevCopy[idx] = {
               ...existing,
-              quantityMT: updatedQtyMT,
-              entryQuantity: updatedEntryQty,
-              entryUnit: newItem.entryUnit,
-              amount: parseFloat((qtyForAmt * existing.rate).toFixed(2))
+              enteredQuantity: updatedEnteredQty,
+              enteredUnit: newItem.enteredUnit,
+              baseQuantity: updatedBaseQty,
+              amount: parseFloat((updatedEnteredQty * existing.rate).toFixed(2))
             }
           } else {
             prevCopy.push(newItem)
@@ -256,25 +249,30 @@ export default function PurchaseReturnPage({
     setOpen(true)
   }
 
-  const handleUpdateLineItem = (index: number, field: keyof InvoiceItem, value: any) => {
+  const handleUpdateLineItem = (index: number, field: string, value: any) => {
     setReturnItems(prev => prev.map((itemRow, idx) => {
       if (idx !== index) return itemRow
       const selectedDef = items.find(i => i.id === (field === 'itemId' ? value : itemRow.itemId))
       const updated = { ...itemRow, [field]: value }
       
       if (field === 'itemId') {
-        const defaultUnit = selectedDef?.unit || 'MT'
-        updated.entryUnit = defaultUnit
+        const defaultUnit = selectedDef?.unit || 'KG'
+        updated.enteredUnit = defaultUnit
         if (selectedDef && selectedDef.purchasePrice) {
           updated.rate = selectedDef.purchasePrice
         }
       }
 
-      if (field === 'entryQuantity' || field === 'quantityMT') {
+      if (field === 'enteredQuantity' || field === 'entryQuantity' || field === 'quantityMT') {
         const numVal = Number(value) || 0
-        updated.entryQuantity = numVal
-        const activeUnit = updated.entryUnit || selectedDef?.unit || 'KG'
-        updated.quantityMT = toBaseQuantity(selectedDef, numVal, activeUnit)
+        updated.enteredQuantity = numVal
+        const activeUnit = updated.enteredUnit || selectedDef?.unit || 'KG'
+        updated.baseQuantity = toBaseQuantity(selectedDef, numVal, activeUnit)
+      } else if (field === 'enteredUnit' || field === 'entryUnit') {
+        updated.enteredUnit = value as string
+        const activeUnit = updated.enteredUnit
+        const numVal = updated.enteredQuantity || 0
+        updated.baseQuantity = toBaseQuantity(selectedDef, numVal, activeUnit)
       } else if (field === 'basicRate') {
         const basicRate = Number(value) || 0
         const itemGstPct = selectedDef?.gstRate || gstPercentage
@@ -287,7 +285,7 @@ export default function PurchaseReturnPage({
         updated.basicRate = calculateBasicRateFromInclusive(rateWithTax, itemGstPct)
       }
 
-      const qty = (updated.entryQuantity !== undefined && updated.entryQuantity !== null && updated.entryQuantity > 0) ? updated.entryQuantity : (Number(updated.quantityMT) || 0)
+      const qty = updated.enteredQuantity || 0
       const rate = Number(updated.rate) || 0
       updated.amount = parseFloat((qty * rate).toFixed(2))
       return updated
@@ -807,21 +805,21 @@ export default function PurchaseReturnPage({
                               type="number"
                               step="0.001"
                               min="0"
-                              value={lineItem.entryQuantity ?? (lineItem.quantityMT || '')}
-                              onChange={(e) => handleUpdateLineItem(index, 'entryQuantity', e.target.value)}
+                              value={lineItem.enteredQuantity ?? (lineItem as any).entryQuantity ?? ''}
+                              onChange={(e) => handleUpdateLineItem(index, 'enteredQuantity', e.target.value)}
                               placeholder="0"
                               className="erp-reference-cell-input font-mono text-right flex-1 min-w-[70px]"
                             />
                             {(() => {
                               const sel = items.find(i => i.id === lineItem.itemId)
-                              const activeUnit = lineItem.entryUnit || sel?.unit || 'MT'
+                              const activeUnit = lineItem.enteredUnit || (lineItem as any).entryUnit || sel?.unit || 'KG'
                               return (
                                 <select
                                   value={activeUnit}
-                                  onChange={(e) => handleUpdateLineItem(index, 'entryUnit', e.target.value)}
+                                  onChange={(e) => handleUpdateLineItem(index, 'enteredUnit', e.target.value)}
                                   className="text-xs font-bold font-mono bg-slate-100 border border-slate-300 rounded px-1 py-1 text-slate-800 focus:outline-none"
                                 >
-                                  <option value={sel?.unit || 'MT'}>{sel?.unit || 'MT'}</option>
+                                  <option value={sel?.unit || 'KG'}>{sel?.unit || 'KG'}</option>
                                   {sel?.alternativeUnit && sel.alternativeUnit !== 'NONE' && (
                                     <option value={sel.alternativeUnit}>{sel.alternativeUnit}</option>
                                   )}

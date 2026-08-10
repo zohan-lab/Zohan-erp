@@ -1077,10 +1077,12 @@ function exportStyledInvoicePDF(options: StyledInvoiceOptions) {
   const items = options.items || [];
   const rows = items.map((line, index) => {
     const item = options.itemMap.get(line.itemId);
-    const unit = line.entryUnit || item?.unit || 'MT';
-    const qty = (line.entryQuantity !== undefined && line.entryQuantity !== null && line.entryQuantity > 0)
-      ? line.entryQuantity
-      : (line.quantityMT || 0);
+    const unit = line.enteredUnit || (line as any).entryUnit || item?.unit || 'KG';
+    const qty = (line.enteredQuantity !== undefined && line.enteredQuantity !== null && line.enteredQuantity > 0)
+      ? line.enteredQuantity
+      : ((line as any).entryQuantity !== undefined && (line as any).entryQuantity !== null && (line as any).entryQuantity > 0
+        ? (line as any).entryQuantity
+        : (line.baseQuantity || (line as any).quantityMT || 0));
     const rate = line.rate || (qty > 0 ? line.amount / qty : 0);
     return [
       (index + 1).toString(),

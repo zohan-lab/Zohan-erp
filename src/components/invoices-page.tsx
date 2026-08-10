@@ -267,8 +267,7 @@ export default function InvoicesPage({
     const activeUnit = chosenUnit || defaultEntryUnit
 
     const norm = normalizeLineItem(item, rawQuantity, activeUnit, rate)
-    const quantityMT = norm.baseQuantity
-    const entryQuantity = rawQuantity
+    const enteredQuantity = rawQuantity
 
     setInvoiceItems(prev => {
       const existingIndex = prev.findIndex(existing => existing.itemId === itemId)
@@ -277,18 +276,15 @@ export default function InvoicesPage({
         // Item already exists, merge quantities
         const updated = [...prev]
         const existing = updated[existingIndex]
-        const newEntryQuantity = (existing.entryQuantity || 0) + entryQuantity
-        const newNorm = normalizeLineItem(item, newEntryQuantity, activeUnit, existing.rate)
+        const newEnteredQuantity = (existing.enteredQuantity || (existing as any).entryQuantity || 0) + enteredQuantity
+        const newNorm = normalizeLineItem(item, newEnteredQuantity, activeUnit, existing.rate)
 
         updated[existingIndex] = {
           ...existing,
-          quantityMT: newNorm.baseQuantity,
-          entryQuantity: newEntryQuantity,
-          entryUnit: activeUnit,
+          enteredQuantity: newEnteredQuantity,
+          enteredUnit: activeUnit,
           baseQuantity: newNorm.baseQuantity,
           baseRate: newNorm.baseRate,
-          enteredQuantity: newEntryQuantity,
-          enteredUnit: activeUnit,
           amount: parseFloat((newNorm.baseAmount).toFixed(2))
         }
         return updated
@@ -297,16 +293,13 @@ export default function InvoicesPage({
       // If it doesn't exist, create a new row or fill an empty one
       const row: InvoiceItem = {
         itemId,
-        quantityMT: norm.baseQuantity,
+        enteredQuantity,
+        enteredUnit: activeUnit,
+        baseQuantity: norm.baseQuantity,
         basicRate,
         rate,
         amount: parseFloat((norm.baseAmount).toFixed(2)),
-        entryUnit: activeUnit,
-        entryQuantity,
-        baseQuantity: norm.baseQuantity,
         baseRate: norm.baseRate,
-        enteredQuantity: entryQuantity,
-        enteredUnit: activeUnit,
         enteredRate: rate
       }
 
@@ -331,7 +324,7 @@ export default function InvoicesPage({
     resetItemPicker()
   }
 
-  const updateInvoiceItem = (index: number, field: keyof InvoiceItem, value: string | number) => {
+  const updateInvoiceItem = (index: number, field: string, value: string | number) => {
     setInvoiceItems(prev => {
       const updated = [...prev]
       const itemRow = { ...updated[index] }
@@ -347,34 +340,34 @@ export default function InvoicesPage({
         if (existingIndex !== -1) {
           // Merge into existing row
           const existing = { ...updated[existingIndex] }
-          const combinedEntryQty = (existing.entryQuantity || 0) + (itemRow.entryQuantity || 0)
-          const normCombined = normalizeLineItem(selectedDef, combinedEntryQty, existing.entryUnit || defaultUnit, existing.rate)
-          existing.quantityMT = normCombined.baseQuantity
-          existing.entryQuantity = combinedEntryQty
+          const combinedEnteredQty = (existing.enteredQuantity || (existing as any).entryQuantity || 0) + (itemRow.enteredQuantity || (itemRow as any).entryQuantity || 0)
+          const normCombined = normalizeLineItem(selectedDef, combinedEnteredQty, existing.enteredUnit || (existing as any).entryUnit || defaultUnit, existing.rate)
+          existing.enteredQuantity = combinedEnteredQty
+          existing.enteredUnit = existing.enteredUnit || (existing as any).entryUnit || defaultUnit
           existing.baseQuantity = normCombined.baseQuantity
           existing.amount = parseFloat((normCombined.baseAmount).toFixed(2))
           updated[existingIndex] = existing
 
           // Clear current row
           itemRow.itemId = ''
-          itemRow.quantityMT = 0
+          itemRow.enteredQuantity = 0
+          itemRow.baseQuantity = 0
           itemRow.basicRate = 0
           itemRow.rate = 0
           itemRow.amount = 0
-          itemRow.entryUnit = defaultUnit
-          itemRow.entryQuantity = 0
+          itemRow.enteredUnit = defaultUnit
         } else {
           itemRow.itemId = newItemId
           const basicRate = itemRow.basicRate && itemRow.basicRate > 0 ? itemRow.basicRate : selectedDef?.purchasePrice || 0
           itemRow.basicRate = basicRate
           itemRow.rate = calculateRateWithItemGst(basicRate, itemRow.itemId)
-          itemRow.entryUnit = defaultUnit
+          itemRow.enteredUnit = defaultUnit
         }
-      } else if (field === 'entryUnit') {
-        itemRow.entryUnit = value as string
-      } else if (field === 'entryQuantity' || field === 'quantityMT') {
+      } else if (field === 'enteredUnit' || field === 'entryUnit') {
+        itemRow.enteredUnit = value as string
+      } else if (field === 'enteredQuantity' || field === 'entryQuantity' || field === 'quantityMT') {
         const numVal = parseFloat(value as string) || 0
-        itemRow.entryQuantity = numVal
+        itemRow.enteredQuantity = numVal
       } else if (field === 'weightKG') {
         const valStr = value as string
         const numVal = valStr !== '' ? parseFloat(valStr) : undefined
@@ -391,16 +384,15 @@ export default function InvoicesPage({
         itemRow.basicRate = calculateBasicRateFromInclusive(rateWithTax, itemGstPct)
       }
 
-      const currentEntryQty = itemRow.entryQuantity !== undefined && itemRow.entryQuantity !== null ? itemRow.entryQuantity : (itemRow.quantityMT || 0)
-      const currentUnit = itemRow.entryUnit || selectedItemDef?.unit || 'KG'
+      const currentEnteredQty = itemRow.enteredQuantity !== undefined && itemRow.enteredQuantity !== null ? itemRow.enteredQuantity : ((itemRow as any).entryQuantity || 0)
+      const currentUnit = itemRow.enteredUnit || (itemRow as any).entryUnit || selectedItemDef?.unit || 'KG'
       const currentRate = itemRow.rate || 0
 
-      const norm = normalizeLineItem(selectedItemDef, currentEntryQty, currentUnit, currentRate)
-      itemRow.quantityMT = norm.baseQuantity
+      const norm = normalizeLineItem(selectedItemDef, currentEnteredQty, currentUnit, currentRate)
+      itemRow.enteredQuantity = currentEnteredQty
+      itemRow.enteredUnit = currentUnit
       itemRow.baseQuantity = norm.baseQuantity
       itemRow.baseRate = norm.baseRate
-      itemRow.enteredQuantity = currentEntryQty
-      itemRow.enteredUnit = currentUnit
       itemRow.enteredRate = currentRate
       itemRow.amount = parseFloat((norm.baseAmount).toFixed(2))
 
@@ -506,7 +498,7 @@ export default function InvoicesPage({
         document.getElementById('purchase-invoice-items')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
         return
       }
-      if (!item.quantityMT || item.quantityMT <= 0) {
+      if (!item.enteredQuantity || item.enteredQuantity <= 0) {
         toast.error(`Row ${i + 1}: Please enter a valid quantity greater than 0`)
         document.getElementById('purchase-invoice-items')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
         return
@@ -1062,19 +1054,19 @@ export default function InvoicesPage({
                               type="number"
                               step="0.001"
                               min="0"
-                              value={invoiceItem.entryQuantity ?? (invoiceItem.quantityMT || '')}
-                              onChange={(e) => updateInvoiceItem(index, 'entryQuantity', e.target.value)}
+                              value={invoiceItem.enteredQuantity ?? (invoiceItem as any).entryQuantity ?? ''}
+                              onChange={(e) => updateInvoiceItem(index, 'enteredQuantity', e.target.value)}
                               placeholder="0"
                               className="erp-reference-cell-input font-mono text-right flex-1 min-w-[70px]"
                             />
                             {(() => {
                               const sel = items.find(i => i.id === invoiceItem.itemId)
                               const baseUnit = sel?.unit || 'KG'
-                              const activeUnit = invoiceItem.entryUnit || baseUnit
+                              const activeUnit = invoiceItem.enteredUnit || (invoiceItem as any).entryUnit || baseUnit
                               return (
                                 <select
                                   value={activeUnit}
-                                  onChange={(e) => updateInvoiceItem(index, 'entryUnit', e.target.value)}
+                                  onChange={(e) => updateInvoiceItem(index, 'enteredUnit', e.target.value)}
                                   className="text-xs font-bold font-mono bg-slate-100 border border-slate-300 rounded px-1 py-1 text-slate-800 focus:outline-none"
                                 >
                                   <option value={baseUnit}>{baseUnit}</option>
@@ -1087,9 +1079,10 @@ export default function InvoicesPage({
                           </div>
                           {(() => {
                             const sel = items.find(i => i.id === invoiceItem.itemId)
-                            if (sel && invoiceItem.entryUnit && invoiceItem.entryUnit !== sel.unit) {
-                              const factor = getItemConversionFactor(sel, invoiceItem.entryUnit)
-                              const baseQty = (invoiceItem.entryQuantity || 0) * factor
+                            const activeUnit = invoiceItem.enteredUnit || (invoiceItem as any).entryUnit || sel?.unit
+                            if (sel && activeUnit && activeUnit !== sel.unit) {
+                              const factor = getItemConversionFactor(sel, activeUnit)
+                              const baseQty = invoiceItem.baseQuantity ?? ((invoiceItem.enteredQuantity || 0) * factor)
                               const baseRate = factor > 0 ? (invoiceItem.rate || 0) / factor : 0
                               return (
                                 <span className="text-[10px] font-mono font-bold text-indigo-700 bg-indigo-50 px-1 py-0.5 rounded text-right">

@@ -66,10 +66,12 @@ export default function CDExpiryAlert({
       if (invoice.items && Array.isArray(invoice.items) && invoice.items.length > 0) {
         const unitMap = new Map<string, number>()
         invoice.items.forEach(item => {
-          const u = item.entryUnit || 'MT'
-          const q = (item.entryQuantity !== undefined && item.entryQuantity !== null && item.entryQuantity > 0)
-            ? item.entryQuantity
-            : (item.quantityMT || 0)
+          const u = item.enteredUnit || (item as any).entryUnit || 'KG'
+          const q = (item.enteredQuantity !== undefined && item.enteredQuantity !== null && item.enteredQuantity > 0)
+            ? item.enteredQuantity
+            : ((item as any).entryQuantity !== undefined && (item as any).entryQuantity !== null && (item as any).entryQuantity > 0
+              ? (item as any).entryQuantity
+              : (item.baseQuantity || (item as any).quantityMT || 0))
           unitMap.set(u, (unitMap.get(u) || 0) + q)
         })
         quantityDisplay = Array.from(unitMap.entries())
@@ -172,7 +174,7 @@ export default function CDExpiryAlert({
             const targetUnits = (currentSlab.unit && currentSlab.unit !== 'ALL' && currentSlab.unit !== '')
               ? [currentSlab.unit]
               : (invoice.items && Array.isArray(invoice.items) && invoice.items.length > 0
-                  ? Array.from(new Set(invoice.items.map(i => i.entryUnit || 'MT')))
+                  ? Array.from(new Set(invoice.items.map(i => i.enteredUnit || (i as any).entryUnit || 'KG')))
                   : ['MT'])
 
             targetUnits.forEach(u => {

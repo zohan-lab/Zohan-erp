@@ -301,9 +301,9 @@ export default function MasterDashboardPage({
       if (inv.items && Array.isArray(inv.items)) {
         inv.items.forEach(item => {
           const itemData = items.find(i => i.id === item.itemId)
-          const unit = itemData?.unit || 'MT'
+          const unit = item.enteredUnit || (item as any).entryUnit || itemData?.unit || 'KG'
           if (!byUnit[unit]) byUnit[unit] = 0
-          byUnit[unit] += item.quantityMT
+          byUnit[unit] += item.enteredQuantity ?? ((item as any).quantityMT || 0)
         })
       }
     })
@@ -316,9 +316,9 @@ export default function MasterDashboardPage({
       if (inv.items && Array.isArray(inv.items)) {
         inv.items.forEach(item => {
           const itemData = items.find(i => i.id === item.itemId)
-          const unit = itemData?.unit || 'MT'
+          const unit = item.enteredUnit || (item as any).entryUnit || itemData?.unit || 'KG'
           if (!byUnit[unit]) byUnit[unit] = 0
-          byUnit[unit] += item.quantityMT
+          byUnit[unit] += item.enteredQuantity ?? ((item as any).quantityMT || 0)
         })
       }
     })
@@ -451,7 +451,7 @@ export default function MasterDashboardPage({
     salesInvoices.forEach(inv => {
       if (inv.items && Array.isArray(inv.items)) {
         inv.items.forEach(item => {
-          soldQtyMap[item.itemId] = (soldQtyMap[item.itemId] || 0) + item.quantityMT
+          soldQtyMap[item.itemId] = (soldQtyMap[item.itemId] || 0) + (item.enteredQuantity ?? ((item as any).quantityMT || 0))
         })
       }
     })

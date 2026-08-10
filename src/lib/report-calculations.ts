@@ -450,7 +450,7 @@ export function calculateCDAtRisk(
       const invoiceCloseCDBreakdown: InvoiceCloseCDUnitBreakdown[] = []
 
       const allTargetUnits = (invoice.items && Array.isArray(invoice.items) && invoice.items.length > 0)
-        ? Array.from(new Set(invoice.items.map(i => i.entryUnit || 'KG')))
+        ? Array.from(new Set(invoice.items.map(i => i.enteredUnit || (i as any).entryUnit || 'KG')))
         : ['KG']
 
       allTargetUnits.forEach(targetUnit => {

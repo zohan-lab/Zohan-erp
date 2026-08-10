@@ -149,7 +149,7 @@ describe('unit conversion and scheme discount calculation', () => {
     // Invoice with 25 Bundles
     const inv = {
       items: [
-        { itemId: 'item-whisky', entryQuantity: 25, entryUnit: 'BUNDLE', quantityMT: 0.625 }
+        { itemId: 'item-whisky', enteredQuantity: 25, enteredUnit: 'BUNDLE', baseQuantity: 625 }
       ]
     }
     const itemMap = new Map([['item-whisky', item]])
@@ -189,7 +189,7 @@ describe('unit conversion and scheme discount calculation', () => {
       invoiceAmount: 10000,
       fy: 'FY2026-27',
       items: [
-        { itemId: 'item-whisky', entryQuantity: 25, entryUnit: 'BUNDLE', rate: 400, amount: 10000, quantityMT: 0.625 }
+        { itemId: 'item-whisky', enteredQuantity: 25, enteredUnit: 'BUNDLE', rate: 400, amount: 10000, baseQuantity: 625 }
       ]
     }
 
@@ -254,7 +254,7 @@ describe('unit conversion and scheme discount calculation', () => {
       invoiceAmount: 5000,
       fy: 'FY2026-27',
       items: [
-        { itemId: 'item-screws', entryQuantity: 50, entryUnit: 'BOX', rate: 100, amount: 5000, quantityMT: 0.1 }
+        { itemId: 'item-screws', enteredQuantity: 50, enteredUnit: 'BOX', rate: 100, amount: 5000, baseQuantity: 100 }
       ]
     }
 
@@ -315,7 +315,7 @@ describe('unit conversion and scheme discount calculation', () => {
       invoiceAmount: 1000000,
       fy: 'FY2026-27',
       items: [
-        { itemId: 'item-steel', entryQuantity: 20, entryUnit: 'MT', rate: 50000, amount: 1000000, quantityMT: 20 }
+        { itemId: 'item-steel', enteredQuantity: 20, enteredUnit: 'MT', rate: 50000, amount: 1000000, baseQuantity: 20000 }
       ]
     }
 
@@ -378,7 +378,7 @@ describe('unit conversion and scheme discount calculation', () => {
       invoiceAmount: 1000000,
       fy: 'FY2026-27',
       items: [
-        { itemId: 'item-kg', entryQuantity: 20000, entryUnit: 'KG', rate: 50, amount: 1000000, quantityMT: 20 }
+        { itemId: 'item-kg', enteredQuantity: 20000, enteredUnit: 'KG', rate: 50, amount: 1000000, baseQuantity: 20000 }
       ]
     }
 
@@ -438,7 +438,7 @@ describe('unit conversion and scheme discount calculation', () => {
       invoiceAmount: 2500000,
       fy: 'FY2026-27',
       items: [
-        { itemId: 'item-steel-1', entryQuantity: 50, entryUnit: 'MT', rate: 50000, amount: 2500000, quantityMT: 50 }
+        { itemId: 'item-steel-1', enteredQuantity: 50, enteredUnit: 'MT', rate: 50000, amount: 2500000, baseQuantity: 50000 }
       ]
     }
 
@@ -508,7 +508,7 @@ describe('unit conversion and scheme discount calculation', () => {
       invoiceAmount: 750000,
       fy: 'FY2026-27',
       items: [
-        { itemId: 'item-rod', entryQuantity: 15, entryUnit: 'MT', rate: 50000, amount: 750000, quantityMT: 15 }
+        { itemId: 'item-rod', enteredQuantity: 15, enteredUnit: 'MT', rate: 50000, amount: 750000, baseQuantity: 15000 }
       ]
     }
 
