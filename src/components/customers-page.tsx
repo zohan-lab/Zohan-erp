@@ -21,6 +21,7 @@ import {
   Upload 
 } from '@phosphor-icons/react'
 import { formatCurrency } from '@/lib/calculations'
+import { getCustomerBalanceDetails, calculateTotalCustomerReceivables } from '@/lib/report-calculations'
 import { toast } from 'sonner'
 import { PartyEditorDialog } from '@/components/party-editor-dialog'
 
@@ -227,14 +228,7 @@ export default function CustomersPage({
 
   // Summary Card Statistics
   const totalReceivable = useMemo(() => {
-    return customers.reduce((sum, customer) => {
-      const custInvoices = salesInvoices.filter(inv => inv.customerId === customer.id)
-      const custPayments = customerPayments.filter(p => p.customerId === customer.id)
-      const totalInv = custInvoices.reduce((s, inv) => s + inv.invoiceAmount, 0)
-      const totalPaid = custPayments.reduce((s, p) => s + p.amount, 0)
-      const bal = (customer.openingBalance || 0) + totalInv - totalPaid
-      return sum + (bal > 0 ? bal : 0)
-    }, 0)
+    return calculateTotalCustomerReceivables(customers, salesInvoices, customerPayments)
   }, [customers, salesInvoices, customerPayments])
 
   const activeThisMonthCount = useMemo(() => {
@@ -400,11 +394,7 @@ export default function CustomersPage({
                 ]
                 const colorClass = avatarColors[idx % avatarColors.length]
 
-                const custInvoices = salesInvoices.filter(inv => inv.customerId === customer.id)
-                const custPayments = customerPayments.filter(p => p.customerId === customer.id)
-                const totalInv = custInvoices.reduce((s, inv) => s + inv.invoiceAmount, 0)
-                const totalPaid = custPayments.reduce((s, p) => s + p.amount, 0)
-                const balance = (customer.openingBalance || 0) + totalInv - totalPaid
+                const { netBalance: balance } = getCustomerBalanceDetails(customer, salesInvoices, customerPayments)
 
                 return (
                   <TableRow key={customer.id} className="hover:bg-slate-50/80 border-b border-slate-100">

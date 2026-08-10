@@ -525,3 +525,71 @@ export function calculateCDAtRisk(
     return dateA.getTime() - dateB.getTime()
   })
 }
+
+export interface CustomerBalanceDetails {
+  totalInvoiced: number
+  totalPaid: number
+  netBalance: number
+  receivableBalance: number
+}
+
+export function getCustomerBalanceDetails(
+  customer: Customer,
+  salesInvoices: SalesInvoice[],
+  customerPayments: any[]
+): CustomerBalanceDetails {
+  const custInvoices = salesInvoices.filter(inv => inv.customerId === customer.id)
+  const custPayments = customerPayments.filter(p => p.customerId === customer.id)
+  const totalInvoiced = custInvoices.reduce((s, inv) => s + (inv.invoiceAmount || 0), 0)
+  const totalPaid = custPayments.reduce((s, p) => s + (p.amount || 0), 0)
+  const netBalance = (customer.openingBalance || 0) + totalInvoiced - totalPaid
+  const receivableBalance = netBalance > 0 ? netBalance : 0
+
+  return { totalInvoiced, totalPaid, netBalance, receivableBalance }
+}
+
+export function calculateTotalCustomerReceivables(
+  customers: Customer[],
+  salesInvoices: SalesInvoice[],
+  customerPayments: any[]
+): number {
+  return customers.reduce((sum, customer) => {
+    const { receivableBalance } = getCustomerBalanceDetails(customer, salesInvoices, customerPayments)
+    return sum + receivableBalance
+  }, 0)
+}
+
+export function getSupplierPayableBalance(supplier: Supplier): number {
+  const bal = supplier.openingBalance || 0
+  return supplier.balanceType === 'Debit' ? -bal : bal
+}
+
+export function calculateTotalSupplierPayables(suppliers: Supplier[]): number {
+  return suppliers.reduce((sum, s) => sum + getSupplierPayableBalance(s), 0)
+}
+
+export function getSupplierYTDInvoiced(
+  supplierId: string,
+  purchaseInvoices: PurchaseInvoice[],
+  activeFY?: string
+): number {
+  return purchaseInvoices
+    .filter(inv => inv.supplierId === supplierId && (!activeFY || inv.fy === activeFY))
+    .reduce((sum, inv) => sum + (inv.invoiceAmount || 0), 0)
+}
+
+export function getSupplierPendingPayments(
+  supplier: Supplier,
+  purchaseInvoices: PurchaseInvoice[],
+  supplierPayments: Payment[],
+  activeFY?: string
+): number {
+  const currentSupplierInvoices = purchaseInvoices.filter(inv => inv.supplierId === supplier.id)
+  const currentSupplierPayments = supplierPayments.filter(p => p.supplierId === supplier.id)
+  const totalInvoicedYTD = getSupplierYTDInvoiced(supplier.id, currentSupplierInvoices, activeFY)
+  const totalPaid = currentSupplierPayments.reduce((sum, p) => sum + (p.amount || 0), 0)
+  const bal = supplier.openingBalance || 0
+
+  return Math.max(0, (totalInvoicedYTD + bal) - totalPaid)
+}
+

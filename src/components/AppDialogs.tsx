@@ -23,6 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { saveBusinessDetails, generateFYOptions } from '@/lib/storage-utils'
 import {
   Tabs,
   TabsContent,
@@ -148,7 +149,7 @@ export function AppDialogs({
         panNumber: panNumber.trim(),
         website: website.trim()
       }
-      localStorage.setItem(`business_details_${businessId}`, JSON.stringify(details))
+      saveBusinessDetails(businessId, details)
       
       const newBusinessMeta = {
         id: businessId,
@@ -230,11 +231,9 @@ export function AppDialogs({
                 <div className="space-y-2">
                   <Label>Start Financial Year</Label>
                   <select id="new-business-fy" value={newBusinessStartFY} onChange={(e) => setNewBusinessStartFY(e.target.value)} className="w-full border border-input bg-background px-3 py-2 text-sm rounded-md focus:outline-none focus:ring-2 focus:ring-ring">
-                    {Array.from({ length: 19 }, (_, i) => {
-                      const startYear = 2021 + i
-                      const fy = `FY${startYear}-${(startYear + 1).toString().slice(2)}`
-                      return <option key={fy} value={fy}>{fy}</option>
-                    })}
+                    {generateFYOptions().map((fy) => (
+                      <option key={fy} value={fy}>{fy}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="space-y-2">
@@ -574,7 +573,7 @@ export function AppDialogs({
                 panNumber: panNumber.trim(),
                 website: website.trim()
               }
-              localStorage.setItem(`business_details_${metadata.activeCompanyId}`, JSON.stringify(details))
+              saveBusinessDetails(metadata.activeCompanyId, details)
               const businessMeta = metadata.businesses.find(b => b.id === metadata.activeCompanyId)
               if (businessMeta) {
                 saveBusinessToCloud(metadata.activeCompanyId, businessMeta, details)

@@ -63,10 +63,58 @@ export function getTenantKey(companyId: string, fy: string): string {
   return `data_${companyId}_${fy}`
 }
 
+export function getBusinessDetails(companyId: string): any | null {
+  if (!companyId) return null
+  const stored = localStorage.getItem(`business_details_${companyId}`)
+  return stored ? JSON.parse(stored) : null
+}
+
+export function saveBusinessDetails(companyId: string, details: any): void {
+  if (!companyId) return
+  localStorage.setItem(`business_details_${companyId}`, JSON.stringify(details))
+}
+
+export function deleteTenantData(companyId: string): void {
+  if (!companyId) return
+  const prefix1 = `data_${companyId}_`
+  const prefix2 = `data_v3_${companyId}_`
+  const prefix3 = `cashbank_${companyId}_`
+  const prefix4 = `remote_cache_${companyId}_`
+  const detailsKey = `business_details_${companyId}`
+
+  localStorage.removeItem(detailsKey)
+
+  const keysToRemove: string[] = []
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (key) {
+      if (
+        key.startsWith(prefix1) ||
+        key.startsWith(prefix2) ||
+        key.startsWith(prefix3) ||
+        key.startsWith(prefix4)
+      ) {
+        keysToRemove.push(key)
+      }
+    }
+  }
+  keysToRemove.forEach((k) => localStorage.removeItem(k))
+}
+
 export function getTenantData(companyId: string, fy: string): TenantData {
   const key = getTenantKey(companyId, fy)
-  const stored = localStorage.getItem(key)
+  let stored = localStorage.getItem(key)
   
+  // Migration logic: Fallback to data_v3_ key if data_ key is not found
+  if (!stored) {
+    const v3Key = `data_v3_${companyId}_${fy}`
+    const v3Stored = localStorage.getItem(v3Key)
+    if (v3Stored) {
+      stored = v3Stored
+      localStorage.setItem(key, v3Stored)
+    }
+  }
+
   if (!stored) {
     const emptyData: TenantData = {
       suppliers: [],
@@ -135,3 +183,4 @@ export function generateFYOptions(): string[] {
 export function createBusinessId(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
+

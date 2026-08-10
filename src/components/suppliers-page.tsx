@@ -37,6 +37,7 @@ import {
   FileText
 } from '@phosphor-icons/react'
 import { formatCurrency } from '@/lib/calculations'
+import { calculateTotalSupplierPayables, getSupplierYTDInvoiced, getSupplierPendingPayments } from '@/lib/report-calculations'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
@@ -47,6 +48,7 @@ interface SuppliersPageProps {
   payments?: Payment[]
   isLocked?: boolean
   changedBy?: string
+  activeFY?: string
 }
 
 export default function SuppliersPage({ 
@@ -55,7 +57,8 @@ export default function SuppliersPage({
   invoices = [], 
   payments = [], 
   isLocked = false, 
-  changedBy = 'Master Admin' 
+  changedBy = 'Master Admin',
+  activeFY
 }: SuppliersPageProps) {
   // View mode: 'list' (Register table) | 'editor' (Full screen edit matching screenshot 2)
   const [viewMode, setViewMode] = useState<'list' | 'editor'>('list')
@@ -137,10 +140,7 @@ export default function SuppliersPage({
   const totalSuppliersCount = suppliers.length
   
   const totalPayable = useMemo(() => {
-    return suppliers.reduce((sum, s) => {
-      const bal = s.openingBalance || 0
-      return sum + (s.balanceType === 'Debit' ? -bal : bal)
-    }, 0)
+    return calculateTotalSupplierPayables(suppliers)
   }, [suppliers])
 
   const activeThisMonthCount = useMemo(() => {
@@ -305,15 +305,14 @@ export default function SuppliersPage({
   }, [editingSupplier, invoices])
 
   const totalInvoicedYTD = useMemo(() => {
-    return currentSupplierInvoices.reduce((sum, inv) => sum + (inv.invoiceAmount || 0), 0)
-  }, [currentSupplierInvoices])
+    if (!editingSupplier) return 0
+    return getSupplierYTDInvoiced(editingSupplier.id, invoices, activeFY)
+  }, [editingSupplier, invoices, activeFY])
 
   const pendingPayments = useMemo(() => {
     if (!editingSupplier) return 0
-    const paid = payments.filter((p) => p.supplierId === editingSupplier.id).reduce((sum, p) => sum + p.amount, 0)
-    const bal = editingSupplier.openingBalance || 0
-    return Math.max(0, (totalInvoicedYTD + bal) - paid)
-  }, [editingSupplier, totalInvoicedYTD, payments])
+    return getSupplierPendingPayments(editingSupplier, invoices, payments, activeFY)
+  }, [editingSupplier, invoices, payments, activeFY])
 
   const lastPurchaseDate = useMemo(() => {
     if (currentSupplierInvoices.length === 0) return 'No purchases yet'

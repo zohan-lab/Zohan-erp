@@ -33,7 +33,7 @@ import {
   CaretUpDown
 } from '@phosphor-icons/react'
 import { toast } from 'sonner'
-import { formatCurrency, isDateInFY, getFYFromDate } from '@/lib/calculations'
+import { formatCurrency, calculateExpenseTotals, applyCounterBalanceDelta } from '@/lib/calculations'
 
 interface ExpenseEntriesPageProps {
   expenseEntries: ExpenseEntry[]
@@ -110,29 +110,9 @@ export default function ExpenseEntriesPage({
     return expenseEntries.filter((e) => isRecordInPeriod(e.expenseDate, e.fy, periodFilter, currentFY))
   }, [expenseEntries, currentFY, periodFilter])
 
-  // Summary Card 1: Total Expenses
-  const totalExpenses = useMemo(() => {
-    return dateFilteredExpenses.reduce((sum, e) => sum + (e.amount || 0), 0)
-  }, [dateFilteredExpenses])
-
-  // Summary Card 2: Invoice Linked Expenses
-  const invoiceLinkedExpenses = useMemo(() => {
-    return dateFilteredExpenses
-      .filter((e) => {
-        const type = expenseTypes.find((t) => t.id === e.expenseTypeId)
-        return type?.linkType === 'invoice' || Boolean(e.linkedInvoiceId)
-      })
-      .reduce((sum, e) => sum + (e.amount || 0), 0)
-  }, [dateFilteredExpenses, expenseTypes])
-
-  // Summary Card 3: Net Profit Expenses
-  const netProfitExpenses = useMemo(() => {
-    return dateFilteredExpenses
-      .filter((e) => {
-        const type = expenseTypes.find((t) => t.id === e.expenseTypeId)
-        return type?.linkType === 'netprofit' && !e.linkedInvoiceId
-      })
-      .reduce((sum, e) => sum + (e.amount || 0), 0)
+  // Summary Card Statistics
+  const { totalExpenses, invoiceLinkedExpenses, netProfitExpenses } = useMemo(() => {
+    return calculateExpenseTotals(dateFilteredExpenses, expenseTypes)
   }, [dateFilteredExpenses, expenseTypes])
 
   // Filtered Register Data for Table
@@ -151,6 +131,10 @@ export default function ExpenseEntriesPage({
       return true
     })
   }, [dateFilteredExpenses, filterType, filterCounter, searchTerm, expenseTypes])
+
+  const filteredRegisterTotal = useMemo(() => {
+    return calculateExpenseTotals(filteredRegister).totalExpenses
+  }, [filteredRegister])
 
   // Save Expense Entry Submit
   const handleSaveExpense = (e: React.FormEvent) => {
@@ -175,20 +159,12 @@ export default function ExpenseEntriesPage({
       let nextTx = [...transactions]
 
       if (editingExpense.counterId) {
-        nextCounters = nextCounters.map((c) => 
-          c.id === editingExpense.counterId 
-            ? { ...c, currentBalance: c.currentBalance + editingExpense.amount }
-            : c
-        )
+        nextCounters = applyCounterBalanceDelta(nextCounters, editingExpense.counterId, editingExpense.amount)
         nextTx = nextTx.filter((t) => t.id !== `tx-exp-${editingExpense.id}`)
       }
 
       // Deduct new amount from new selected counter
-      nextCounters = nextCounters.map((c) => 
-        c.id === selectedCounterId 
-          ? { ...c, currentBalance: c.currentBalance - amt }
-          : c
-      )
+      nextCounters = applyCounterBalanceDelta(nextCounters, selectedCounterId, -amt)
 
       const cashBankTx: CashBankTransaction = {
         id: `tx-exp-${editingExpense.id}`,
@@ -220,11 +196,7 @@ export default function ExpenseEntriesPage({
       const newId = `exp-${Date.now()}`
       
       // Deduct amount from cash/bank counter balance
-      const nextCounters = counters.map((c) => 
-        c.id === selectedCounterId 
-          ? { ...c, currentBalance: c.currentBalance - amt }
-          : c
-      )
+      const nextCounters = applyCounterBalanceDelta(counters, selectedCounterId, -amt)
 
       const cashBankTx: CashBankTransaction = {
         id: `tx-exp-${newId}`,
@@ -263,14 +235,9 @@ export default function ExpenseEntriesPage({
     if (!window.confirm('Are you sure you want to delete this expense entry? Balance will be restored.')) return
 
     // Restore counter balance
-    let nextCounters = [...counters]
-    if (entry.counterId) {
-      nextCounters = nextCounters.map((c) => 
-        c.id === entry.counterId 
-          ? { ...c, currentBalance: c.currentBalance + entry.amount }
-          : c
-      )
-    }
+    const nextCounters = entry.counterId 
+      ? applyCounterBalanceDelta(counters, entry.counterId, entry.amount)
+      : counters
 
     const nextTx = transactions.filter((t) => t.id !== `tx-exp-${entry.id}`)
     setExpenseEntries((prev) => prev.filter((e) => e.id !== entry.id))
@@ -640,7 +607,7 @@ export default function ExpenseEntriesPage({
           </div>
 
           <span className="bg-slate-100 text-slate-700 text-xs font-bold px-3 py-1 rounded-full border border-slate-200/60">
-            Total Filtered: {formatCurrency(filteredRegister.reduce((sum, e) => sum + e.amount, 0))}
+            Total Filtered: {formatCurrency(filteredRegisterTotal)}
           </span>
         </div>
 

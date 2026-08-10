@@ -139,6 +139,7 @@ import {
   generateFYOptions,
   createBusinessId,
   getTenantKey,
+  deleteTenantData,
   AppMetadata,
   BusinessMetadata,
   TenantData
@@ -495,37 +496,17 @@ const viewNames: Record<string, string> = {
 function App() {
   const useServerAuth = canUseFirebaseAuth()
   const [metadata, setMetadata] = useState<AppMetadata>(() => {
-    const stored = localStorage.getItem('app_metadata')
-    if (!stored) {
+    const meta = getMetadata()
+    if (!meta.businesses || meta.businesses.length === 0) {
       const defaultMeta: AppMetadata = {
         businesses: [{ id: 'sk_traders', name: 'SK TRADERS', startFY: getCurrentFY() }],
         activeCompanyId: 'sk_traders',
         activeFY: getCurrentFY()
       }
-      localStorage.setItem('app_metadata', JSON.stringify(defaultMeta))
+      saveMetadata(defaultMeta)
       return defaultMeta
     }
-    const parsed = safeJsonParse<AppMetadata | null>(stored, null)
-    if (!parsed) {
-      const defaultMeta: AppMetadata = {
-        businesses: [{ id: 'sk_traders', name: 'SK TRADERS', startFY: getCurrentFY() }],
-        activeCompanyId: 'sk_traders',
-        activeFY: getCurrentFY()
-      }
-      localStorage.setItem('app_metadata', JSON.stringify(defaultMeta))
-      appendAuditLog('metadata_recovered_from_invalid_json')
-      return defaultMeta
-    }
-    if (!parsed.businesses || parsed.businesses.length === 0) {
-      const defaultMeta: AppMetadata = {
-        businesses: [{ id: 'sk_traders', name: 'SK TRADERS', startFY: getCurrentFY() }],
-        activeCompanyId: 'sk_traders',
-        activeFY: getCurrentFY()
-      }
-      localStorage.setItem('app_metadata', JSON.stringify(defaultMeta))
-      return defaultMeta
-    }
-    return parsed
+    return meta
   })
 
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
@@ -666,7 +647,7 @@ function App() {
   const currentActiveBusiness = metadata.businesses.find(b => b.id === metadata.activeCompanyId)
   const activeCompany = currentActiveBusiness?.name || 'SK TRADERS'
   const activeFY = currentActiveBusiness?.startFY || metadata.activeFY || getCurrentFY()
-  const tenantKey = `data_v3_${metadata.activeCompanyId}_${activeFY}`
+  const tenantKey = getTenantKey(metadata.activeCompanyId, activeFY)
   const cashBankKey = `cashbank_${metadata.activeCompanyId}_${activeFY}`
   const storedCompanies = metadata.businesses.map(b => b.name)
 
@@ -814,7 +795,7 @@ function App() {
             activeCompanyId: validActive,
             activeFY: activeBiz?.startFY || prev.activeFY
           };
-          localStorage.setItem('app_metadata', JSON.stringify(nextMeta));
+          saveMetadata(nextMeta);
           return nextMeta;
         }
         return prev;
@@ -1638,7 +1619,7 @@ function App() {
     }
     
     setMetadata(updatedMetadata)
-    localStorage.setItem('app_metadata', JSON.stringify(updatedMetadata))
+    saveMetadata(updatedMetadata)
     saveBusinessToCloud(businessId, newBusiness, {})
     appendAuditLog('business_created', { businessId, businessName: newBusiness.name })
     void appendServerAuditLog(businessId, `data_${businessId}_${newBusinessStartFY}`, 'business_created', { businessId, businessName: newBusiness.name })
@@ -1685,7 +1666,7 @@ function App() {
     }
     
     setMetadata(updatedMetadata)
-    localStorage.setItem('app_metadata', JSON.stringify(updatedMetadata))
+    saveMetadata(updatedMetadata)
     appendAuditLog('business_renamed', { businessId: metadata.activeCompanyId, newName: editBusinessName.trim() })
     void appendServerAuditLog(metadata.activeCompanyId, tenantKey, 'business_renamed', { businessId: metadata.activeCompanyId, newName: editBusinessName.trim() })
     
@@ -1705,12 +1686,7 @@ function App() {
     
     const businessToDelete = metadata.businesses.find(b => b.id === metadata.activeCompanyId)
     
-    const allKeys = Object.keys(localStorage)
-    const dataKeysToDelete = allKeys.filter(key => key.startsWith(`data_${metadata.activeCompanyId}_`))
-    dataKeysToDelete.forEach(key => localStorage.removeItem(key))
-    const cashBankKeysToDelete = allKeys.filter(key => key.startsWith(`cashbank_${metadata.activeCompanyId}_`))
-    cashBankKeysToDelete.forEach(key => localStorage.removeItem(key))
-    localStorage.removeItem(`business_details_${metadata.activeCompanyId}`)
+    deleteTenantData(metadata.activeCompanyId)
     
     const remainingBusinesses = metadata.businesses.filter(b => b.id !== metadata.activeCompanyId)
     const newActive = remainingBusinesses[0]
@@ -1723,19 +1699,15 @@ function App() {
     }
     
     setMetadata(updatedMetadata)
-    localStorage.setItem('app_metadata', JSON.stringify(updatedMetadata))
+    saveMetadata(updatedMetadata)
     deleteBusinessFromCloud(businessToDelete?.id || metadata.activeCompanyId)
     appendAuditLog('business_deleted', {
       businessId: businessToDelete?.id,
-      businessName: businessToDelete?.name,
-      dataPartitionsDeleted: dataKeysToDelete.length,
-      cashBankPartitionsDeleted: cashBankKeysToDelete.length
+      businessName: businessToDelete?.name
     })
     void appendServerAuditLog(metadata.activeCompanyId, tenantKey, 'business_deleted', {
       businessId: businessToDelete?.id,
-      businessName: businessToDelete?.name,
-      dataPartitionsDeleted: dataKeysToDelete.length,
-      cashBankPartitionsDeleted: cashBankKeysToDelete.length
+      businessName: businessToDelete?.name
     })
     
     setSuppliers([])
@@ -1938,13 +1910,13 @@ function App() {
                 currentMetadata.activeFY = financialYear;
               }
               
-              localStorage.setItem('app_metadata', JSON.stringify(currentMetadata));
+              saveMetadata(currentMetadata);
             }
 
             // Set as active business and FY for immediate view after reload
             currentMetadata.activeCompanyId = companyId;
             currentMetadata.activeFY = financialYear;
-            localStorage.setItem('app_metadata', JSON.stringify(currentMetadata));
+            saveMetadata(currentMetadata);
 
           } catch (registryError) {
             console.error("Failed to auto-register company in dropdown list", registryError);

@@ -77,6 +77,7 @@ import {
   SupplierCDRuleVersion,
   Item,
   ExpenseEntry,
+  ExpenseType,
   LedgerEntry
 } from './types'
 import { getItemActiveUnitAndQty } from './fifo-engine'
@@ -1752,3 +1753,49 @@ export function calculateLedger({
     }
   }
 }
+
+export interface ExpenseTotals {
+  totalExpenses: number
+  invoiceLinkedExpenses: number
+  netProfitExpenses: number
+}
+
+export function calculateExpenseTotals(expenses: ExpenseEntry[], expenseTypes: ExpenseType[] = []): ExpenseTotals {
+  let totalExpenses = 0
+  let invoiceLinkedExpenses = 0
+  let netProfitExpenses = 0
+
+  const typeMap = new Map<string, ExpenseType>()
+  expenseTypes.forEach(t => typeMap.set(t.id, t))
+
+  expenses.forEach(e => {
+    const amt = e.amount || 0
+    totalExpenses += amt
+
+    const type = typeMap.get(e.expenseTypeId)
+    const isInvoiceLinked = type?.linkType === 'invoice' || Boolean(e.linkedInvoiceId)
+    const isNetProfit = type?.linkType === 'netprofit' && !e.linkedInvoiceId
+
+    if (isInvoiceLinked) {
+      invoiceLinkedExpenses += amt
+    } else if (isNetProfit) {
+      netProfitExpenses += amt
+    }
+  })
+
+  return { totalExpenses, invoiceLinkedExpenses, netProfitExpenses }
+}
+
+export function applyCounterBalanceDelta(
+  counters: any[],
+  counterId: string,
+  deltaAmount: number
+): any[] {
+  if (!counterId || deltaAmount === 0) return counters
+  return counters.map((c) =>
+    c.id === counterId
+      ? { ...c, currentBalance: (c.currentBalance || 0) + deltaAmount }
+      : c
+  )
+}
+
