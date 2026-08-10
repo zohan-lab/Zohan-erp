@@ -156,8 +156,10 @@ import {
   isAllowedRestoreKey,
   lockAppSession,
   PermissionLevel,
+  persistActiveUserSession,
   safeJsonParse,
   saveUserAccounts,
+  updateAgentAccount,
   UserAccount,
   verifyAppPasscode,
   verifyUserLogin,
@@ -812,8 +814,14 @@ function App() {
       try {
         const user = await getRemoteCurrentUser()
         if (cancelled) return
-        setCurrentUser(user)
-        setIsAuthenticated(Boolean(user))
+        if (user) {
+          setCurrentUser(user)
+          setIsAuthenticated(true)
+          persistActiveUserSession(user)
+        } else {
+          setCurrentUser(null)
+          setIsAuthenticated(false)
+        }
         setAuthMode('unlock')
       } catch (error) {
         if (cancelled) return
@@ -971,9 +979,28 @@ function App() {
       setDebitNotes(normalizedData.debitNotes)
       setSalesReturns(normalizedData.salesReturns)
       setPurchaseReturns(normalizedData.purchaseReturns)
-      if (normalizedData.userAccounts && normalizedData.userAccounts.length > 0) {
+      if (normalizedData.userAccounts) {
         setUserAccounts(normalizedData.userAccounts)
         saveUserAccounts(normalizedData.userAccounts)
+        setCurrentUser(prev => {
+          if (!prev) return null
+          const normUser = prev.username.trim().toLowerCase()
+          const match = (normalizedData.userAccounts || []).find(
+            a => a.id === prev.id || a.username.trim().toLowerCase() === normUser
+          )
+          if (!match) return prev
+          const updated: AuthenticatedUser = {
+            ...prev,
+            displayName: match.displayName || prev.displayName,
+            role: match.role || prev.role,
+            permissions: match.permissions || prev.permissions,
+            isActive: match.isActive ?? prev.isActive,
+            allowedCounters: match.allowedCounters || prev.allowedCounters,
+            allowedBusinesses: match.allowedBusinesses || prev.allowedBusinesses
+          }
+          persistActiveUserSession(updated)
+          return updated
+        })
       }
     }
 
@@ -1139,7 +1166,8 @@ function App() {
                   creditNotes: latest.payload.creditNotes || [],
                   debitNotes: latest.payload.debitNotes || [],
                   salesReturns: latest.payload.salesReturns || [],
-                  purchaseReturns: latest.payload.purchaseReturns || []
+                  purchaseReturns: latest.payload.purchaseReturns || [],
+                  userAccounts: latest.payload.userAccounts || []
                 }
                 lastSavedDataRef.current = JSON.stringify(normalizedData)
                 writeTenantCache(metadata.activeCompanyId, partitionKey, normalizedData, latest.revision)
@@ -1158,6 +1186,33 @@ function App() {
                 setDiscountLedgerEntries(normalizedData.discountLedgerEntries)
                 setCashBankCounters(normalizedData.cashBankCounters)
                 setCashBankTransactions(normalizedData.cashBankTransactions)
+                setCreditNotes(normalizedData.creditNotes)
+                setDebitNotes(normalizedData.debitNotes)
+                setSalesReturns(normalizedData.salesReturns)
+                setPurchaseReturns(normalizedData.purchaseReturns)
+                if (normalizedData.userAccounts) {
+                  setUserAccounts(normalizedData.userAccounts)
+                  saveUserAccounts(normalizedData.userAccounts)
+                  setCurrentUser(prev => {
+                    if (!prev) return null
+                    const normUser = prev.username.trim().toLowerCase()
+                    const match = (normalizedData.userAccounts || []).find(
+                      a => a.id === prev.id || a.username.trim().toLowerCase() === normUser
+                    )
+                    if (!match) return prev
+                    const updated: AuthenticatedUser = {
+                      ...prev,
+                      displayName: match.displayName || prev.displayName,
+                      role: match.role || prev.role,
+                      permissions: match.permissions || prev.permissions,
+                      isActive: match.isActive ?? prev.isActive,
+                      allowedCounters: match.allowedCounters || prev.allowedCounters,
+                      allowedBusinesses: match.allowedBusinesses || prev.allowedBusinesses
+                    }
+                    persistActiveUserSession(updated)
+                    return updated
+                  })
+                }
               }
               return
             }
@@ -1229,7 +1284,8 @@ function App() {
         creditNotes: remoteSnapshot.payload.creditNotes || [],
         debitNotes: remoteSnapshot.payload.debitNotes || [],
         salesReturns: remoteSnapshot.payload.salesReturns || [],
-        purchaseReturns: remoteSnapshot.payload.purchaseReturns || []
+        purchaseReturns: remoteSnapshot.payload.purchaseReturns || [],
+        userAccounts: remoteSnapshot.payload.userAccounts || []
       }
       lastSavedDataRef.current = JSON.stringify(normalizedData)
       writeTenantCache(metadata.activeCompanyId, tenantKey, normalizedData, remoteSnapshot.revision)
@@ -1252,6 +1308,29 @@ function App() {
       setDebitNotes(normalizedData.debitNotes)
       setSalesReturns(normalizedData.salesReturns)
       setPurchaseReturns(normalizedData.purchaseReturns)
+      if (normalizedData.userAccounts) {
+        setUserAccounts(normalizedData.userAccounts)
+        saveUserAccounts(normalizedData.userAccounts)
+        setCurrentUser(prev => {
+          if (!prev) return null
+          const normUser = prev.username.trim().toLowerCase()
+          const match = (normalizedData.userAccounts || []).find(
+            a => a.id === prev.id || a.username.trim().toLowerCase() === normUser
+          )
+          if (!match) return prev
+          const updated: AuthenticatedUser = {
+            ...prev,
+            displayName: match.displayName || prev.displayName,
+            role: match.role || prev.role,
+            permissions: match.permissions || prev.permissions,
+            isActive: match.isActive ?? prev.isActive,
+            allowedCounters: match.allowedCounters || prev.allowedCounters,
+            allowedBusinesses: match.allowedBusinesses || prev.allowedBusinesses
+          }
+          persistActiveUserSession(updated)
+          return updated
+        })
+      }
       appendAuditLog('remote_tenant_realtime_update', undefined, tenantKey)
     }) || undefined
   }, [metadata.activeCompanyId, tenantHydrated, tenantKey, useServerAuth, canSyncRemoteTenant])
@@ -1374,6 +1453,7 @@ function App() {
         }
         setCurrentUser(user)
         setIsAuthenticated(true)
+        persistActiveUserSession(user)
         toast.success(`Welcome, ${user.displayName}`)
       }
       setAuthUsername(authMode === 'setup' ? 'admin' : authUsername)
@@ -2410,16 +2490,34 @@ function App() {
                 })
                 setUserAccounts(getUserAccounts())
               } : undefined}
-              onSaveAgent={useServerAuth ? (input) => updateRemoteUserProfile({
-                id: input.id,
-                companyId: metadata.activeCompanyId,
-                displayName: input.displayName,
-                role: 'agent',
-                permissions: input.permissions,
-                isActive: input.isActive,
-                allowedCounters: input.allowedCounters,
-                allowedBusinesses: input.allowedBusinesses
-              }) : undefined}
+              onSaveAgent={useServerAuth ? async (input) => {
+                if (canUseFirebaseAuth()) {
+                  try {
+                    await updateRemoteUserProfile({
+                      id: input.id,
+                      companyId: metadata.activeCompanyId,
+                      displayName: input.displayName,
+                      role: 'agent',
+                      permissions: input.permissions,
+                      isActive: input.isActive,
+                      allowedCounters: input.allowedCounters,
+                      allowedBusinesses: input.allowedBusinesses
+                    })
+                  } catch (e) {
+                    console.warn('Remote profile update warning:', e)
+                  }
+                }
+                const nextAccounts = await updateAgentAccount(input.id, {
+                  displayName: input.displayName,
+                  permissions: input.permissions,
+                  isActive: input.isActive,
+                  allowedCounters: input.allowedCounters,
+                  allowedBusinesses: input.allowedBusinesses
+                })
+                setUserAccounts(nextAccounts)
+                saveUserAccounts(nextAccounts)
+                return nextAccounts
+              } : undefined}
             />
           )
         default:

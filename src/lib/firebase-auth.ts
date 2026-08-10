@@ -17,7 +17,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore'
 import { firebaseConfig, auth, db, isFirebaseAuthEnabled, isFirebaseConfigured } from './firebase-client'
-import { AuthenticatedUser, PermissionMap, UserAccount } from './security-utils'
+import { AuthenticatedUser, PermissionMap, UserAccount, getCurrentUser, getUserAccounts, persistActiveUserSession } from './security-utils'
 
 // ─── Error Classes ────────────────────────────────────────────────────────────
 
@@ -75,14 +75,36 @@ function toAuthenticatedUser(uid: string, profile: FirestoreUserProfile): Authen
 function firebaseUserToAuthenticatedUser(fbUser: FirebaseUser): AuthenticatedUser | null {
   const email = fbUser.email?.trim().toLowerCase()
   if (!email) return null
-  return {
+
+  const localAccount = getUserAccounts().find(
+    a => a.username.toLowerCase() === email || a.username.toLowerCase().split('@')[0] === email.split('@')[0]
+  )
+  if (localAccount) {
+    const user: AuthenticatedUser = {
+      id: fbUser.uid || localAccount.id,
+      username: email,
+      displayName: localAccount.displayName || fbUser.displayName || email,
+      role: localAccount.role,
+      permissions: localAccount.permissions || {},
+      isActive: localAccount.isActive,
+      allowedCounters: localAccount.allowedCounters || [],
+      allowedBusinesses: localAccount.allowedBusinesses || []
+    }
+    persistActiveUserSession(user)
+    return user
+  }
+
+  const isMaster = email.startsWith('admin') || email.includes('master')
+  const user: AuthenticatedUser = {
     id: fbUser.uid,
     username: email,
     displayName: fbUser.displayName || email,
-    role: 'master_admin', // default until Firestore profile is fetched
+    role: isMaster ? 'master_admin' : 'agent',
     permissions: {},
     isActive: true
   }
+  persistActiveUserSession(user)
+  return user
 }
 
 async function fetchFirestoreProfile(uid: string): Promise<FirestoreUserProfile | null> {
@@ -103,7 +125,6 @@ async function fetchFirestoreProfile(uid: string): Promise<FirestoreUserProfile 
 export async function getRemoteCurrentUser(): Promise<AuthenticatedUser | null> {
   if (!canUseFirebaseAuth() || !auth) return null
 
-  // Wait for auth to settle (avoids race on page load)
   const fbUser = await withTimeout(
     new Promise<FirebaseUser | null>((resolve) => {
       const unsub = onAuthStateChanged(auth!, (user) => {
@@ -115,16 +136,36 @@ export async function getRemoteCurrentUser(): Promise<AuthenticatedUser | null> 
 
   if (!fbUser) return null
 
-  const profile = await fetchFirestoreProfile(fbUser.uid)
+  let profile = await fetchFirestoreProfile(fbUser.uid)
+
+  if (!profile && fbUser.email && db) {
+    try {
+      const snap = await getDocs(collection(db, 'users'))
+      const match = snap.docs.find(d => (d.data() as FirestoreUserProfile).email?.toLowerCase() === fbUser.email?.toLowerCase())
+      if (match) {
+        profile = match.data() as FirestoreUserProfile
+      }
+    } catch (e) {
+      console.warn('Firestore profile lookup by email warning:', e)
+    }
+  }
+
   if (profile) {
     if (!profile.isActive) {
       await signOut(auth!)
       return null
     }
-    return toAuthenticatedUser(fbUser.uid, profile)
+    const user = toAuthenticatedUser(fbUser.uid, profile)
+    persistActiveUserSession(user)
+    return user
   }
 
-  // No Firestore profile yet — use Firebase user metadata as fallback
+  const cachedUser = getCurrentUser()
+  if (cachedUser && (cachedUser.id === fbUser.uid || cachedUser.username.toLowerCase() === fbUser.email?.toLowerCase())) {
+    persistActiveUserSession(cachedUser)
+    return cachedUser
+  }
+
   return firebaseUserToAuthenticatedUser(fbUser)
 }
 
@@ -147,9 +188,13 @@ export async function signInRemoteUser(
         await signOut(auth)
         throw new Error('Your account is inactive. Contact the admin.')
       }
-      return toAuthenticatedUser(credential.user.uid, profile)
+      const user = toAuthenticatedUser(credential.user.uid, profile)
+      persistActiveUserSession(user)
+      return user
     }
-    return firebaseUserToAuthenticatedUser(credential.user)
+    const user = firebaseUserToAuthenticatedUser(credential.user)
+    if (user) persistActiveUserSession(user)
+    return user
   } catch (error: unknown) {
     if (error instanceof RemoteAuthServiceUnavailableError) throw error
     const code = (error as { code?: string }).code
