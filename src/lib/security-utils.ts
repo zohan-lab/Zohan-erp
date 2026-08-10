@@ -166,9 +166,12 @@ export function persistActiveUserSession(user: AuthenticatedUser): void {
   }
 }
 
+export const MASTER_ADMIN_EMAIL = 'sksahil299399@gmail.com'
+
 export function isMasterAdminIdentifier(username: string | null | undefined): boolean {
   if (!username) return false
   const clean = username.trim().toLowerCase()
+  if (clean === MASTER_ADMIN_EMAIL.toLowerCase()) return true
   const handle = clean.split('@')[0]
   return (
     clean === 'admin' ||

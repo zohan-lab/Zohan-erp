@@ -17,7 +17,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore'
 import { firebaseConfig, auth, db, isFirebaseAuthEnabled, isFirebaseConfigured } from './firebase-client'
-import { AuthenticatedUser, PermissionMap, UserAccount, isMasterAdminIdentifier } from './security-utils'
+import { AuthenticatedUser, PermissionMap, UserAccount, isMasterAdminIdentifier, MASTER_ADMIN_EMAIL } from './security-utils'
 
 // ─── Error Classes ────────────────────────────────────────────────────────────
 
@@ -60,12 +60,12 @@ function withTimeout<T>(promise: Promise<T>, ms = 20000): Promise<T> {
 }
 
 function toAuthenticatedUser(uid: string, profile: FirestoreUserProfile): AuthenticatedUser {
-  const isMaster = profile.role === 'master_admin' || isMasterAdminIdentifier(profile.email)
+  const isMaster = profile.role === 'master_admin' || isMasterAdminIdentifier(profile.email) || profile.email?.trim().toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase()
   return {
     id: uid,
     username: profile.email,
     displayName: profile.displayName || profile.email,
-    role: isMaster ? 'master_admin' : 'agent',
+    role: isMaster ? 'master_admin' : profile.role || 'agent',
     permissions: profile.permissions || {},
     isActive: profile.isActive,
     allowedCounters: profile.allowedCounters || [],
@@ -76,7 +76,7 @@ function toAuthenticatedUser(uid: string, profile: FirestoreUserProfile): Authen
 function firebaseUserToAuthenticatedUser(fbUser: FirebaseUser): AuthenticatedUser | null {
   const email = fbUser.email?.trim().toLowerCase()
   if (!email) return null
-  const isMaster = isMasterAdminIdentifier(email)
+  const isMaster = isMasterAdminIdentifier(email) || email === MASTER_ADMIN_EMAIL.toLowerCase()
   return {
     id: fbUser.uid,
     username: email,

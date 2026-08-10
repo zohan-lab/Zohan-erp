@@ -156,6 +156,7 @@ import {
   isAllowedRestoreKey,
   isMasterAdminIdentifier,
   lockAppSession,
+  MASTER_ADMIN_EMAIL,
   PermissionLevel,
   persistActiveUserSession,
   safeJsonParse,
@@ -676,7 +677,8 @@ function App() {
   const isMasterAdmin = useMemo(() => {
     if (!currentUser) return false
     if (currentUser.role === 'master_admin') return true
-    return isMasterAdminIdentifier(currentUser.username)
+    const norm = (currentUser.username || '').trim().toLowerCase()
+    return norm === MASTER_ADMIN_EMAIL.toLowerCase() || isMasterAdminIdentifier(norm)
   }, [currentUser])
   const availableNavGroups = useMemo(() => {
     if (isMasterAdmin) return [...navGroups, adminNavGroup]
