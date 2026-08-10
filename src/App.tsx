@@ -250,7 +250,6 @@ const tenantDataCollectionKeys: Array<keyof TenantData> = [
   'expenseEntries',
   'fixedSchemes',
   'mtBookings',
-  'advanceBookingPickups',
   'discountLedgerEntries',
   'creditNotes',
   'debitNotes',
@@ -521,7 +520,6 @@ function App() {
   const [expenseEntries, setExpenseEntries] = useState<ExpenseEntry[]>([])
   const [fixedSchemes, setFixedSchemes] = useState<FixedScheme[]>([])
   const [mtBookings, setMTBookings] = useState<MTBooking[]>([])
-  const [advanceBookingPickups, setAdvanceBookingPickups] = useState<any[]>([])
   const [discountLedgerEntries, setDiscountLedgerEntries] = useState<any[]>([])
   const [cashBankCounters, setCashBankCounters] = useState<any[]>([])
   const [cashBankTransactions, setCashBankTransactions] = useState<any[]>([])
@@ -920,7 +918,6 @@ function App() {
     setExpenseEntries([])
     setFixedSchemes([])
     setMTBookings([])
-    setAdvanceBookingPickups([])
     setDiscountLedgerEntries([])
     setCashBankCounters([])
     setCashBankTransactions([])
@@ -945,7 +942,6 @@ function App() {
         expenseEntries: parsedData.expenseEntries || [],
         fixedSchemes: parsedData.fixedSchemes || [],
         mtBookings: parsedData.mtBookings || [],
-        advanceBookingPickups: parsedData.advanceBookingPickups || [],
         discountLedgerEntries: parsedData.discountLedgerEntries || [],
         cashBankCounters: parsedData.cashBankCounters || [],
         cashBankTransactions: parsedData.cashBankTransactions || [],
@@ -968,7 +964,6 @@ function App() {
       setExpenseEntries(normalizedData.expenseEntries)
       setFixedSchemes(normalizedData.fixedSchemes)
       setMTBookings(normalizedData.mtBookings)
-      setAdvanceBookingPickups(normalizedData.advanceBookingPickups)
       setDiscountLedgerEntries(normalizedData.discountLedgerEntries)
       setCashBankCounters(normalizedData.cashBankCounters)
       setCashBankTransactions(normalizedData.cashBankTransactions)
@@ -1067,7 +1062,6 @@ function App() {
       expenseEntries,
       fixedSchemes,
       mtBookings,
-      advanceBookingPickups,
       discountLedgerEntries,
       cashBankCounters,
       cashBankTransactions,
@@ -1139,7 +1133,6 @@ function App() {
                   expenseEntries: latest.payload.expenseEntries || [],
                   fixedSchemes: latest.payload.fixedSchemes || [],
                   mtBookings: latest.payload.mtBookings || [],
-                  advanceBookingPickups: latest.payload.advanceBookingPickups || [],
                   discountLedgerEntries: latest.payload.discountLedgerEntries || [],
                   cashBankCounters: latest.payload.cashBankCounters || [],
                   cashBankTransactions: latest.payload.cashBankTransactions || [],
@@ -1162,7 +1155,6 @@ function App() {
                 setExpenseEntries(normalizedData.expenseEntries)
                 setFixedSchemes(normalizedData.fixedSchemes)
                 setMTBookings(normalizedData.mtBookings)
-                setAdvanceBookingPickups(normalizedData.advanceBookingPickups)
                 setDiscountLedgerEntries(normalizedData.discountLedgerEntries)
                 setCashBankCounters(normalizedData.cashBankCounters)
                 setCashBankTransactions(normalizedData.cashBankTransactions)
@@ -1198,7 +1190,6 @@ function App() {
     expenseEntries,
     fixedSchemes,
     mtBookings,
-    advanceBookingPickups,
     discountLedgerEntries,
     cashBankCounters,
     cashBankTransactions,
@@ -1232,7 +1223,6 @@ function App() {
         expenseEntries: remoteSnapshot.payload.expenseEntries || [],
         fixedSchemes: remoteSnapshot.payload.fixedSchemes || [],
         mtBookings: remoteSnapshot.payload.mtBookings || [],
-        advanceBookingPickups: remoteSnapshot.payload.advanceBookingPickups || [],
         discountLedgerEntries: remoteSnapshot.payload.discountLedgerEntries || [],
         cashBankCounters: remoteSnapshot.payload.cashBankCounters || [],
         cashBankTransactions: remoteSnapshot.payload.cashBankTransactions || [],
@@ -1255,7 +1245,6 @@ function App() {
       setExpenseEntries(normalizedData.expenseEntries)
       setFixedSchemes(normalizedData.fixedSchemes)
       setMTBookings(normalizedData.mtBookings)
-      setAdvanceBookingPickups(normalizedData.advanceBookingPickups)
       setDiscountLedgerEntries(normalizedData.discountLedgerEntries)
       setCashBankCounters(normalizedData.cashBankCounters)
       setCashBankTransactions(normalizedData.cashBankTransactions)
@@ -1443,7 +1432,6 @@ function App() {
         expenseEntries: [],
         fixedSchemes: [],
         mtBookings: [],
-        advanceBookingPickups: [],
         discountLedgerEntries: [],
         cashBankCounters: [],
         cashBankTransactions: [],

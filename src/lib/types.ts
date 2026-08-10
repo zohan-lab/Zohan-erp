@@ -179,7 +179,7 @@ export interface Payment {
   paymentDate: string
   amount: number
   paymentMode?: string
-  isAdvance: boolean
+  isAdvance?: boolean
   bookingMT?: number
   bookingMarketRate?: number
   mtBookingId?: string

@@ -28,7 +28,6 @@ export interface TenantData {
   expenseEntries: any[]
   fixedSchemes: any[]
   mtBookings: any[]
-  advanceBookingPickups: any[]
   discountLedgerEntries: any[]
   cashBankCounters: any[]
   cashBankTransactions: any[]
@@ -119,7 +118,6 @@ export function getTenantData(companyId: string, _fy?: string): TenantData {
       expenseEntries: [],
       fixedSchemes: [],
       mtBookings: [],
-      advanceBookingPickups: [],
       discountLedgerEntries: [],
       cashBankCounters: [],
       cashBankTransactions: [],
@@ -148,7 +146,6 @@ export function getTenantData(companyId: string, _fy?: string): TenantData {
   parsedData.expenseEntries = parsedData.expenseEntries || []
   parsedData.fixedSchemes = parsedData.fixedSchemes || []
   parsedData.mtBookings = parsedData.mtBookings || []
-  parsedData.advanceBookingPickups = parsedData.advanceBookingPickups || []
   parsedData.discountLedgerEntries = parsedData.discountLedgerEntries || []
   parsedData.cashBankCounters = parsedData.cashBankCounters || []
   parsedData.cashBankTransactions = parsedData.cashBankTransactions || []

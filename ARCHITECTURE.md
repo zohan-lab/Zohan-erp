@@ -24,7 +24,7 @@ Source data is the **single source of truth** and is stored exactly as entered b
   - `additionalCost` - Transport/other costs
   - `roundOffAdjustment` - Paisa rounding
 - **Sales Invoices** - Customer sales records
-- **Payments** - Supplier payments with `doNotApplyCD` flag
+- **Payments** - Supplier monetary payments (standalone MT Booking Master handles volume rate bookings)
 - **Customer Payments** - Customer payment records
 - **Received Discounts** - CD actually received from suppliers
 - **Expense Types** - Expense categories
