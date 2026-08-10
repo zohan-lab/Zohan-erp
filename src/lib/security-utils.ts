@@ -205,9 +205,37 @@ export function hasMasterAdmin(): boolean {
 
 export function getCurrentUser(): AuthenticatedUser | null {
   const userId = sessionStorage.getItem(APP_AUTH_USER_ID_KEY)
-  if (!userId) return null
-  const account = getUserAccounts().find((item) => item.id === userId && item.isActive)
-  return account ? toAuthenticatedUser(account) : null
+  const cachedUserStr = sessionStorage.getItem(APP_AUTH_ACTIVE_USER_KEY) || localStorage.getItem(APP_AUTH_ACTIVE_USER_KEY)
+
+  let cachedUser: AuthenticatedUser | null = null
+  if (cachedUserStr) {
+    try {
+      cachedUser = JSON.parse(cachedUserStr) as AuthenticatedUser
+    } catch (e) {}
+  }
+
+  if (userId) {
+    const account = getUserAccounts().find((item) => item.id === userId && item.isActive)
+    if (account) {
+      const authUser = toAuthenticatedUser(account)
+      persistActiveUserSession(authUser)
+      return authUser
+    }
+  }
+
+  if (cachedUser && cachedUser.isActive) {
+    const freshAccount = getUserAccounts().find(
+      a => a.id === cachedUser!.id || a.username.toLowerCase() === cachedUser!.username.toLowerCase()
+    )
+    if (freshAccount && freshAccount.isActive) {
+      const authUser = toAuthenticatedUser(freshAccount)
+      persistActiveUserSession(authUser)
+      return authUser
+    }
+    return cachedUser
+  }
+
+  return null
 }
 
 export async function createMasterAdmin(username: string, displayName: string, passcode: string): Promise<AuthenticatedUser> {
@@ -230,10 +258,10 @@ export async function createMasterAdmin(username: string, displayName: string, p
   }
   const next = accounts.filter((item) => item.role !== 'master_admin')
   saveUserAccounts([account, ...next], true)
-  sessionStorage.setItem(APP_AUTH_SESSION_KEY, 'true')
-  sessionStorage.setItem(APP_AUTH_USER_ID_KEY, account.id)
+  const authUser = toAuthenticatedUser(account)
+  persistActiveUserSession(authUser)
   appendAuditLog('master_admin_created', { username: account.username })
-  return toAuthenticatedUser(account)
+  return authUser
 }
 
 export async function createAgentAccount(input: {
@@ -381,10 +409,10 @@ export async function verifyUserLoginDetailed(username: string, passcode: string
     return { success: false, error: `Incorrect passcode for user '${account.username}'.` }
   }
 
-  sessionStorage.setItem(APP_AUTH_SESSION_KEY, 'true')
-  sessionStorage.setItem(APP_AUTH_USER_ID_KEY, account.id)
+  const authUser = toAuthenticatedUser(account)
+  persistActiveUserSession(authUser)
   appendAuditLog('user_logged_in', { username: account.username, role: account.role })
-  return { success: true, user: toAuthenticatedUser(account) }
+  return { success: true, user: authUser }
 }
 
 export async function verifyUserLogin(username: string, passcode: string): Promise<AuthenticatedUser | null> {
@@ -426,6 +454,8 @@ export async function verifyAppPasscode(passcode: string): Promise<boolean> {
 export function lockAppSession(): void {
   sessionStorage.removeItem(APP_AUTH_SESSION_KEY)
   sessionStorage.removeItem(APP_AUTH_USER_ID_KEY)
+  sessionStorage.removeItem(APP_AUTH_ACTIVE_USER_KEY)
+  localStorage.removeItem(APP_AUTH_ACTIVE_USER_KEY)
   appendAuditLog('app_locked')
 }
 

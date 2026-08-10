@@ -17,7 +17,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore'
 import { firebaseConfig, auth, db, isFirebaseAuthEnabled, isFirebaseConfigured } from './firebase-client'
-import { AuthenticatedUser, PermissionMap, UserAccount, isMasterAdminIdentifier, MASTER_ADMIN_EMAIL } from './security-utils'
+import { AuthenticatedUser, PermissionMap, UserAccount, isMasterAdminIdentifier, MASTER_ADMIN_EMAIL, getCurrentUser, getUserAccounts, persistActiveUserSession } from './security-utils'
 
 // ─── Error Classes ────────────────────────────────────────────────────────────
 
@@ -76,8 +76,27 @@ function toAuthenticatedUser(uid: string, profile: FirestoreUserProfile): Authen
 function firebaseUserToAuthenticatedUser(fbUser: FirebaseUser): AuthenticatedUser | null {
   const email = fbUser.email?.trim().toLowerCase()
   if (!email) return null
-  const isMaster = isMasterAdminIdentifier(email)
-  return {
+
+  const localAccount = getUserAccounts().find(
+    a => a.username.toLowerCase() === email || a.username.toLowerCase().split('@')[0] === email.split('@')[0]
+  )
+  if (localAccount) {
+    const user: AuthenticatedUser = {
+      id: fbUser.uid || localAccount.id,
+      username: email,
+      displayName: localAccount.displayName || fbUser.displayName || email,
+      role: localAccount.role,
+      permissions: localAccount.permissions || {},
+      isActive: localAccount.isActive,
+      allowedCounters: localAccount.allowedCounters || [],
+      allowedBusinesses: localAccount.allowedBusinesses || []
+    }
+    persistActiveUserSession(user)
+    return user
+  }
+
+  const isMaster = isMasterAdminIdentifier(email) || email === MASTER_ADMIN_EMAIL.toLowerCase()
+  const user: AuthenticatedUser = {
     id: fbUser.uid,
     username: email,
     displayName: fbUser.displayName || email,
@@ -85,6 +104,8 @@ function firebaseUserToAuthenticatedUser(fbUser: FirebaseUser): AuthenticatedUse
     permissions: {},
     isActive: true
   }
+  persistActiveUserSession(user)
+  return user
 }
 
 async function fetchFirestoreProfile(uid: string): Promise<FirestoreUserProfile | null> {
@@ -135,10 +156,17 @@ export async function getRemoteCurrentUser(): Promise<AuthenticatedUser | null> 
       await signOut(auth!)
       return null
     }
-    return toAuthenticatedUser(fbUser.uid, profile)
+    const user = toAuthenticatedUser(fbUser.uid, profile)
+    persistActiveUserSession(user)
+    return user
   }
 
-  // No Firestore profile yet — use Firebase user metadata as fallback
+  const cachedUser = getCurrentUser()
+  if (cachedUser && (cachedUser.id === fbUser.uid || cachedUser.username.toLowerCase() === fbUser.email?.toLowerCase())) {
+    persistActiveUserSession(cachedUser)
+    return cachedUser
+  }
+
   return firebaseUserToAuthenticatedUser(fbUser)
 }
 
