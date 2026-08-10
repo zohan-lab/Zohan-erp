@@ -60,12 +60,12 @@ function withTimeout<T>(promise: Promise<T>, ms = 20000): Promise<T> {
 }
 
 function toAuthenticatedUser(uid: string, profile: FirestoreUserProfile): AuthenticatedUser {
-  const isMaster = profile.role === 'master_admin' || isMasterAdminIdentifier(profile.email) || profile.email?.trim().toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase()
+  const isMaster = profile.role === 'master_admin' || isMasterAdminIdentifier(profile.email)
   return {
     id: uid,
     username: profile.email,
     displayName: profile.displayName || profile.email,
-    role: isMaster ? 'master_admin' : profile.role || 'agent',
+    role: isMaster ? 'master_admin' : 'agent',
     permissions: profile.permissions || {},
     isActive: profile.isActive,
     allowedCounters: profile.allowedCounters || [],
@@ -76,7 +76,7 @@ function toAuthenticatedUser(uid: string, profile: FirestoreUserProfile): Authen
 function firebaseUserToAuthenticatedUser(fbUser: FirebaseUser): AuthenticatedUser | null {
   const email = fbUser.email?.trim().toLowerCase()
   if (!email) return null
-  const isMaster = isMasterAdminIdentifier(email) || email === MASTER_ADMIN_EMAIL.toLowerCase()
+  const isMaster = isMasterAdminIdentifier(email)
   return {
     id: fbUser.uid,
     username: email,
@@ -163,7 +163,7 @@ export async function signInRemoteUser(
       const now = new Date().toISOString()
       const newProfile: FirestoreUserProfile = {
         email: cleanEmail,
-        displayName: credential.user.displayName || 'Master Admin',
+        displayName: credential.user.displayName || (isMasterAdminEmail ? 'Master Admin' : cleanEmail),
         role: isMasterAdminEmail ? 'master_admin' : 'agent',
         permissions: {},
         isActive: true,
@@ -193,7 +193,8 @@ export async function signInRemoteUser(
     if (error instanceof RemoteAuthServiceUnavailableError) throw error
     const code = (error as { code?: string }).code
 
-    if (isMasterAdminEmail && (code === 'auth/user-not-found' || code === 'auth/invalid-credential')) {
+    // If account does not exist in Firebase Auth yet, auto-create/bootstrap on first login!
+    if (code === 'auth/user-not-found' || code === 'auth/invalid-credential') {
       try {
         const cred = await withTimeout(
           createUserWithEmailAndPassword(auth, cleanEmail, password)
@@ -201,8 +202,8 @@ export async function signInRemoteUser(
         const now = new Date().toISOString()
         const newProfile: FirestoreUserProfile = {
           email: cleanEmail,
-          displayName: cred.user.displayName || 'Master Admin',
-          role: 'master_admin',
+          displayName: cred.user.displayName || (isMasterAdminEmail ? 'Master Admin' : cleanEmail),
+          role: isMasterAdminEmail ? 'master_admin' : 'agent',
           permissions: {},
           isActive: true,
           companyId: null,
@@ -220,7 +221,9 @@ export async function signInRemoteUser(
         if (createCode === 'auth/email-already-in-use') {
           throw new Error('Incorrect email or password.')
         }
-        throw createErr
+        if (createCode === 'auth/weak-password') {
+          throw new Error('Password should be at least 6 characters.')
+        }
       }
     }
 
