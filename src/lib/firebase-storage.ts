@@ -83,11 +83,11 @@ export function canUseRemoteStorage(): boolean {
 function stripUndefined(val: any): any {
   if (val === undefined) return undefined
   if (val === null) return null
-  
+
   if (Array.isArray(val)) {
     return val.map(stripUndefined).filter(v => v !== undefined)
   }
-  
+
   if (typeof val === 'object') {
     const cleaned: any = {}
     for (const key in val) {
@@ -137,19 +137,6 @@ function firestoreDocToSnapshot(
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-import { signInAnonymously } from 'firebase/auth'
-import { auth } from './firebase-client'
-
-export async function ensureFirebaseAuthSession(): Promise<void> {
-  if (auth && !auth.currentUser) {
-    try {
-      await signInAnonymously(auth)
-    } catch {
-      // Ignore if anonymous auth is disabled in console
-    }
-  }
-}
-
 /**
  * Load tenant data from Firestore.
  * Returns null if the document does not exist yet.
@@ -160,7 +147,6 @@ export async function loadRemoteTenantData(
 ): Promise<TenantSnapshot | null> {
   if (!canUseRemoteStorage()) return null
   assertRemoteAvailable()
-  await ensureFirebaseAuthSession()
 
   try {
     const snap = await withTimeout(getDoc(masterPartitionRef(companyId)))
@@ -171,12 +157,8 @@ export async function loadRemoteTenantData(
       markRemoteUnavailable()
       throw error
     }
-    console.warn('Firestore load notice:', error)
+    console.error('Firestore load failed:', error)
     markRemoteUnavailable()
-    const msg = error instanceof Error ? error.message : String(error)
-    if (msg.includes('permission') || msg.includes('Permission')) {
-      throw new RemoteStorageUnavailableError('Firebase permissions pending. Using local operational cache.')
-    }
     throw new RemoteStorageUnavailableError('Firebase data load timed out. Saved data was not overwritten.')
   }
 }
@@ -193,7 +175,6 @@ export async function saveRemoteTenantData(
 ): Promise<TenantSnapshot | null> {
   if (!canUseRemoteStorage() || !db) return null
   assertRemoteAvailable()
-  await ensureFirebaseAuthSession()
 
   const ref = masterPartitionRef(companyId)
   const deviceId = getDeviceId()
