@@ -83,8 +83,8 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs"
-import { 
-  Database, 
+import {
+  Database,
   SquaresFour,
   Users,
   Package,
@@ -121,12 +121,12 @@ import SupplierCDRulesPage from '@/components/supplier-cd-rules-page'
 import { toast, Toaster } from 'sonner'
 import { getCurrentFY } from '@/lib/calculations'
 import { cn } from '@/lib/utils'
-import { 
-  createSingleEntityBackup, 
+import {
+  createSingleEntityBackup,
   downloadSingleEntityBackup,
   createMasterBackup,
   downloadMasterBackup,
-  validateBackup, 
+  validateBackup,
   detectBackupType,
   SingleEntityBackupData,
   MasterBackupData
@@ -154,12 +154,12 @@ import {
   hasAppLock,
   hasAuthenticatedSession,
   isAllowedRestoreKey,
+  isMasterAdminIdentifier,
   lockAppSession,
   PermissionLevel,
   persistActiveUserSession,
   safeJsonParse,
   saveUserAccounts,
-  updateAgentAccount,
   UserAccount,
   verifyAppPasscode,
   verifyUserLogin,
@@ -270,7 +270,7 @@ function areObjectsSemanticallyEqual(a: any, b: any): boolean {
     const normalize = (v: any) => (v === null || v === undefined) ? '' : String(v);
     return normalize(a) === normalize(b);
   }
-  
+
   if (Array.isArray(a) && Array.isArray(b)) {
     if (a.length !== b.length) return false;
     const hasIds = a.length > 0 && a[0] && typeof a[0] === 'object' && 'id' in a[0];
@@ -536,7 +536,7 @@ function App() {
     setActiveView('invoice-details')
   }
 
-  
+
   const [isLocked, setIsLocked] = useState(false)
   const [gstPercentage, setGstPercentage] = useState(18)
   const [authMode, setAuthMode] = useState<'setup' | 'unlock'>(() => useServerAuth ? 'unlock' : hasAppLock() ? 'unlock' : 'setup')
@@ -551,7 +551,7 @@ function App() {
   const [authBusy, setAuthBusy] = useState(false)
   const [authHydrated, setAuthHydrated] = useState(!useServerAuth)
   const [tenantHydrated, setTenantHydrated] = useState(false)
-  
+
   const setActiveCompany = (companyName: string) => {
     const business = metadata.businesses.find(b => b.name === companyName)
     if (business && business.id !== metadata.activeCompanyId) {
@@ -582,7 +582,7 @@ function App() {
       saveMetadata(updatedMeta)
     }
   }
-  
+
   const setActiveFY = (fy: string) => {
     if (fy !== metadata.activeFY) {
       setSuppliers([])
@@ -614,7 +614,7 @@ function App() {
       saveMetadata(metadata)
     }
   }, [metadata])
-  
+
   const [activeView, setActiveView] = useState('dashboard')
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     'Sales': true,
@@ -626,7 +626,7 @@ function App() {
     'Discount Configuration': false,
     'Admin': false
   })
-  
+
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false)
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false)
   const [tempGstPercentage, setTempGstPercentage] = useState('')
@@ -673,7 +673,11 @@ function App() {
   const safeGstPercentage = gstPercentage || 18
   const safeBusinessName = activeCompany || 'SK TRADERS'
   const safeCurrentFY = activeFY || getCurrentFY()
-  const isMasterAdmin = currentUser?.role === 'master_admin'
+  const isMasterAdmin = useMemo(() => {
+    if (!currentUser) return false
+    if (currentUser.role === 'master_admin') return true
+    return isMasterAdminIdentifier(currentUser.username)
+  }, [currentUser])
   const availableNavGroups = useMemo(() => {
     if (isMasterAdmin) return [...navGroups, adminNavGroup]
     return navGroups
@@ -767,28 +771,28 @@ function App() {
     const syncBusinesses = async () => {
       const cloudBusinesses = await loadBusinessesFromCloud();
       if (cancelled || !cloudBusinesses.length) return;
-      
+
       setMetadata(prev => {
         const cloudMetadataList = cloudBusinesses.map(cb => cb.metadata);
-        
+
         // Sync details to localStorage
         for (const cb of cloudBusinesses) {
           if (cb.details) {
             localStorage.setItem(`business_details_${cb.metadata.id}`, JSON.stringify(cb.details));
           }
         }
-        
+
         // Check if business list has changed (additions or deletions in cloud)
-        const isDifferent = 
+        const isDifferent =
           prev.businesses.length !== cloudMetadataList.length ||
           prev.businesses.some((b, i) => b.id !== cloudMetadataList[i]?.id || b.name !== cloudMetadataList[i]?.name);
 
         if (isDifferent) {
-          const validActive = cloudMetadataList.find(b => b.id === prev.activeCompanyId) 
-            ? prev.activeCompanyId 
+          const validActive = cloudMetadataList.find(b => b.id === prev.activeCompanyId)
+            ? prev.activeCompanyId
             : cloudMetadataList[0]?.id || prev.activeCompanyId;
           const activeBiz = cloudMetadataList.find(b => b.id === validActive);
-          
+
           const nextMeta: AppMetadata = {
             ...prev,
             businesses: cloudMetadataList,
@@ -979,28 +983,9 @@ function App() {
       setDebitNotes(normalizedData.debitNotes)
       setSalesReturns(normalizedData.salesReturns)
       setPurchaseReturns(normalizedData.purchaseReturns)
-      if (normalizedData.userAccounts) {
+      if (normalizedData.userAccounts && normalizedData.userAccounts.length > 0) {
         setUserAccounts(normalizedData.userAccounts)
         saveUserAccounts(normalizedData.userAccounts)
-        setCurrentUser(prev => {
-          if (!prev) return null
-          const normUser = prev.username.trim().toLowerCase()
-          const match = (normalizedData.userAccounts || []).find(
-            a => a.id === prev.id || a.username.trim().toLowerCase() === normUser
-          )
-          if (!match) return prev
-          const updated: AuthenticatedUser = {
-            ...prev,
-            displayName: match.displayName || prev.displayName,
-            role: match.role || prev.role,
-            permissions: match.permissions || prev.permissions,
-            isActive: match.isActive ?? prev.isActive,
-            allowedCounters: match.allowedCounters || prev.allowedCounters,
-            allowedBusinesses: match.allowedBusinesses || prev.allowedBusinesses
-          }
-          persistActiveUserSession(updated)
-          return updated
-        })
       }
     }
 
@@ -1105,13 +1090,13 @@ function App() {
         if (areObjectsSemanticallyEqual(tenantData, last)) {
           return
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     if (canUseRemoteStorage() && remoteRevisionRef.current[partitionKey] == null && !hasTenantRecords(tenantData)) {
       return
     }
-    
+
     console.log('💾 Scheduling remote save. itemsCount:', items.length, 'expectedRevision:', remoteRevisionRef.current[partitionKey])
 
     writeTenantCache(
@@ -1166,8 +1151,7 @@ function App() {
                   creditNotes: latest.payload.creditNotes || [],
                   debitNotes: latest.payload.debitNotes || [],
                   salesReturns: latest.payload.salesReturns || [],
-                  purchaseReturns: latest.payload.purchaseReturns || [],
-                  userAccounts: latest.payload.userAccounts || []
+                  purchaseReturns: latest.payload.purchaseReturns || []
                 }
                 lastSavedDataRef.current = JSON.stringify(normalizedData)
                 writeTenantCache(metadata.activeCompanyId, partitionKey, normalizedData, latest.revision)
@@ -1186,33 +1170,6 @@ function App() {
                 setDiscountLedgerEntries(normalizedData.discountLedgerEntries)
                 setCashBankCounters(normalizedData.cashBankCounters)
                 setCashBankTransactions(normalizedData.cashBankTransactions)
-                setCreditNotes(normalizedData.creditNotes)
-                setDebitNotes(normalizedData.debitNotes)
-                setSalesReturns(normalizedData.salesReturns)
-                setPurchaseReturns(normalizedData.purchaseReturns)
-                if (normalizedData.userAccounts) {
-                  setUserAccounts(normalizedData.userAccounts)
-                  saveUserAccounts(normalizedData.userAccounts)
-                  setCurrentUser(prev => {
-                    if (!prev) return null
-                    const normUser = prev.username.trim().toLowerCase()
-                    const match = (normalizedData.userAccounts || []).find(
-                      a => a.id === prev.id || a.username.trim().toLowerCase() === normUser
-                    )
-                    if (!match) return prev
-                    const updated: AuthenticatedUser = {
-                      ...prev,
-                      displayName: match.displayName || prev.displayName,
-                      role: match.role || prev.role,
-                      permissions: match.permissions || prev.permissions,
-                      isActive: match.isActive ?? prev.isActive,
-                      allowedCounters: match.allowedCounters || prev.allowedCounters,
-                      allowedBusinesses: match.allowedBusinesses || prev.allowedBusinesses
-                    }
-                    persistActiveUserSession(updated)
-                    return updated
-                  })
-                }
               }
               return
             }
@@ -1284,8 +1241,7 @@ function App() {
         creditNotes: remoteSnapshot.payload.creditNotes || [],
         debitNotes: remoteSnapshot.payload.debitNotes || [],
         salesReturns: remoteSnapshot.payload.salesReturns || [],
-        purchaseReturns: remoteSnapshot.payload.purchaseReturns || [],
-        userAccounts: remoteSnapshot.payload.userAccounts || []
+        purchaseReturns: remoteSnapshot.payload.purchaseReturns || []
       }
       lastSavedDataRef.current = JSON.stringify(normalizedData)
       writeTenantCache(metadata.activeCompanyId, tenantKey, normalizedData, remoteSnapshot.revision)
@@ -1308,29 +1264,6 @@ function App() {
       setDebitNotes(normalizedData.debitNotes)
       setSalesReturns(normalizedData.salesReturns)
       setPurchaseReturns(normalizedData.purchaseReturns)
-      if (normalizedData.userAccounts) {
-        setUserAccounts(normalizedData.userAccounts)
-        saveUserAccounts(normalizedData.userAccounts)
-        setCurrentUser(prev => {
-          if (!prev) return null
-          const normUser = prev.username.trim().toLowerCase()
-          const match = (normalizedData.userAccounts || []).find(
-            a => a.id === prev.id || a.username.trim().toLowerCase() === normUser
-          )
-          if (!match) return prev
-          const updated: AuthenticatedUser = {
-            ...prev,
-            displayName: match.displayName || prev.displayName,
-            role: match.role || prev.role,
-            permissions: match.permissions || prev.permissions,
-            isActive: match.isActive ?? prev.isActive,
-            allowedCounters: match.allowedCounters || prev.allowedCounters,
-            allowedBusinesses: match.allowedBusinesses || prev.allowedBusinesses
-          }
-          persistActiveUserSession(updated)
-          return updated
-        })
-      }
       appendAuditLog('remote_tenant_realtime_update', undefined, tenantKey)
     }) || undefined
   }, [metadata.activeCompanyId, tenantHydrated, tenantKey, useServerAuth, canSyncRemoteTenant])
@@ -1497,7 +1430,7 @@ function App() {
       setExpenseEntries([])
       setFixedSchemes([])
       setMTBookings([])
-      
+
       const partitionKey = tenantKey
       const emptyTenantData: TenantData = {
         suppliers: [],
@@ -1524,7 +1457,7 @@ function App() {
       localStorage.removeItem(cashBankKey)
       appendAuditLog('tenant_data_cleared', { cashBankCleared: true }, partitionKey)
       void appendServerAuditLog(metadata.activeCompanyId, partitionKey, 'tenant_data_cleared', { cashBankCleared: true })
-      
+
       toast.success('All data cleared successfully')
     } catch (error) {
       toast.error('Failed to clear data')
@@ -1545,7 +1478,7 @@ function App() {
     reader.onload = (e) => {
       try {
         const data = JSON.parse(e.target?.result as string)
-        
+
         if (data.type === 'MASTER_DATA_BACKUP' && data.storageData) {
           const restoredKeys = JSON.parse(localStorage.getItem('restored_keys') || '{}')
           Object.keys(data.storageData).forEach((key) => {
@@ -1557,17 +1490,17 @@ function App() {
           localStorage.setItem('restored_keys', JSON.stringify(restoredKeys))
           appendAuditLog('legacy_master_restore')
           void appendServerAuditLog(metadata.activeCompanyId, tenantKey, 'legacy_master_restore')
-          
+
           setRestoreDialogOpen(false)
           toast.success('Master backup restored successfully!')
-          
+
           setTimeout(() => {
             window.location.reload()
           }, 500)
-          
+
           return
         }
-        
+
         if (!validateBackup(data)) {
           toast.error('Invalid backup file format')
           return
@@ -1604,7 +1537,7 @@ function App() {
       }
     }
     reader.readAsText(file)
-    
+
     if (fileInputRef.current) {
       fileInputRef.current.value = ''
     }
@@ -1647,9 +1580,9 @@ function App() {
         return
       }
     }
-    
+
     setSettingsDialogOpen(false)
-    
+
     if (hasChanges) {
       toast.success('Settings updated successfully')
     }
@@ -1664,33 +1597,33 @@ function App() {
       toast.error('Please enter a business name')
       return
     }
-    
+
     const businessId = newBusinessName.toLowerCase().replace(/[^a-z0-9]+/g, '_')
-    
+
     if (metadata.businesses.find(b => b.id === businessId)) {
       toast.error('A business with this name already exists')
       return
     }
-    
+
     const newBusiness: BusinessMetadata = {
       id: businessId,
       name: newBusinessName.trim(),
       startFY: newBusinessStartFY
     }
-    
+
     const updatedMetadata = {
       ...metadata,
       businesses: [...metadata.businesses, newBusiness],
       activeCompanyId: businessId,
       activeFY: newBusinessStartFY
     }
-    
+
     setMetadata(updatedMetadata)
     saveMetadata(updatedMetadata)
     saveBusinessToCloud(businessId, newBusiness, {})
     appendAuditLog('business_created', { businessId, businessName: newBusiness.name })
     void appendServerAuditLog(businessId, getTenantKey(businessId), 'business_created', { businessId, businessName: newBusiness.name })
-    
+
     setSuppliers([])
     setCustomers([])
     setItems([])
@@ -1705,11 +1638,11 @@ function App() {
     setMTBookings([])
     setCashBankCounters([])
     setCashBankTransactions([])
-    
+
     setNewBusinessName('')
     setNewBusinessStartFY(getCurrentFY())
     setAddBusinessDialogOpen(false)
-    
+
     toast.success(`Business "${newBusiness.name}" created successfully`)
   }
 
@@ -1722,7 +1655,7 @@ function App() {
       toast.error('Please enter a business name')
       return
     }
-    
+
     const updatedMetadata = {
       ...metadata,
       businesses: metadata.businesses.map(b =>
@@ -1731,12 +1664,12 @@ function App() {
           : b
       )
     }
-    
+
     setMetadata(updatedMetadata)
     saveMetadata(updatedMetadata)
     appendAuditLog('business_renamed', { businessId: metadata.activeCompanyId, newName: editBusinessName.trim() })
     void appendServerAuditLog(metadata.activeCompanyId, tenantKey, 'business_renamed', { businessId: metadata.activeCompanyId, newName: editBusinessName.trim() })
-    
+
     setEditBusinessDialogOpen(false)
     toast.success('Business name updated successfully')
   }
@@ -1750,21 +1683,21 @@ function App() {
       toast.error('Cannot delete the last business')
       return
     }
-    
+
     const businessToDelete = metadata.businesses.find(b => b.id === metadata.activeCompanyId)
-    
+
     deleteTenantData(metadata.activeCompanyId)
-    
+
     const remainingBusinesses = metadata.businesses.filter(b => b.id !== metadata.activeCompanyId)
     const newActive = remainingBusinesses[0]
-    
+
     const updatedMetadata = {
       ...metadata,
       businesses: remainingBusinesses,
       activeCompanyId: newActive.id,
       activeFY: newActive.startFY
     }
-    
+
     setMetadata(updatedMetadata)
     saveMetadata(updatedMetadata)
     deleteBusinessFromCloud(businessToDelete?.id || metadata.activeCompanyId)
@@ -1776,7 +1709,7 @@ function App() {
       businessId: businessToDelete?.id,
       businessName: businessToDelete?.name
     })
-    
+
     setSuppliers([])
     setCustomers([])
     setItems([])
@@ -1791,7 +1724,7 @@ function App() {
     setMTBookings([])
     setCashBankCounters([])
     setCashBankTransactions([])
-    
+
     setEditBusinessDialogOpen(false)
     toast.success(`Business "${businessToDelete?.name}" deleted successfully`)
   }
@@ -1814,7 +1747,7 @@ function App() {
     setActiveView(viewId)
     setMobileSidebarOpen(false)
   }
-  
+
   const handleGroupToggle = (groupTitle: string, isOpen: boolean) => {
     if (isOpen) {
       setOpenGroups(prev => {
@@ -1921,7 +1854,7 @@ function App() {
           void appendServerAuditLog(metadata.activeCompanyId, tenantKey, 'master_restore', { keyCount: Object.keys(parsed.storageData).length })
           toast.success("Master Backup Detected! All businesses restored. Reloading...");
           setTimeout(() => window.location.reload(), 1200);
-        } 
+        }
         // 2. SINGLE ENTITY RESTORE (Fail-Safe Implementation)
         else if (parsed.company && parsed.fy && parsed.data) {
           const companyName = parsed.company.trim();
@@ -1943,7 +1876,7 @@ function App() {
           try {
             const metadataRaw = localStorage.getItem('app_metadata');
             let currentMetadata: AppMetadata;
-            
+
             if (metadataRaw) {
               currentMetadata = JSON.parse(metadataRaw);
             } else {
@@ -1967,12 +1900,12 @@ function App() {
                 startFY: financialYear
               };
               currentMetadata.businesses.push(newBusiness);
-              
+
               if (!currentMetadata.activeCompanyId) {
                 currentMetadata.activeCompanyId = companyId;
                 currentMetadata.activeFY = financialYear;
               }
-              
+
               saveMetadata(currentMetadata);
             }
 
@@ -1989,7 +1922,7 @@ function App() {
           appendAuditLog('single_smart_restore', { companyName, companyId, financialYear }, getTenantKey(companyId))
           void appendServerAuditLog(companyId, getTenantKey(companyId), 'single_smart_restore', { companyName, companyId, financialYear })
           setTimeout(() => window.location.reload(), 1200);
-        } 
+        }
         else {
           toast.error("Unrecognized backup file format.");
         }
@@ -1998,7 +1931,7 @@ function App() {
       }
     };
     reader.readAsText(file);
-    
+
     if (e.target) {
       e.target.value = ''
     }
@@ -2125,13 +2058,13 @@ function App() {
           )
         case 'suppliers':
           return (
-            <SuppliersPage 
-              suppliers={safeSuppliers} 
-              setSuppliers={setSuppliers} 
+            <SuppliersPage
+              suppliers={safeSuppliers}
+              setSuppliers={setSuppliers}
               invoices={safeInvoices}
               payments={safePayments}
-              isLocked={isViewReadOnly('suppliers')} 
-              changedBy={currentUser?.displayName || currentUser?.username || 'Master Admin'} 
+              isLocked={isViewReadOnly('suppliers')}
+              changedBy={currentUser?.displayName || currentUser?.username || 'Master Admin'}
             />
           )
         case 'customers':
@@ -2414,14 +2347,14 @@ function App() {
         case 'cash-bank-voucher':
         case 'cash-bank-ledger':
           return (
-            <CashBankManagement 
-              counters={visibleCashBankCounters} 
-              transactions={visibleCashBankTransactions} 
+            <CashBankManagement
+              counters={visibleCashBankCounters}
+              transactions={visibleCashBankTransactions}
               onUpdateAll={(c, t) => {
                 setCashBankCounters(c)
                 setCashBankTransactions(t)
               }}
-              isLocked={isViewReadOnly('cash-bank-master')} 
+              isLocked={isViewReadOnly('cash-bank-master')}
             />
           )
         case 'customer-credit-notes':
@@ -2490,34 +2423,16 @@ function App() {
                 })
                 setUserAccounts(getUserAccounts())
               } : undefined}
-              onSaveAgent={useServerAuth ? async (input) => {
-                if (canUseFirebaseAuth()) {
-                  try {
-                    await updateRemoteUserProfile({
-                      id: input.id,
-                      companyId: metadata.activeCompanyId,
-                      displayName: input.displayName,
-                      role: 'agent',
-                      permissions: input.permissions,
-                      isActive: input.isActive,
-                      allowedCounters: input.allowedCounters,
-                      allowedBusinesses: input.allowedBusinesses
-                    })
-                  } catch (e) {
-                    console.warn('Remote profile update warning:', e)
-                  }
-                }
-                const nextAccounts = await updateAgentAccount(input.id, {
-                  displayName: input.displayName,
-                  permissions: input.permissions,
-                  isActive: input.isActive,
-                  allowedCounters: input.allowedCounters,
-                  allowedBusinesses: input.allowedBusinesses
-                })
-                setUserAccounts(nextAccounts)
-                saveUserAccounts(nextAccounts)
-                return nextAccounts
-              } : undefined}
+              onSaveAgent={useServerAuth ? (input) => updateRemoteUserProfile({
+                id: input.id,
+                companyId: metadata.activeCompanyId,
+                displayName: input.displayName,
+                role: 'agent',
+                permissions: input.permissions,
+                isActive: input.isActive,
+                allowedCounters: input.allowedCounters,
+                allowedBusinesses: input.allowedBusinesses
+              }) : undefined}
             />
           )
         default:
@@ -2591,7 +2506,7 @@ function App() {
     if (sidebar) {
       sidebar.addEventListener('mouseenter', handleMouseEnter)
       sidebar.addEventListener('mouseleave', handleMouseLeave)
-      
+
       return () => {
         sidebar.removeEventListener('mouseenter', handleMouseEnter)
         sidebar.removeEventListener('mouseleave', handleMouseLeave)
@@ -2629,8 +2544,8 @@ function App() {
               {useServerAuth
                 ? 'Use your Firebase Auth email and password. Roles are verified on the server.'
                 : authMode === 'setup'
-                ? 'Create the master admin account before adding agents.'
-                : 'Enter your username and passcode to access company data.'}
+                  ? 'Create the master admin account before adding agents.'
+                  : 'Enter your username and passcode to access company data.'}
             </p>
           </div>
 
@@ -2731,7 +2646,7 @@ function App() {
           />
         )}
       </AnimatePresence>
-      
+
       {(settingsDialogOpen || restoreDialogOpen) && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -2746,7 +2661,7 @@ function App() {
           </div>
         </motion.div>
       )}
-      
+
       <div className="flex h-screen bg-background overflow-hidden">
         <AppSidebar
           onLogout={handleLogout}
@@ -2774,67 +2689,67 @@ function App() {
           canManageSystem={isMasterAdmin}
         />
 
-      <main className="flex-1 flex flex-col overflow-hidden bg-[#f6f9fc]">
-        <AppHeader
-          sidebarExpanded={sidebarExpanded}
-          setSidebarExpanded={setSidebarExpanded}
-          mobileSidebarOpen={mobileSidebarOpen}
-          setMobileSidebarOpen={setMobileSidebarOpen}
-          onLockApp={handleLockApp}
-          activeView={activeView}
-          safeBusinessName={safeBusinessName}
-          safeCurrentFY={safeCurrentFY}
-          setActiveFY={setActiveFY}
-          safeIsLocked={safeIsLocked}
-          currentUserLabel={currentUser?.displayName || 'Guest'}
-          currentUserRole={isMasterAdmin ? 'Master' : 'Agent'}
-          setShortcutsDialogOpen={setShortcutsDialogOpen}
-          onLogout={handleLogout}
-        />
+        <main className="flex-1 flex flex-col overflow-hidden bg-[#f6f9fc]">
+          <AppHeader
+            sidebarExpanded={sidebarExpanded}
+            setSidebarExpanded={setSidebarExpanded}
+            mobileSidebarOpen={mobileSidebarOpen}
+            setMobileSidebarOpen={setMobileSidebarOpen}
+            onLockApp={handleLockApp}
+            activeView={activeView}
+            safeBusinessName={safeBusinessName}
+            safeCurrentFY={safeCurrentFY}
+            setActiveFY={setActiveFY}
+            safeIsLocked={safeIsLocked}
+            currentUserLabel={currentUser?.displayName || 'Guest'}
+            currentUserRole={isMasterAdmin ? 'Master' : 'Agent'}
+            setShortcutsDialogOpen={setShortcutsDialogOpen}
+            onLogout={handleLogout}
+          />
 
-        <AppDialogs
-          shortcutsDialogOpen={shortcutsDialogOpen}
-          setShortcutsDialogOpen={setShortcutsDialogOpen}
-          addBusinessDialogOpen={addBusinessDialogOpen}
-          setAddBusinessDialogOpen={setAddBusinessDialogOpen}
-          newBusinessName={newBusinessName}
-          setNewBusinessName={setNewBusinessName}
-          newBusinessStartFY={newBusinessStartFY}
-          setNewBusinessStartFY={setNewBusinessStartFY}
-          handleAddBusiness={handleAddBusiness}
-          editBusinessDialogOpen={editBusinessDialogOpen}
-          setEditBusinessDialogOpen={setEditBusinessDialogOpen}
-          editBusinessName={editBusinessName}
-          setEditBusinessName={setEditBusinessName}
-          handleEditBusiness={handleEditBusiness}
-          handleDeleteBusiness={handleDeleteBusiness}
-          activeCompany={activeCompany}
-          metadata={metadata}
-          settingsDialogOpen={settingsDialogOpen}
-          setSettingsDialogOpen={setSettingsDialogOpen}
-          tempGstPercentage={tempGstPercentage}
-          setTempGstPercentage={setTempGstPercentage}
-          safeGstPercentage={safeGstPercentage}
-          safeIsLocked={safeIsLocked}
-          handleToggleLock={handleToggleLock}
-          handleSettingsSave={handleSettingsSave}
-          totalDataCount={totalDataCount}
-          dataCounts={dataCounts}
-          handleClearAllData={handleClearAllData}
-        />
+          <AppDialogs
+            shortcutsDialogOpen={shortcutsDialogOpen}
+            setShortcutsDialogOpen={setShortcutsDialogOpen}
+            addBusinessDialogOpen={addBusinessDialogOpen}
+            setAddBusinessDialogOpen={setAddBusinessDialogOpen}
+            newBusinessName={newBusinessName}
+            setNewBusinessName={setNewBusinessName}
+            newBusinessStartFY={newBusinessStartFY}
+            setNewBusinessStartFY={setNewBusinessStartFY}
+            handleAddBusiness={handleAddBusiness}
+            editBusinessDialogOpen={editBusinessDialogOpen}
+            setEditBusinessDialogOpen={setEditBusinessDialogOpen}
+            editBusinessName={editBusinessName}
+            setEditBusinessName={setEditBusinessName}
+            handleEditBusiness={handleEditBusiness}
+            handleDeleteBusiness={handleDeleteBusiness}
+            activeCompany={activeCompany}
+            metadata={metadata}
+            settingsDialogOpen={settingsDialogOpen}
+            setSettingsDialogOpen={setSettingsDialogOpen}
+            tempGstPercentage={tempGstPercentage}
+            setTempGstPercentage={setTempGstPercentage}
+            safeGstPercentage={safeGstPercentage}
+            safeIsLocked={safeIsLocked}
+            handleToggleLock={handleToggleLock}
+            handleSettingsSave={handleSettingsSave}
+            totalDataCount={totalDataCount}
+            dataCounts={dataCounts}
+            handleClearAllData={handleClearAllData}
+          />
 
-        <div className="flex-1 overflow-auto app-workspace bg-[#f6f9fc]">
-          <motion.div 
-            className="px-responsive-xl py-responsive-lg app-content-frame"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.2, delay: 0.1 }}
-          >
-            {renderContent()}
-          </motion.div>
-        </div>
-      </main>
-    </div>
+          <div className="flex-1 overflow-auto app-workspace bg-[#f6f9fc]">
+            <motion.div
+              className="px-responsive-xl py-responsive-lg app-content-frame"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.2, delay: 0.1 }}
+            >
+              {renderContent()}
+            </motion.div>
+          </div>
+        </main>
+      </div>
     </>
   )
 }

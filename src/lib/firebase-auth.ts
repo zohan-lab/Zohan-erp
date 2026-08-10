@@ -17,7 +17,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore'
 import { firebaseConfig, auth, db, isFirebaseAuthEnabled, isFirebaseConfigured } from './firebase-client'
-import { AuthenticatedUser, PermissionMap, UserAccount, getCurrentUser, getUserAccounts, persistActiveUserSession } from './security-utils'
+import { AuthenticatedUser, PermissionMap, UserAccount, isMasterAdminIdentifier } from './security-utils'
 
 // ─── Error Classes ────────────────────────────────────────────────────────────
 
@@ -60,11 +60,12 @@ function withTimeout<T>(promise: Promise<T>, ms = 20000): Promise<T> {
 }
 
 function toAuthenticatedUser(uid: string, profile: FirestoreUserProfile): AuthenticatedUser {
+  const isMaster = profile.role === 'master_admin' || isMasterAdminIdentifier(profile.email)
   return {
     id: uid,
     username: profile.email,
     displayName: profile.displayName || profile.email,
-    role: profile.role,
+    role: isMaster ? 'master_admin' : 'agent',
     permissions: profile.permissions || {},
     isActive: profile.isActive,
     allowedCounters: profile.allowedCounters || [],
@@ -75,27 +76,8 @@ function toAuthenticatedUser(uid: string, profile: FirestoreUserProfile): Authen
 function firebaseUserToAuthenticatedUser(fbUser: FirebaseUser): AuthenticatedUser | null {
   const email = fbUser.email?.trim().toLowerCase()
   if (!email) return null
-
-  const localAccount = getUserAccounts().find(
-    a => a.username.toLowerCase() === email || a.username.toLowerCase().split('@')[0] === email.split('@')[0]
-  )
-  if (localAccount) {
-    const user: AuthenticatedUser = {
-      id: fbUser.uid || localAccount.id,
-      username: email,
-      displayName: localAccount.displayName || fbUser.displayName || email,
-      role: localAccount.role,
-      permissions: localAccount.permissions || {},
-      isActive: localAccount.isActive,
-      allowedCounters: localAccount.allowedCounters || [],
-      allowedBusinesses: localAccount.allowedBusinesses || []
-    }
-    persistActiveUserSession(user)
-    return user
-  }
-
-  const isMaster = email.startsWith('admin') || email.includes('master')
-  const user: AuthenticatedUser = {
+  const isMaster = isMasterAdminIdentifier(email)
+  return {
     id: fbUser.uid,
     username: email,
     displayName: fbUser.displayName || email,
@@ -103,8 +85,6 @@ function firebaseUserToAuthenticatedUser(fbUser: FirebaseUser): AuthenticatedUse
     permissions: {},
     isActive: true
   }
-  persistActiveUserSession(user)
-  return user
 }
 
 async function fetchFirestoreProfile(uid: string): Promise<FirestoreUserProfile | null> {
@@ -125,6 +105,7 @@ async function fetchFirestoreProfile(uid: string): Promise<FirestoreUserProfile 
 export async function getRemoteCurrentUser(): Promise<AuthenticatedUser | null> {
   if (!canUseFirebaseAuth() || !auth) return null
 
+  // Wait for auth to settle (avoids race on page load)
   const fbUser = await withTimeout(
     new Promise<FirebaseUser | null>((resolve) => {
       const unsub = onAuthStateChanged(auth!, (user) => {
@@ -137,7 +118,6 @@ export async function getRemoteCurrentUser(): Promise<AuthenticatedUser | null> 
   if (!fbUser) return null
 
   let profile = await fetchFirestoreProfile(fbUser.uid)
-
   if (!profile && fbUser.email && db) {
     try {
       const snap = await getDocs(collection(db, 'users'))
@@ -155,17 +135,10 @@ export async function getRemoteCurrentUser(): Promise<AuthenticatedUser | null> 
       await signOut(auth!)
       return null
     }
-    const user = toAuthenticatedUser(fbUser.uid, profile)
-    persistActiveUserSession(user)
-    return user
+    return toAuthenticatedUser(fbUser.uid, profile)
   }
 
-  const cachedUser = getCurrentUser()
-  if (cachedUser && (cachedUser.id === fbUser.uid || cachedUser.username.toLowerCase() === fbUser.email?.toLowerCase())) {
-    persistActiveUserSession(cachedUser)
-    return cachedUser
-  }
-
+  // No Firestore profile yet — use Firebase user metadata as fallback
   return firebaseUserToAuthenticatedUser(fbUser)
 }
 
@@ -188,13 +161,9 @@ export async function signInRemoteUser(
         await signOut(auth)
         throw new Error('Your account is inactive. Contact the admin.')
       }
-      const user = toAuthenticatedUser(credential.user.uid, profile)
-      persistActiveUserSession(user)
-      return user
+      return toAuthenticatedUser(credential.user.uid, profile)
     }
-    const user = firebaseUserToAuthenticatedUser(credential.user)
-    if (user) persistActiveUserSession(user)
-    return user
+    return firebaseUserToAuthenticatedUser(credential.user)
   } catch (error: unknown) {
     if (error instanceof RemoteAuthServiceUnavailableError) throw error
     const code = (error as { code?: string }).code
@@ -202,8 +171,8 @@ export async function signInRemoteUser(
       code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found'
         ? 'Incorrect email or password.'
         : code === 'auth/too-many-requests'
-        ? 'Too many login attempts. Try again later.'
-        : (error instanceof Error ? error.message : 'Login failed.')
+          ? 'Too many login attempts. Try again later.'
+          : (error instanceof Error ? error.message : 'Login failed.')
     throw new Error(msg)
   }
 }
