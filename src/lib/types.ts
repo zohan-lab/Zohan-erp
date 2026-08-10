@@ -159,7 +159,6 @@ export interface PurchaseInvoice {
   invoiceDate: string
   orderDate?: string
   items?: InvoiceItem[]
-  quantityMT: number
   invoiceAmount: number
   additionalCost?: number
   additionalCostBasicRate?: number
@@ -279,7 +278,6 @@ export interface SalesInvoice {
   invoiceNo: string
   invoiceDate: string
   items?: InvoiceItem[]
-  quantityMT: number
   invoiceAmount: number
   additionalCost?: number
   additionalCostBasicRate?: number
@@ -407,7 +405,6 @@ export interface SalesReturn {
   returnDate: string
   amount: number
   items?: InvoiceItem[]
-  quantityMT?: number
   additionalCost?: number
   roundOffAdjustment?: number
   invoiceRef?: string
@@ -423,7 +420,6 @@ export interface PurchaseReturn {
   returnDate: string
   amount: number
   items?: InvoiceItem[]
-  quantityMT?: number
   additionalCost?: number
   roundOffAdjustment?: number
   invoiceRef?: string

@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { ArrowLeft, CaretLeft, Plus, PencilSimple, Trash, MagnifyingGlass, Barcode, Package, UserPlus, X, FileText, Check, Receipt, Wallet, TrendUp, SlidersHorizontal } from '@phosphor-icons/react'
 import { formatCurrency, formatMT, getFYMonths, getFYFromDate, calculateRateWithGst, calculateBasicRateFromInclusive, calculateInvoiceFinalAmount, calculateInvoiceItemsTotals } from '@/lib/calculations'
-import { toBaseQuantity } from '@/lib/unit-conversion-service'
+import { toBaseQuantity, getInvoiceQtyForUnit } from '@/lib/unit-conversion-service'
 import { startOfMonth, endOfMonth, isWithinInterval, parseISO, format } from 'date-fns'
 import { toast } from 'sonner'
 import { PartyEditorDialog } from '@/components/party-editor-dialog'
@@ -72,7 +72,7 @@ export default function PurchaseReturnPage({
   }, [purchaseReturns, fromDate, toDate, selectedSupplierFilter])
   
   const totalAmount = filteredReturns.reduce((sum, p) => sum + p.amount, 0)
-  const totalQuantityMT = filteredReturns.reduce((sum, p) => sum + (p.quantityMT || 0), 0)
+  const totalQuantityMT = filteredReturns.reduce((sum, p) => sum + getInvoiceQtyForUnit(p, 'MT', items), 0)
 
   // Form State
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>('')
@@ -337,7 +337,6 @@ export default function PurchaseReturnPage({
       returnDate,
       amount: calculatedTotalAmount,
       items: sanitizedReturnItems,
-      quantityMT: totalReturnMT,
       additionalCost,
       roundOffAdjustment,
       invoiceRef: finalReturnNo,

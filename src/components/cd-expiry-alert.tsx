@@ -62,7 +62,7 @@ export default function CDExpiryAlert({
       const daysFromInvoice = Math.max(0, differenceInDays(today, invoiceDate))
       
       // Calculate quantity display string (e.g. "30 MT, 15 BOX")
-      let quantityDisplay = formatMT(invoice.quantityMT)
+      let quantityDisplay = formatMT(getInvoiceQtyForUnit(invoice, 'MT'))
       if (invoice.items && Array.isArray(invoice.items) && invoice.items.length > 0) {
         const unitMap = new Map<string, number>()
         invoice.items.forEach(item => {
@@ -109,7 +109,7 @@ export default function CDExpiryAlert({
                   supplierName: supplier.name,
                   pendingAmount,
                   quantityDisplay,
-                  pendingQuantityMT: invoice.quantityMT,
+                  pendingQuantityMT: getInvoiceQtyForUnit(invoice, 'MT'),
                   currentSlabDays: currentSlab.maxDays,
                   currentSlabRate: currentSlab.percentageRate,
                   nextSlabDays: -1,
@@ -128,7 +128,7 @@ export default function CDExpiryAlert({
                   supplierName: supplier.name,
                   pendingAmount,
                   quantityDisplay,
-                  pendingQuantityMT: invoice.quantityMT,
+                  pendingQuantityMT: getInvoiceQtyForUnit(invoice, 'MT'),
                   currentSlabDays: currentSlab.maxDays,
                   currentSlabRate: currentSlab.percentageRate,
                   nextSlabDays: nextSlab.minDays,
@@ -193,7 +193,7 @@ export default function CDExpiryAlert({
                   supplierName: supplier.name,
                   pendingAmount,
                   quantityDisplay,
-                  pendingQuantityMT: invoice.quantityMT,
+                  pendingQuantityMT: getInvoiceQtyForUnit(invoice, 'MT'),
                   currentSlabDays: currentSlab.maxDays,
                   currentSlabRate: currentSlab.ratePerMT,
                   nextSlabDays: -1,
@@ -212,7 +212,7 @@ export default function CDExpiryAlert({
                   supplierName: supplier.name,
                   pendingAmount,
                   quantityDisplay,
-                  pendingQuantityMT: invoice.quantityMT,
+                  pendingQuantityMT: getInvoiceQtyForUnit(invoice, 'MT'),
                   currentSlabDays: currentSlab.maxDays,
                   currentSlabRate: currentSlab.ratePerMT,
                   nextSlabDays: nextSlab.minDays,

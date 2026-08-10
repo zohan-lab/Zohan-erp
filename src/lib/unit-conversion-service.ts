@@ -270,7 +270,7 @@ export function convertItemQuantity(
  * Incompatible line items return 0 quantity for that target unit.
  */
 export function getInvoiceQtyForUnit(
-  inv: { items?: any[]; quantityMT?: number },
+  inv: { items?: any[] },
   targetUnit: string = 'MT',
   itemMap?: Map<string, Item> | Item[]
 ): number {
@@ -292,9 +292,5 @@ export function getInvoiceQtyForUnit(
     return totalQty
   }
 
-  // Fallback if no items array
-  const rawMT = inv.quantityMT || 0
-  if (target === 'ALL' || target === 'ANY' || target === 'MT') return rawMT
-  if (target === 'KG') return rawMT * 1000
   return 0
 }

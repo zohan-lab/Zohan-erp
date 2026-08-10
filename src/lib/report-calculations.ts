@@ -74,7 +74,7 @@ export interface CDAtRisk {
   invoiceDate: string
   supplierId: string
   supplierName: string
-  quantityMT: number
+  totalQuantity: number
   invoiceAmount: number
   paidAmount: number
   pendingAmount: number
@@ -491,7 +491,7 @@ export function calculateCDAtRisk(
         invoiceDate: invoice.invoiceDate,
         supplierId: supplier.id,
         supplierName: supplier.name,
-        quantityMT: invoice.quantityMT,
+        totalQuantity: getInvoiceQtyForUnit(invoice, 'MT'),
         invoiceAmount: invoice.invoiceAmount,
         paidAmount: allocatedAmount,
         pendingAmount,

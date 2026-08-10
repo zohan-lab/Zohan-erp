@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { ArrowLeft, CaretLeft, Plus, PencilSimple, Trash, MagnifyingGlass, Barcode, Package, UserPlus, X, FileText, Check, Receipt, Wallet, TrendUp, SlidersHorizontal, Funnel, ArrowSquareOut, CalendarBlank } from '@phosphor-icons/react'
 import { formatCurrency, formatMT, getFYMonths, getFYFromDate, calculateRateWithGst, calculateBasicRateFromInclusive, calculateInvoiceFinalAmount } from '@/lib/calculations'
-import { toBaseQuantity } from '@/lib/unit-conversion-service'
+import { toBaseQuantity, getInvoiceQtyForUnit } from '@/lib/unit-conversion-service'
 import { startOfMonth, endOfMonth, isWithinInterval, parseISO, format } from 'date-fns'
 import { toast } from 'sonner'
 import { PartyEditorDialog } from '@/components/party-editor-dialog'
@@ -94,7 +94,7 @@ export default function SalesReturnPage({
   }, [salesReturns, fromDate, toDate, selectedCustomerFilter])
   
   const totalAmount = filteredReturns.reduce((sum, p) => sum + p.amount, 0)
-  const totalQuantityMT = filteredReturns.reduce((sum, p) => sum + (p.quantityMT || 0), 0)
+  const totalQuantityMT = filteredReturns.reduce((sum, p) => sum + getInvoiceQtyForUnit(p, 'MT', items), 0)
 
   // Calculations for active form
   const itemsSubtotal = useMemo(() => {
@@ -334,7 +334,6 @@ export default function SalesReturnPage({
       returnDate,
       amount: calculatedTotalAmount,
       items: sanitizedReturnItems,
-      quantityMT: totalReturnMT,
       additionalCost,
       roundOffAdjustment,
       invoiceRef: finalReturnNo,

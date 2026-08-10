@@ -34,6 +34,7 @@ import {
 } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { formatCurrency, calculateExpenseTotals, applyCounterBalanceDelta } from '@/lib/calculations'
+import { getInvoiceQtyForUnit } from '@/lib/unit-conversion-service'
 
 interface ExpenseEntriesPageProps {
   expenseEntries: ExpenseEntry[]
@@ -533,7 +534,7 @@ export default function ExpenseEntriesPage({
                                       Invoice #{inv.invoiceNo} <span className="font-medium text-slate-600">· {supp?.name || 'Supplier'}</span>
                                     </p>
                                     <p className="text-[10px] text-slate-400">
-                                      Date: {inv.invoiceDate} | Qty: {inv.quantityMT} MT
+                                      Date: {inv.invoiceDate} | Qty: {getInvoiceQtyForUnit(inv, 'MT')} MT
                                     </p>
                                   </div>
                                 </div>

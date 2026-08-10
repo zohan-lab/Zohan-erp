@@ -12,6 +12,7 @@ import {
   InvoiceItem
 } from './types'
 import { formatCurrency, formatMT } from './calculations'
+import { getInvoiceQtyForUnit } from './unit-conversion-service'
 import { amountToWords } from './number-to-words'
 
 
@@ -944,7 +945,7 @@ interface StyledInvoiceOptions {
   phone?: string
   items?: InvoiceItem[]
   itemMap: Map<string, Item>
-  quantityMT: number
+  quantityMT?: number
   invoiceAmount: number
   additionalCost?: number
   additionalCostRemarks?: string
@@ -1265,7 +1266,7 @@ export function exportPurchaseInvoicePDF(
     phone: options.phone,
     items: invoice.items,
     itemMap,
-    quantityMT: invoice.quantityMT,
+    quantityMT: getInvoiceQtyForUnit(invoice, 'MT', itemMap),
     invoiceAmount: invoice.invoiceAmount,
     additionalCost: invoice.additionalCost,
     additionalCostRemarks: invoice.additionalCostRemarks,
@@ -1301,7 +1302,7 @@ export function exportSalesInvoicePDF(
     phone: options.phone,
     items: invoice.items,
     itemMap,
-    quantityMT: invoice.quantityMT,
+    quantityMT: getInvoiceQtyForUnit(invoice, 'MT', itemMap),
     invoiceAmount: invoice.invoiceAmount,
     additionalCost: invoice.additionalCost,
     additionalCostRemarks: invoice.additionalCostRemarks,

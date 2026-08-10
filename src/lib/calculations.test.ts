@@ -17,10 +17,12 @@ function invoice(overrides: Partial<PurchaseInvoice>): PurchaseInvoice {
     supplierId: 'sup-1',
     invoiceNo: 'PI-001',
     invoiceDate: '2026-04-01',
-    quantityMT: 10,
     invoiceAmount: 1000,
     fy: 'FY2026-27',
     createdAt: new Date('2026-04-01T08:00:00Z').getTime(),
+    items: [
+      { itemId: 'item-1', enteredQuantity: 10, enteredUnit: 'MT', baseQuantity: 10000, rate: 100, amount: 1000 }
+    ],
     ...overrides
   }
 }
@@ -110,8 +112,8 @@ describe('annual discount calculations', () => {
       }
     ]
     const invoices = [
-      invoice({ id: 'inv-a', quantityMT: 40 }),
-      invoice({ id: 'inv-b', quantityMT: 10 })
+      invoice({ id: 'inv-a', items: [{ itemId: 'item-1', enteredQuantity: 40, enteredUnit: 'MT', baseQuantity: 40000, rate: 100, amount: 4000 }] }),
+      invoice({ id: 'inv-b', items: [{ itemId: 'item-1', enteredQuantity: 10, enteredUnit: 'MT', baseQuantity: 10000, rate: 100, amount: 1000 }] })
     ]
 
     const result = calculateExpectedAnnualDiscounts(invoices, suppliers)
@@ -185,7 +187,6 @@ describe('unit conversion and scheme discount calculation', () => {
       supplierId: 'sup-whisky',
       invoiceNo: 'PI-W1',
       invoiceDate: '2026-04-05',
-      quantityMT: 0.625,
       invoiceAmount: 10000,
       fy: 'FY2026-27',
       items: [
@@ -250,7 +251,6 @@ describe('unit conversion and scheme discount calculation', () => {
       supplierId: 'sup-screws',
       invoiceNo: 'PI-S1',
       invoiceDate: '2026-04-05',
-      quantityMT: 0.1,
       invoiceAmount: 5000,
       fy: 'FY2026-27',
       items: [
@@ -311,7 +311,6 @@ describe('unit conversion and scheme discount calculation', () => {
       supplierId: 'sup-steel',
       invoiceNo: 'INV-20',
       invoiceDate: '2026-04-10',
-      quantityMT: 20,
       invoiceAmount: 1000000,
       fy: 'FY2026-27',
       items: [
@@ -374,7 +373,6 @@ describe('unit conversion and scheme discount calculation', () => {
       supplierId: 'sup-kg-booking',
       invoiceNo: 'INV-20-KG',
       invoiceDate: '2026-04-10',
-      quantityMT: 20,
       invoiceAmount: 1000000,
       fy: 'FY2026-27',
       items: [
@@ -434,7 +432,6 @@ describe('unit conversion and scheme discount calculation', () => {
       supplierId: 'sup-mixed',
       invoiceNo: 'INV-MT-1',
       invoiceDate: '2026-04-10',
-      quantityMT: 50,
       invoiceAmount: 2500000,
       fy: 'FY2026-27',
       items: [
@@ -504,7 +501,6 @@ describe('unit conversion and scheme discount calculation', () => {
       supplierId: 'sup-exhaustion',
       invoiceNo: 'INV-15MT',
       invoiceDate: '2026-04-10',
-      quantityMT: 15,
       invoiceAmount: 750000,
       fy: 'FY2026-27',
       items: [

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { PurchaseInvoice, Supplier, Item, InvoiceItem, Payment, SalesInvoice, PurchaseReturn, SalesReturn, FixedScheme, ReceivedDiscount, ExpenseEntry, ExpenseType, MTBooking } from '@/lib/types'
 import { calculateItemStockMap } from '@/lib/report-calculations'
-import { normalizeLineItem, getItemConversionFactor } from '@/lib/unit-conversion-service'
+import { normalizeLineItem, getItemConversionFactor, getInvoiceQtyForUnit } from '@/lib/unit-conversion-service'
 import { Counter, CashBankTransaction } from '@/lib/cash-bank-types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -131,7 +131,7 @@ export default function InvoicesPage({
     return result
   }, [invoices, periodFilter, currentFY, selectedSupplier])
 
-  const totalMT = filteredInvoices.reduce((sum, inv) => sum + inv.quantityMT, 0)
+  const totalMT = filteredInvoices.reduce((sum, inv) => sum + getInvoiceQtyForUnit(inv, 'MT', items), 0)
   const totalAmount = filteredInvoices.reduce((sum, inv) => sum + inv.invoiceAmount, 0)
 
   const getInvoicePaymentId = (invoiceId: string) => `purchase-invoice-payment-${invoiceId}`
@@ -542,7 +542,6 @@ export default function InvoicesPage({
         invoiceNo: invoiceNo,
         invoiceDate: invoiceDate,
         items: sanitizedItems,
-        quantityMT: totalQty,
         invoiceAmount: finalInvoiceAmount,
         additionalCost: additionalCost,
         additionalCostBasicRate: additionalCostBasicRate || undefined,
@@ -560,7 +559,6 @@ export default function InvoicesPage({
         invoiceNo: invoiceNo,
         invoiceDate: invoiceDate,
         items: sanitizedItems,
-        quantityMT: totalQty,
         invoiceAmount: finalInvoiceAmount,
         additionalCost: additionalCost,
         additionalCostBasicRate: additionalCostBasicRate || undefined,

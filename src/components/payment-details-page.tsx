@@ -20,6 +20,7 @@ import {
   Item
 } from '@/lib/types'
 import { formatCurrency, formatMT, calculatePaymentAllocations, calculateExpectedDiscounts, isPaymentAdvance, getFYMonths } from '@/lib/calculations'
+import { getInvoiceQtyForUnit } from '@/lib/unit-conversion-service'
 import { CreditCard, Calendar, FileText, Coins, CheckCircle, Clock, CaretDown, Check, TrendUp, TrendDown } from '@phosphor-icons/react'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
@@ -139,7 +140,8 @@ export default function PaymentDetailsPage({
             .filter(ed => ed.invoiceId === invoice.id && ed.paymentId === payment.id)
             .reduce((sum, cd) => sum + cd.expectedAmount, 0)
           
-          const cdPerMT = invoice.quantityMT > 0 ? totalCDFromInvoice / invoice.quantityMT : 0
+          const invoiceMT = getInvoiceQtyForUnit(invoice, 'MT')
+          const cdPerMT = invoiceMT > 0 ? totalCDFromInvoice / invoiceMT : 0
 
           const invoiceAllocations = paymentAllocations.filter(a => a.invoiceId === invoice.id)
           const totalInvoiceAllocated = invoiceAllocations.reduce((sum, a) => sum + a.allocatedAmount, 0)

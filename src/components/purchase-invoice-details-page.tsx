@@ -28,7 +28,7 @@ import {
 } from '@/lib/types'
 import { formatCurrency, formatMT, calculatePaymentAllocations, calculateExpectedDiscounts, getFYMonths, getFYFromDate, calculateDetailedPurchaseInvoiceBreakdown } from '@/lib/calculations'
 import { getItemActiveUnitAndQty } from '@/lib/fifo-engine'
-import { toBaseQuantity } from '@/lib/unit-conversion-service'
+import { toBaseQuantity, getInvoiceQtyForUnit } from '@/lib/unit-conversion-service'
 import { FileText, Calendar, Package, CurrencyDollar, CreditCard, TrendDown, Calculator, CaretDown, Check } from '@phosphor-icons/react'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
@@ -238,7 +238,7 @@ export default function PurchaseInvoiceDetailsPage({
     const totalPaid = filteredInvoiceDetails.reduce((sum, d) => sum + d.paidAmount, 0)
     const totalPending = filteredInvoiceDetails.reduce((sum, d) => sum + d.pendingAmount, 0)
     const totalCDEarned = filteredInvoiceDetails.reduce((sum, d) => sum + d.totalCDEarned, 0)
-    const totalQty = filteredInvoiceDetails.reduce((sum, d) => sum + d.invoice.quantityMT, 0)
+    const totalQty = filteredInvoiceDetails.reduce((sum, d) => sum + getInvoiceQtyForUnit(d.invoice, 'MT', items), 0)
     const avgCDPerMT = totalQty > 0 ? totalCDEarned / totalQty : 0
 
     return {

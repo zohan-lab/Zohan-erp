@@ -123,10 +123,6 @@ export function getInvoiceMarketRate(invoice: PurchaseInvoice): number {
     return weightedRateTotal / itemQuantity
   }
 
-  if (invoice.quantityMT > 0 && invoice.invoiceAmount > 0) {
-    return invoice.invoiceAmount / invoice.quantityMT
-  }
-
   return 0
 }
 
@@ -633,8 +629,8 @@ export function calculateExpectedDiscounts(
       })
 
     const invoiceDate = new Date(invoice.invoiceDate)
-    const totalInvoiceMT = roundQuantity(getInvoiceQtyForUnit(invoice, 'MT', itemMap) || invoice.quantityMT || 0, 4)
-    let remainingInvoiceMT = totalInvoiceMT
+    const totalInvoiceMT = roundQuantity(getInvoiceQtyForUnit(invoice, 'MT', itemMap), 4)
+    let remainingInvoiceMT = totalInvoiceMT > 0 ? totalInvoiceMT : (invoice.items && invoice.items.length > 0 ? 1 : 0)
 
     for (const booking of sortedBookingsForSupplier) {
       if (remainingInvoiceMT <= 0) break
@@ -994,8 +990,9 @@ export function calculateExpectedAnnualDiscounts(
   const supplierAchievedMT = new Map<string, number>()
 
   for (const invoice of invoices) {
+    const invMT = getInvoiceQtyForUnit(invoice, 'MT')
     const current = supplierAchievedMT.get(invoice.supplierId) || 0
-    supplierAchievedMT.set(invoice.supplierId, current + invoice.quantityMT)
+    supplierAchievedMT.set(invoice.supplierId, current + invMT)
   }
 
   for (const supplier of suppliers) {
@@ -1352,8 +1349,9 @@ export function calculateInvoiceItemsTotals(items: Array<{ enteredQuantity?: num
   return { totalQty, totalAmount }
 }
 
-export function calculateInvoiceListTotals(invoices: Array<{ quantityMT?: number; invoiceAmount?: number }>): { totalQtyMT: number; totalAmount: number } {
-  const totalQtyMT = invoices.reduce((sum, inv) => sum + (inv.quantityMT || 0), 0)
+export function calculateInvoiceListTotals(invoices: Array<{ items?: any[]; invoiceAmount?: number }>, items?: Item[]): { totalQtyMT: number; totalAmount: number } {
+  const itemMap = items ? new Map(items.map(i => [i.id, i])) : undefined
+  const totalQtyMT = invoices.reduce((sum, inv) => sum + getInvoiceQtyForUnit(inv as any, 'MT', itemMap), 0)
   const totalAmount = roundCurrency(invoices.reduce((sum, inv) => sum + (inv.invoiceAmount || 0), 0))
   return { totalQtyMT, totalAmount }
 }
@@ -1565,11 +1563,12 @@ export function calculateDetailedPurchaseInvoiceBreakdown(
     return sum + (baseQty * factor)
   }, 0)
 
-  const cdPerMT = invoice.quantityMT > 0 ? totalCDEarned / invoice.quantityMT : 0
+  const invoiceMT = getInvoiceQtyForUnit(invoice, 'MT', itemMap)
+  const cdPerMT = invoiceMT > 0 ? totalCDEarned / invoiceMT : 0
   const discountBreakdown: DiscountBreakdown = {
-    paymentCDPerMT: invoice.quantityMT > 0 ? paymentCDTotal / invoice.quantityMT : 0,
-    invoiceCloseCDPerMT: invoice.quantityMT > 0 ? closeCDTotal / invoice.quantityMT : 0,
-    fixedSchemePerMT: invoice.quantityMT > 0 ? fixedSchemeTotal / invoice.quantityMT : 0,
+    paymentCDPerMT: invoiceMT > 0 ? paymentCDTotal / invoiceMT : 0,
+    invoiceCloseCDPerMT: invoiceMT > 0 ? closeCDTotal / invoiceMT : 0,
+    fixedSchemePerMT: invoiceMT > 0 ? fixedSchemeTotal / invoiceMT : 0,
     totalCDPerMT: cdPerMT
   }
 

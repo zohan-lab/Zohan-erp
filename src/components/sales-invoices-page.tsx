@@ -3,7 +3,7 @@ import { PeriodDateFilter, PeriodFilterState, defaultPeriodFilterState, isRecord
 import { SalesInvoice, Customer, Item, InvoiceItem, CustomerPayment, PurchaseInvoice, PurchaseReturn, SalesReturn } from '@/lib/types'
 import { buildPurchaseLayers, allocateSalesFIFO } from '@/lib/fifo-engine'
 import { calculateItemStockMap } from '@/lib/report-calculations'
-import { normalizeLineItem, getItemConversionFactor } from '@/lib/unit-conversion-service'
+import { normalizeLineItem, getItemConversionFactor, getInvoiceQtyForUnit } from '@/lib/unit-conversion-service'
 import { Counter, CashBankTransaction } from '@/lib/cash-bank-types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -150,7 +150,7 @@ export default function SalesInvoicesPage({
     return result
   }, [salesInvoices, periodFilter, currentFY, selectedCustomer])
   
-  const totalMT = filteredInvoices.reduce((sum, inv) => sum + inv.quantityMT, 0)
+  const totalMT = filteredInvoices.reduce((sum, inv) => sum + getInvoiceQtyForUnit(inv, 'MT', items), 0)
   const totalAmount = filteredInvoices.reduce((sum, inv) => sum + inv.invoiceAmount, 0)
   const gstPercentage = 18
 
@@ -488,7 +488,6 @@ export default function SalesInvoicesPage({
         invoiceNo,
         invoiceDate: formData.get('invoiceDate') as string,
         items: sanitizedItems,
-        quantityMT: totalQty,
         invoiceAmount: finalInvoiceAmount,
         additionalCost,
         additionalCostBasicRate: additionalCostBasicRate || undefined,
@@ -505,7 +504,6 @@ export default function SalesInvoicesPage({
         invoiceNo,
         invoiceDate: formData.get('invoiceDate') as string,
         items: sanitizedItems,
-        quantityMT: totalQty,
         invoiceAmount: finalInvoiceAmount,
         additionalCost,
         additionalCostBasicRate: additionalCostBasicRate || undefined,
