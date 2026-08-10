@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { ArrowLeft, CaretLeft, Plus, PencilSimple, Trash, MagnifyingGlass, Barcode, Package, UserPlus, X, FileText, Check, Receipt, Wallet, TrendUp, SlidersHorizontal } from '@phosphor-icons/react'
 import { formatCurrency, formatMT, getFYMonths, getFYFromDate, calculateRateWithGst, calculateBasicRateFromInclusive, calculateInvoiceFinalAmount, calculateInvoiceItemsTotals } from '@/lib/calculations'
-import { toBaseQuantity, getInvoiceQtyForUnit } from '@/lib/unit-conversion-service'
+import { toBaseQuantity } from '@/lib/unit-conversion-service'
 import { startOfMonth, endOfMonth, isWithinInterval, parseISO, format } from 'date-fns'
 import { toast } from 'sonner'
 import { PartyEditorDialog } from '@/components/party-editor-dialog'
@@ -72,7 +72,6 @@ export default function PurchaseReturnPage({
   }, [purchaseReturns, fromDate, toDate, selectedSupplierFilter])
   
   const totalAmount = filteredReturns.reduce((sum, p) => sum + p.amount, 0)
-  const totalQuantityMT = filteredReturns.reduce((sum, p) => sum + getInvoiceQtyForUnit(p, 'MT', items), 0)
 
   // Form State
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>('')
@@ -102,10 +101,6 @@ export default function PurchaseReturnPage({
   // Calculations for active form
   const itemsSubtotal = useMemo(() => {
     return returnItems.reduce((sum, item) => sum + (item.amount || 0), 0)
-  }, [returnItems])
-
-  const totalReturnMT = useMemo(() => {
-    return returnItems.reduce((sum, item) => sum + ((item.baseQuantity || 0) / 1000), 0)
   }, [returnItems])
 
   const calculatedTotalAmount = useMemo(() => {
@@ -908,10 +903,6 @@ export default function PurchaseReturnPage({
                 {/* Column 2: Additional Charges & Totals Box */}
                 <div className="erp-footer-col">
                   <div className="bg-muted/40 p-5 rounded-xl border space-y-3">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground font-medium">Total Items Quantity:</span>
-                      <span className="font-semibold font-mono">{formatMT(totalReturnMT)}</span>
-                    </div>
 
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground font-medium">Items Subtotal:</span>
