@@ -24,3 +24,8 @@ All operational business data (invoices, payments, items, customers, suppliers, 
    - Raw user transactions are persisted directly to the master partition document.
    - Reports, balances, FIFO allocations, and pending discounts are computed live in real-time via `useMemo` hooks.
    - Optimistic concurrency control (`revision` counter) and device echo suppression (`deviceId`) prevent data loss during multi-device operation.
+
+4. **Complete Elimination of Legacy `quantityMT` Field**
+   - The legacy `quantityMT` field has been completely purged from all entity schemas (`PurchaseInvoice`, `SalesInvoice`, `PurchaseReturn`, `SalesReturn`, `InvoiceItem`) and Firestore payloads.
+   - Line items strictly persist standard multi-unit fields: `itemId`, `enteredQuantity`, `enteredUnit`, `baseQuantity`, `rate`, `amount`, `basicRate`, `baseRate`, and `enteredRate`.
+   - Aggregate weights in MT are calculated dynamically on demand using `getInvoiceQtyForUnit(invoice, 'MT')`.
