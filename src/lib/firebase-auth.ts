@@ -151,11 +151,36 @@ export async function signInRemoteUser(
 ): Promise<AuthenticatedUser | null> {
   if (!canUseFirebaseAuth() || !auth) return null
 
+  const cleanEmail = email.trim().toLowerCase()
+  const isMasterAdminEmail = cleanEmail === MASTER_ADMIN_EMAIL.toLowerCase() || isMasterAdminIdentifier(cleanEmail)
+
   try {
     const credential = await withTimeout(
-      signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password)
+      signInWithEmailAndPassword(auth, cleanEmail, password)
     )
-    const profile = await fetchFirestoreProfile(credential.user.uid)
+    let profile = await fetchFirestoreProfile(credential.user.uid)
+    if (!profile && db) {
+      const now = new Date().toISOString()
+      const newProfile: FirestoreUserProfile = {
+        email: cleanEmail,
+        displayName: credential.user.displayName || 'Master Admin',
+        role: isMasterAdminEmail ? 'master_admin' : 'agent',
+        permissions: {},
+        isActive: true,
+        companyId: null,
+        allowedCounters: [],
+        allowedBusinesses: [],
+        createdAt: now,
+        updatedAt: now
+      }
+      try {
+        await setDoc(doc(db, 'users', credential.user.uid), newProfile)
+        profile = newProfile
+      } catch (e) {
+        console.warn('Auto-creating Firestore profile warning:', e)
+      }
+    }
+
     if (profile) {
       if (!profile.isActive) {
         await signOut(auth)
@@ -167,6 +192,38 @@ export async function signInRemoteUser(
   } catch (error: unknown) {
     if (error instanceof RemoteAuthServiceUnavailableError) throw error
     const code = (error as { code?: string }).code
+
+    if (isMasterAdminEmail && (code === 'auth/user-not-found' || code === 'auth/invalid-credential')) {
+      try {
+        const cred = await withTimeout(
+          createUserWithEmailAndPassword(auth, cleanEmail, password)
+        )
+        const now = new Date().toISOString()
+        const newProfile: FirestoreUserProfile = {
+          email: cleanEmail,
+          displayName: cred.user.displayName || 'Master Admin',
+          role: 'master_admin',
+          permissions: {},
+          isActive: true,
+          companyId: null,
+          allowedCounters: [],
+          allowedBusinesses: [],
+          createdAt: now,
+          updatedAt: now
+        }
+        if (db) {
+          await setDoc(doc(db, 'users', cred.user.uid), newProfile)
+        }
+        return toAuthenticatedUser(cred.user.uid, newProfile)
+      } catch (createErr: unknown) {
+        const createCode = (createErr as { code?: string })?.code
+        if (createCode === 'auth/email-already-in-use') {
+          throw new Error('Incorrect email or password.')
+        }
+        throw createErr
+      }
+    }
+
     const msg =
       code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found'
         ? 'Incorrect email or password.'
