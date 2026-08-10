@@ -325,10 +325,9 @@ export default function PurchaseReturnPage({
       baseQuantity: item.baseQuantity,
       rate: item.rate,
       amount: item.amount,
-      ...(item.basicRate !== undefined ? { basicRate: item.basicRate } : {}),
-      ...(item.baseRate !== undefined ? { baseRate: item.baseRate } : {}),
-      ...(item.enteredRate !== undefined ? { enteredRate: item.enteredRate } : {}),
-      ...(item.weightKG !== undefined ? { weightKG: item.weightKG } : {})
+      basicRate: item.basicRate,
+      baseRate: item.baseRate,
+      enteredRate: item.enteredRate
     }))
 
     const purchaseReturnRecord: PurchaseReturn = {
