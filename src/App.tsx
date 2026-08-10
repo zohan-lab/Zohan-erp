@@ -2546,7 +2546,7 @@ function App() {
             </h1>
             <p className="text-sm text-muted-foreground">
               {useServerAuth
-                ? 'Use your Supabase Auth email and password. Roles are verified on the server.'
+                ? 'Use your Firebase Auth email and password. Roles are verified on the server.'
                 : authMode === 'setup'
                 ? 'Create the master admin account before adding agents.'
                 : 'Enter your username and passcode to access company data.'}

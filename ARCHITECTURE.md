@@ -10,7 +10,7 @@ This application follows a **strict source-driven architecture** where all repor
 
 ## Data Architecture
 
-### 1. Source Data (Persisted via `useKV`)
+### 1. Source Data (Persisted via Cloud Firestore `master_data`)
 
 Source data is the **single source of truth** and is stored exactly as entered by the user:
 
@@ -282,8 +282,8 @@ const [expectedDiscounts, setExpectedDiscounts] = useKV('expected-discounts', []
 If you need to add a new calculated field:
 
 1. **Is it derived from source data?** → Calculate in `useMemo`, don't store
-2. **Does user enter it?** → Add to source data model, store in `useKV`
-3. **Does it need to persist?** → Add to backup/restore, store in `useKV`
-4. **Should it survive refresh?** → Use `useKV`, not `useState`
+2. **Does user enter it?** → Add to source data model, store in Firestore snapshot
+3. **Does it need to persist?** → Add to backup/restore, store in Firestore snapshot
+4. **Should it survive refresh?** → Use Firestore snapshot sync, not temporary `useState`
 
 **Remember**: When in doubt, calculate from source. Storage is for user input only.

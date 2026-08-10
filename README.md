@@ -48,12 +48,10 @@ A comprehensive ERP system for steel trading businesses with FIFO allocation, di
 
 - React 19 + TypeScript
 - Tailwind CSS + shadcn/ui components
-- Spark KV for persistence
+- Firebase Auth & Cloud Firestore for persistent tenant master data
 - PDF generation with jsPDF
 - Date-based calculations with date-fns
 
 ## 📄 License
 
-The Spark Template files and resources from GitHub are licensed under the terms of the MIT license, Copyright GitHub, Inc.
-
-# sahilERP
+MIT License - SK TRADERS ERP System.

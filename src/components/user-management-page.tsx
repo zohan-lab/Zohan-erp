@@ -260,7 +260,7 @@ export default function UserManagementPage({
 
   const handleDelete = (account: UserAccount) => {
     if (isServerMode) {
-      toast.error('Server users cannot be deleted from the browser. Disable the profile here, then remove the Auth user in Supabase if needed.')
+      toast.error('Server users cannot be deleted from the browser. Disable the profile here, then remove the Auth user in Firebase if needed.')
       return
     }
     if (!window.confirm(`Delete agent "${account.displayName}"? This cannot be undone.`)) return
@@ -281,7 +281,7 @@ export default function UserManagementPage({
           <h2 className="text-2xl font-bold tracking-tight">Agent Access</h2>
           <p className="text-sm text-muted-foreground">
             {isServerMode
-              ? 'Server-side Supabase profiles control which ERP areas agents can view or edit.'
+              ? 'Firebase user profiles control which ERP areas agents can view or edit.'
               : 'Create agent logins and limit which ERP areas they can view or edit.'}
           </p>
         </div>
@@ -300,7 +300,7 @@ export default function UserManagementPage({
             </CardTitle>
             <CardDescription>
               {isServerMode
-                ? 'Create/invite users in Supabase Auth first. Then edit their permissions here.'
+                ? 'Create/invite users in Firebase Auth first. Then edit their permissions here.'
                 : 'Agents login with their own username and passcode.'}
             </CardDescription>
           </CardHeader>
@@ -487,7 +487,7 @@ export default function UserManagementPage({
           <CardTitle>Existing Agents</CardTitle>
           <CardDescription>
             {isServerMode
-              ? 'Disable profiles here. Delete Auth users from the Supabase dashboard or a trusted server function.'
+              ? 'Disable profiles here. Delete Auth users from the Firebase console or a trusted server function.'
               : 'Delete accounts that should no longer access company data.'}
           </CardDescription>
         </CardHeader>

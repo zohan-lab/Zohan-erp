@@ -2,69 +2,30 @@
 
 Use this checklist before using the ERP as a company system of record.
 
-## Required Environment
+## Required Environment Variables
 
-- `VITE_ENABLE_SUPABASE_AUTH=true`
+- `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_APP_ID`
+- `VITE_ENABLE_FIREBASE_AUTH=true`
 - `VITE_ENABLE_REMOTE_STORAGE=true`
 - `VITE_DISABLE_LOCAL_CACHE=true` on shared or production devices
-- No Supabase `secret`, `service_role`, or database password in frontend env files
-- Rotate any secret key that was ever pasted into chat or logs
+- Rotate any secret key or API credential that was ever pasted into chat or logs
 
-## Supabase Database
+## Firebase & Cloud Firestore Security
 
-- Run the latest `supabase-setup.sql`
-- Confirm RLS is enabled on:
-  - `tenant_snapshots`
-  - `company_members`
-  - `app_user_profiles`
-  - `audit_logs`
-  - all `erp_*` tables
-- Confirm no `anon` policies exist on financial tables
-- Create Supabase Auth users from the dashboard or a trusted server/Edge Function
-- Promote the owner manually:
+- Deploy and enforce `firestore.rules` for collection paths:
+  - `/users/{userId}`
+  - `/tenants/{companyId}/snapshots/{tenantKey}`
+  - `/businesses/{businessId}`
+  - `/audit_logs/{logId}`
+- Confirm no unauthenticated access policies exist for financial collections
+- Create Firebase Auth users via Firebase Console or admin SDK script
+- Assign initial `master_admin` role in Firestore `/users/{uid}` profile document
 
-```sql
-update public.app_user_profiles
-set role = 'master_admin', is_active = true
-where email = 'owner@example.com';
-```
+## Backups And Cloud Recovery
 
-- Add company membership:
-
-```sql
-insert into public.company_members (company_id, user_id, role)
-select 'sk_traders', id, 'owner'
-from auth.users
-where email = 'owner@example.com'
-on conflict (company_id, user_id)
-do update set role = 'owner', is_active = true;
-```
-
-## Backups And Recovery
-
-- Enable Supabase daily backups
-- Export a manual database backup before every schema change
-- Test restore into a staging Supabase project monthly
-- Keep local JSON backups only as emergency imports, not as the primary backup system
-- Document who can restore data and require approval for restore
-
-## Monitoring
-
-- Enable Supabase logs and alerts for:
-  - authentication failures
-  - RLS denied operations
-  - RPC errors
-  - unusually high write volume
-- Add frontend error tracking before production launch
-- Review `audit_logs` weekly during pilot
-
-## Rate Limits And Abuse Protection
-
-- Disable public signup unless intentionally needed
-- Prefer invited users only
-- Configure Supabase Auth rate limits
-- Restrict production deployment domains in Supabase Auth URL settings
-- Use HTTPS-only hosting
+- Enable automated Google Cloud / Firestore daily snapshot backups
+- Export manual JSON backup snapshots before major operational adjustments
+- Document who can restore data and require authorization for restores
 
 ## Accounting Workflow Tests
 
@@ -73,7 +34,6 @@ do update set role = 'owner', is_active = true;
 ```bash
 npm test
 npm run build
-npm audit --audit-level=low
 ```
 
 - Manually verify:
@@ -90,8 +50,7 @@ npm audit --audit-level=low
 
 Do not go live if any of these are true:
 
-- Any financial table has an anonymous read/write policy
-- Owner cannot restore from backup in staging
+- Any Firestore collection has an unauthenticated read/write policy
 - Agent can edit a module marked view-only
 - Two-device concurrent edits silently overwrite each other
-- `npm test`, `npm run build`, or `npm audit --audit-level=low` fails
+- `npm test` or `npm run build` fails

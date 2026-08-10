@@ -103,18 +103,8 @@ export function deleteTenantData(companyId: string): void {
 
 export function getTenantData(companyId: string, fy: string): TenantData {
   const key = getTenantKey(companyId, fy)
-  let stored = localStorage.getItem(key)
+  const stored = localStorage.getItem(key)
   
-  // Migration logic: Fallback to data_v3_ key if data_ key is not found
-  if (!stored) {
-    const v3Key = `data_v3_${companyId}_${fy}`
-    const v3Stored = localStorage.getItem(v3Key)
-    if (v3Stored) {
-      stored = v3Stored
-      localStorage.setItem(key, v3Stored)
-    }
-  }
-
   if (!stored) {
     const emptyData: TenantData = {
       suppliers: [],
@@ -145,24 +135,27 @@ export function getTenantData(companyId: string, fy: string): TenantData {
   
   const parsedData: TenantData = JSON.parse(stored)
   
-  // Migration logic: Pull legacy Cash & Bank data if it's not already in TenantData
-  const legacyCashBankKey = `cashbank_${companyId}_${fy}`
-  const legacyCashBank = localStorage.getItem(legacyCashBankKey)
-  if (legacyCashBank && (!parsedData.cashBankCounters || parsedData.cashBankCounters.length === 0)) {
-    try {
-      const cbData = JSON.parse(legacyCashBank)
-      parsedData.cashBankCounters = cbData.counters || []
-      parsedData.cashBankTransactions = cbData.transactions || []
-      // Save migrated data immediately to update the local TenantData cache
-      localStorage.setItem(key, JSON.stringify(parsedData))
-    } catch (e) {
-      console.error('Failed to parse legacy cashbank data for migration:', e)
-    }
-  }
-  
-  // Ensure fields exist for backward compatibility with older snapshots
+  // Ensure array fields exist for safety
+  parsedData.suppliers = parsedData.suppliers || []
+  parsedData.customers = parsedData.customers || []
+  parsedData.items = parsedData.items || []
+  parsedData.invoices = parsedData.invoices || []
+  parsedData.payments = parsedData.payments || []
+  parsedData.receivedDiscounts = parsedData.receivedDiscounts || []
+  parsedData.salesInvoices = parsedData.salesInvoices || []
+  parsedData.customerPayments = parsedData.customerPayments || []
+  parsedData.expenseTypes = parsedData.expenseTypes || []
+  parsedData.expenseEntries = parsedData.expenseEntries || []
+  parsedData.fixedSchemes = parsedData.fixedSchemes || []
+  parsedData.mtBookings = parsedData.mtBookings || []
+  parsedData.advanceBookingPickups = parsedData.advanceBookingPickups || []
+  parsedData.discountLedgerEntries = parsedData.discountLedgerEntries || []
   parsedData.cashBankCounters = parsedData.cashBankCounters || []
   parsedData.cashBankTransactions = parsedData.cashBankTransactions || []
+  parsedData.creditNotes = parsedData.creditNotes || []
+  parsedData.debitNotes = parsedData.debitNotes || []
+  parsedData.salesReturns = parsedData.salesReturns || []
+  parsedData.purchaseReturns = parsedData.purchaseReturns || []
   
   return parsedData
 }
