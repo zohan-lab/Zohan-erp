@@ -536,10 +536,10 @@ export default function PurchaseInvoiceDetailsPage({
                         <TableBody>
                           {detail.invoice.items.map((item, idx) => {
                             const itemData = itemMap.get(item.itemId)
-                            const active = getItemActiveUnitAndQty(itemData, item.enteredUnit || (item as any).entryUnit, item.enteredQuantity || (item as any).entryQuantity, (item as any).quantityMT, item.weightKG, item.baseQuantity)
+                            const active = getItemActiveUnitAndQty(itemData, item.enteredUnit, item.enteredQuantity, item.weightKG, item.baseQuantity)
                             const altUnit = active.unit
                             const altQty = active.qty
-                            const totalItemAmount = item.amount || ((item.rate || 0) * (item.enteredQuantity || (item as any).entryQuantity || 1))
+                            const totalItemAmount = item.amount || ((item.rate || 0) * (item.enteredQuantity || 1))
                             const ratePerAltUnit = altQty > 0 ? totalItemAmount / altQty : item.rate
 
                             const displayQty = `${altQty.toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${altUnit}`

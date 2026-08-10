@@ -111,11 +111,11 @@ function getEffectiveSupplierCDRules(supplier: Supplier, date: string) {
 
 export function getInvoiceMarketRate(invoice: PurchaseInvoice): number {
   const itemRows = invoice.items || []
-  const itemQuantity = itemRows.reduce((sum, item) => sum + (Number(item.enteredQuantity ?? (item as any).quantityMT) || 0), 0)
+  const itemQuantity = itemRows.reduce((sum, item) => sum + (Number(item.enteredQuantity) || 0), 0)
 
   if (itemRows.length > 0 && itemQuantity > 0) {
     const weightedRateTotal = itemRows.reduce((sum, item) => {
-      const quantity = Number(item.enteredQuantity ?? (item as any).quantityMT) || 0
+      const quantity = Number(item.enteredQuantity) || 0
       const rate = Number(item.basicRate) > 0 ? Number(item.basicRate) : (Number(item.rate) || 0)
       return sum + (quantity * rate)
     }, 0)
@@ -1272,11 +1272,11 @@ export interface CostBreakdownDetailsResult {
 }
 
 export function calculateCostBreakdownDetails(
-  invoiceItems: Array<{ itemId: string; enteredQuantity?: number; enteredUnit?: string; baseQuantity?: number; weightKG?: number; basicRate?: number; entryQuantity?: number; quantityMT?: number; entryUnit?: string }>,
+  invoiceItems: Array<{ itemId: string; enteredQuantity?: number; enteredUnit?: string; baseQuantity?: number; weightKG?: number; basicRate?: number }>,
   items: Item[],
   additionalCostFinal: number
 ): CostBreakdownDetailsResult {
-  const validRows = invoiceItems.filter(r => r.itemId && ((r.enteredQuantity || r.entryQuantity || 0) > 0 || (r.baseQuantity || r.quantityMT || 0) > 0))
+  const validRows = invoiceItems.filter(r => r.itemId && ((r.enteredQuantity || 0) > 0 || (r.baseQuantity || 0) > 0))
   if (validRows.length === 0) {
     return {
       rows: [],
@@ -1290,8 +1290,8 @@ export function calculateCostBreakdownDetails(
   let totalWeightKG = 0
   const rowWeightsKG = validRows.map(row => {
     const itemDef = items.find(i => i.id === row.itemId)
-    const entryQty = row.enteredQuantity ?? row.entryQuantity ?? (row.quantityMT && row.quantityMT < 1000 ? row.quantityMT : 0)
-    const activeUnit = row.enteredUnit || row.entryUnit || itemDef?.unit || 'KG'
+    const entryQty = row.enteredQuantity || 0
+    const activeUnit = row.enteredUnit || itemDef?.unit || 'KG'
     const weightKG = row.baseQuantity || calculateItemWeightKG(entryQty, activeUnit, itemDef, row.weightKG)
     let kgFactor = 1000
     if (activeUnit === 'KG') {
@@ -1346,8 +1346,8 @@ export function calculateCostBreakdownDetails(
   }
 }
 
-export function calculateInvoiceItemsTotals(items: Array<{ enteredQuantity?: number; baseQuantity?: number; quantityMT?: number; amount?: number }>): { totalQty: number; totalAmount: number } {
-  const totalQty = items.reduce((sum, item) => sum + (item.enteredQuantity ?? item.baseQuantity ?? item.quantityMT ?? 0), 0)
+export function calculateInvoiceItemsTotals(items: Array<{ enteredQuantity?: number; baseQuantity?: number; amount?: number }>): { totalQty: number; totalAmount: number } {
+  const totalQty = items.reduce((sum, item) => sum + (item.enteredQuantity ?? item.baseQuantity ?? 0), 0)
   const totalAmount = roundCurrency(items.reduce((sum, item) => sum + (item.amount || 0), 0))
   return { totalQty, totalAmount }
 }
@@ -1560,7 +1560,7 @@ export function calculateDetailedPurchaseInvoiceBreakdown(
 
   const totalInvoiceWeightKG = (invoice.items || []).reduce((sum, item) => {
     const itemData = itemMap.get(item.itemId)
-    const baseQty = item.baseQuantity ?? toBaseQuantity(itemData, (item as any).enteredQuantity ?? (item as any).entryQuantity ?? (item as any).quantityMT ?? 0, (item as any).enteredUnit ?? (item as any).entryUnit)
+    const baseQty = item.baseQuantity ?? toBaseQuantity(itemData, item.enteredQuantity || 0, item.enteredUnit)
     const factor = itemData?.unit === 'MT' ? 1000 : 1
     return sum + (baseQty * factor)
   }, 0)
@@ -1577,9 +1577,9 @@ export function calculateDetailedPurchaseInvoiceBreakdown(
 
   const itemCostBreakdowns: ItemCostBreakdown[] = (invoice.items || []).map(item => {
     const itemData = itemMap.get(item.itemId)
-    const enteredQty = item.enteredQuantity ?? (item as any).entryQuantity ?? (item as any).quantityMT ?? 0
-    const enteredUnit = item.enteredUnit ?? (item as any).entryUnit
-    const active = getItemActiveUnitAndQty(itemData, enteredUnit, enteredQty, undefined, item.weightKG, item.baseQuantity)
+    const enteredQty = item.enteredQuantity || 0
+    const enteredUnit = item.enteredUnit || itemData?.unit || 'KG'
+    const active = getItemActiveUnitAndQty(itemData, enteredUnit, enteredQty, item.weightKG, item.baseQuantity)
 
     const activeUnit = active.unit
     const activeQuantity = active.qty

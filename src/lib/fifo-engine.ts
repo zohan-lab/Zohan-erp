@@ -50,15 +50,12 @@ export function getItemActiveUnitAndQty(
   itemDef?: Item | null,
   entryUnit?: string,
   entryQty?: number,
-  quantityMT?: number,
   weightKG?: number,
   baseQuantity?: number
 ): ActiveUnitQtyResult {
   const primaryUnit = itemDef?.unit || 'KG'
   const unit = entryUnit || primaryUnit
-  const qtyInput = (entryQty && entryQty > 0)
-    ? entryQty
-    : (quantityMT !== undefined && quantityMT > 0 ? quantityMT : 0)
+  const qtyInput = (entryQty && entryQty > 0) ? entryQty : 0
 
   const baseQty = (baseQuantity && baseQuantity > 0)
     ? baseQuantity
@@ -140,8 +137,8 @@ export function buildPurchaseLayers(
     // Calculate total base quantity across invoice items
     const totalInvoiceBaseQty = (inv.items || []).reduce((sum, itemRow) => {
       const itemDef = itemMap.get(itemRow.itemId)
-      const enteredQty = itemRow.enteredQuantity || (itemRow as any).entryQuantity || (itemRow as any).quantityMT || 0
-      const enteredUnit = itemRow.enteredUnit || (itemRow as any).entryUnit || itemDef?.unit || 'KG'
+      const enteredQty = itemRow.enteredQuantity || 0
+      const enteredUnit = itemRow.enteredUnit || itemDef?.unit || 'KG'
       return sum + toBaseQuantity(itemDef, enteredQty, enteredUnit)
     }, 0);
 
@@ -150,8 +147,8 @@ export function buildPurchaseLayers(
       const itemDef = itemMap.get(itemRow.itemId)
       const primaryUnit = itemDef?.unit || 'KG'
 
-      const enteredQty = itemRow.enteredQuantity || (itemRow as any).entryQuantity || (itemRow as any).quantityMT || 0
-      const enteredUnit = itemRow.enteredUnit || (itemRow as any).entryUnit || primaryUnit
+      const enteredQty = itemRow.enteredQuantity || 0
+      const enteredUnit = itemRow.enteredUnit || primaryUnit
       const enteredRate = itemRow.enteredRate || itemRow.rate || 0
 
       const norm = normalizeLineItem(itemDef, enteredQty, enteredUnit, enteredRate)
@@ -240,8 +237,8 @@ export function allocateSalesFIFO(
       const itemDef = itemMap.get(saleRow.itemId)
       const primaryUnit = itemDef?.unit || 'KG'
 
-      const enteredQty = saleRow.enteredQuantity || (saleRow as any).entryQuantity || (saleRow as any).quantityMT || 0
-      const enteredUnit = saleRow.enteredUnit || (saleRow as any).entryUnit || primaryUnit
+      const enteredQty = saleRow.enteredQuantity || 0
+      const enteredUnit = saleRow.enteredUnit || primaryUnit
       const enteredRate = saleRow.enteredRate || saleRow.rate || 0
 
       const norm = normalizeLineItem(itemDef, enteredQty, enteredUnit, enteredRate)
@@ -446,8 +443,8 @@ export function calculatePaymentCDReport(
 
     const totalInvoiceBaseQty = (inv.items || []).reduce((sum, itemRow) => {
       const itemDef = itemMap.get(itemRow.itemId)
-      const enteredQty = itemRow.enteredQuantity || (itemRow as any).entryQuantity || (itemRow as any).quantityMT || 0
-      const enteredUnit = itemRow.enteredUnit || (itemRow as any).entryUnit || itemDef?.unit || 'KG'
+      const enteredQty = itemRow.enteredQuantity || 0
+      const enteredUnit = itemRow.enteredUnit || itemDef?.unit || 'KG'
       return sum + toBaseQuantity(itemDef, enteredQty, enteredUnit)
     }, 0);
 
@@ -459,8 +456,8 @@ export function calculatePaymentCDReport(
       if (filters?.category && filters.category !== 'all' && itemDef?.category !== filters.category) return
 
       const primaryUnit = itemDef?.unit || 'KG'
-      const enteredQty = itemRow.enteredQuantity || (itemRow as any).entryQuantity || (itemRow as any).quantityMT || 0
-      const enteredUnit = itemRow.enteredUnit || (itemRow as any).entryUnit || primaryUnit
+      const enteredQty = itemRow.enteredQuantity || 0
+      const enteredUnit = itemRow.enteredUnit || primaryUnit
       const enteredRate = itemRow.enteredRate || itemRow.rate || 0
 
       const norm = normalizeLineItem(itemDef, enteredQty, enteredUnit, enteredRate)

@@ -366,7 +366,7 @@ export default function SalesInvoicesPage({
         }
       } else if (field === 'enteredUnit' || field === 'entryUnit') {
         itemRow.enteredUnit = value as string
-      } else if (field === 'enteredQuantity' || field === 'entryQuantity' || field === 'quantityMT') {
+      } else if (field === 'enteredQuantity' || field === 'entryQuantity') {
         const numVal = parseFloat(value as string) || 0
         itemRow.enteredQuantity = numVal
       } else if (field === 'basicRate') {
@@ -469,20 +469,33 @@ export default function SalesInvoicesPage({
     }
     const invoiceNo = formData.get('invoiceNo') as string
 
+    const sanitizedItems: InvoiceItem[] = invoiceItems.map(item => ({
+      itemId: item.itemId,
+      enteredQuantity: item.enteredQuantity,
+      enteredUnit: item.enteredUnit,
+      baseQuantity: item.baseQuantity,
+      rate: item.rate,
+      amount: item.amount,
+      ...(item.basicRate !== undefined ? { basicRate: item.basicRate } : {}),
+      ...(item.baseRate !== undefined ? { baseRate: item.baseRate } : {}),
+      ...(item.enteredRate !== undefined ? { enteredRate: item.enteredRate } : {}),
+      ...(item.weightKG !== undefined ? { weightKG: item.weightKG } : {})
+    }))
+
     if (editingInvoice) {
       const updatedInvoice: SalesInvoice = {
         ...editingInvoice,
         customerId,
         invoiceNo,
         invoiceDate: formData.get('invoiceDate') as string,
-        items: invoiceItems,
+        items: sanitizedItems,
         quantityMT: totalQty,
         invoiceAmount: finalInvoiceAmount,
         additionalCost,
         additionalCostBasicRate: additionalCostBasicRate || undefined,
         additionalCostRemarks: additionalCostRemarks || undefined,
         roundOffAdjustment: roundOffAdjustment || undefined,
-              }
+      }
       setSalesInvoices((prev) => prev.map(inv => inv.id === editingInvoice.id ? updatedInvoice : inv))
       syncInvoicePayment(editingInvoice.id, customerId, invoiceNo, invoiceDate, finalAmountReceived, counterId)
     } else {
@@ -492,14 +505,14 @@ export default function SalesInvoicesPage({
         customerId,
         invoiceNo,
         invoiceDate: formData.get('invoiceDate') as string,
-        items: invoiceItems,
+        items: sanitizedItems,
         quantityMT: totalQty,
         invoiceAmount: finalInvoiceAmount,
         additionalCost,
         additionalCostBasicRate: additionalCostBasicRate || undefined,
         additionalCostRemarks: additionalCostRemarks || undefined,
         roundOffAdjustment: roundOffAdjustment || undefined,
-                fy: getFYFromDate(invoiceDate)
+        fy: getFYFromDate(invoiceDate)
       }
       setSalesInvoices((prev) => [...prev, invoice])
       syncInvoicePayment(invoiceId, customerId, formData.get('invoiceNo') as string, formData.get('invoiceDate') as string, finalAmountReceived, counterId)

@@ -284,12 +284,8 @@ export function getInvoiceQtyForUnit(
     inv.items.forEach(invItem => {
       const itemDef = map?.get(invItem.itemId)
       const primaryUnit = (itemDef?.unit || 'KG').toUpperCase()
-      const enteredUnit = (invItem.enteredUnit || invItem.entryUnit || primaryUnit).toUpperCase()
-      const rawQty = (invItem.enteredQuantity !== undefined && invItem.enteredQuantity !== null && invItem.enteredQuantity > 0)
-        ? invItem.enteredQuantity
-        : ((invItem.entryQuantity !== undefined && invItem.entryQuantity !== null && invItem.entryQuantity > 0)
-          ? invItem.entryQuantity
-          : (invItem.baseQuantity || invItem.quantityMT || 0))
+      const enteredUnit = (invItem.enteredUnit || primaryUnit).toUpperCase()
+      const rawQty = invItem.enteredQuantity || invItem.baseQuantity || 0
 
       totalQty += convertItemQuantity(itemDef, rawQty, enteredUnit, target)
     })

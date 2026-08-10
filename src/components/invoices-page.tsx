@@ -365,7 +365,7 @@ export default function InvoicesPage({
         }
       } else if (field === 'enteredUnit' || field === 'entryUnit') {
         itemRow.enteredUnit = value as string
-      } else if (field === 'enteredQuantity' || field === 'entryQuantity' || field === 'quantityMT') {
+      } else if (field === 'enteredQuantity' || field === 'entryQuantity') {
         const numVal = parseFloat(value as string) || 0
         itemRow.enteredQuantity = numVal
       } else if (field === 'weightKG') {
@@ -523,13 +523,26 @@ export default function InvoicesPage({
       return
     }
 
+    const sanitizedItems: InvoiceItem[] = invoiceItems.map(item => ({
+      itemId: item.itemId,
+      enteredQuantity: item.enteredQuantity,
+      enteredUnit: item.enteredUnit,
+      baseQuantity: item.baseQuantity,
+      rate: item.rate,
+      amount: item.amount,
+      ...(item.basicRate !== undefined ? { basicRate: item.basicRate } : {}),
+      ...(item.baseRate !== undefined ? { baseRate: item.baseRate } : {}),
+      ...(item.enteredRate !== undefined ? { enteredRate: item.enteredRate } : {}),
+      ...(item.weightKG !== undefined ? { weightKG: item.weightKG } : {})
+    }))
+
     if (editingInvoice) {
       const updated: PurchaseInvoice = {
         ...editingInvoice,
         supplierId: supplierId,
         invoiceNo: invoiceNo,
         invoiceDate: invoiceDate,
-        items: invoiceItems,
+        items: sanitizedItems,
         quantityMT: totalQty,
         invoiceAmount: finalInvoiceAmount,
         additionalCost: additionalCost,
@@ -547,7 +560,7 @@ export default function InvoicesPage({
         supplierId: supplierId,
         invoiceNo: invoiceNo,
         invoiceDate: invoiceDate,
-        items: invoiceItems,
+        items: sanitizedItems,
         quantityMT: totalQty,
         invoiceAmount: finalInvoiceAmount,
         additionalCost: additionalCost,

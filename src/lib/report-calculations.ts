@@ -100,17 +100,13 @@ export interface CDAtRisk {
  * Normalizes an invoice item into Base Quantity and Alternate Quantity.
  */
 export function getItemNormalizedQty(
-  invItem: { entryQuantity?: number; quantityMT?: number; entryUnit?: string; enteredQuantity?: number; enteredUnit?: string },
+  invItem: { enteredQuantity?: number; enteredUnit?: string },
   item: Item,
   conversionFactor?: number
 ): { primaryQty: number; altQty: number; usedUnit: string } {
   const primaryUnit = item.unit || 'KG'
-  const entryUnit = invItem.enteredUnit || invItem.entryUnit || primaryUnit
-  const rawQty = (invItem.enteredQuantity !== undefined && invItem.enteredQuantity !== null && invItem.enteredQuantity > 0)
-    ? invItem.enteredQuantity
-    : ((invItem.entryQuantity !== undefined && invItem.entryQuantity !== null && invItem.entryQuantity > 0)
-      ? invItem.entryQuantity
-      : (invItem.quantityMT || 0))
+  const entryUnit = invItem.enteredUnit || primaryUnit
+  const rawQty = invItem.enteredQuantity || 0
 
   const baseQty = toBaseQuantity(item, rawQty, entryUnit)
   const altUnit = item.alternativeUnit && item.alternativeUnit !== 'NONE' ? item.alternativeUnit : undefined

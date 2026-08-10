@@ -263,7 +263,7 @@ export default function PurchaseReturnPage({
         }
       }
 
-      if (field === 'enteredQuantity' || field === 'entryQuantity' || field === 'quantityMT') {
+      if (field === 'enteredQuantity' || field === 'entryQuantity') {
         const numVal = Number(value) || 0
         updated.enteredQuantity = numVal
         const activeUnit = updated.enteredUnit || selectedDef?.unit || 'KG'
@@ -318,6 +318,18 @@ export default function PurchaseReturnPage({
 
     const returnId = editingItem ? editingItem.id : `pr-${Date.now()}`
     const finalReturnNo = returnNo.trim() || `PR-${Date.now().toString().slice(-6)}`
+    const sanitizedReturnItems: InvoiceItem[] = returnItems.map(item => ({
+      itemId: item.itemId,
+      enteredQuantity: item.enteredQuantity,
+      enteredUnit: item.enteredUnit,
+      baseQuantity: item.baseQuantity,
+      rate: item.rate,
+      amount: item.amount,
+      ...(item.basicRate !== undefined ? { basicRate: item.basicRate } : {}),
+      ...(item.baseRate !== undefined ? { baseRate: item.baseRate } : {}),
+      ...(item.enteredRate !== undefined ? { enteredRate: item.enteredRate } : {}),
+      ...(item.weightKG !== undefined ? { weightKG: item.weightKG } : {})
+    }))
 
     const purchaseReturnRecord: PurchaseReturn = {
       id: returnId,
@@ -325,7 +337,7 @@ export default function PurchaseReturnPage({
       returnNo: finalReturnNo,
       returnDate,
       amount: calculatedTotalAmount,
-      items: returnItems,
+      items: sanitizedReturnItems,
       quantityMT: totalReturnMT,
       additionalCost,
       roundOffAdjustment,
