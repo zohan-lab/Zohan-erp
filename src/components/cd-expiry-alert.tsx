@@ -23,7 +23,7 @@ interface CDExpiryAlert {
   supplierId: string
   supplierName: string
   pendingAmount: number
-  pendingQuantityMT: number
+  pendingQuantity: number
   quantityDisplay?: string
   currentSlabDays: number
   currentSlabRate: number
@@ -109,7 +109,7 @@ export default function CDExpiryAlert({
                   supplierName: supplier.name,
                   pendingAmount,
                   quantityDisplay,
-                  pendingQuantityMT: getInvoiceQtyForUnit(invoice, 'MT'),
+                  pendingQuantity: getInvoiceQtyForUnit(invoice, 'MT'),
                   currentSlabDays: currentSlab.maxDays,
                   currentSlabRate: currentSlab.percentageRate,
                   nextSlabDays: -1,
@@ -128,7 +128,7 @@ export default function CDExpiryAlert({
                   supplierName: supplier.name,
                   pendingAmount,
                   quantityDisplay,
-                  pendingQuantityMT: getInvoiceQtyForUnit(invoice, 'MT'),
+                  pendingQuantity: getInvoiceQtyForUnit(invoice, 'MT'),
                   currentSlabDays: currentSlab.maxDays,
                   currentSlabRate: currentSlab.percentageRate,
                   nextSlabDays: nextSlab.minDays,
@@ -193,7 +193,7 @@ export default function CDExpiryAlert({
                   supplierName: supplier.name,
                   pendingAmount,
                   quantityDisplay,
-                  pendingQuantityMT: getInvoiceQtyForUnit(invoice, 'MT'),
+                  pendingQuantity: getInvoiceQtyForUnit(invoice, 'MT'),
                   currentSlabDays: currentSlab.maxDays,
                   currentSlabRate: currentSlab.ratePerMT,
                   nextSlabDays: -1,
@@ -212,7 +212,7 @@ export default function CDExpiryAlert({
                   supplierName: supplier.name,
                   pendingAmount,
                   quantityDisplay,
-                  pendingQuantityMT: getInvoiceQtyForUnit(invoice, 'MT'),
+                  pendingQuantity: getInvoiceQtyForUnit(invoice, 'MT'),
                   currentSlabDays: currentSlab.maxDays,
                   currentSlabRate: currentSlab.ratePerMT,
                   nextSlabDays: nextSlab.minDays,
@@ -314,7 +314,7 @@ export default function CDExpiryAlert({
                         ) : (
                           <div>
                             <span className="text-muted-foreground">Quantity:</span>
-                            <span className="ml-2 font-mono font-medium">{alert.quantityDisplay || formatMT(alert.pendingQuantityMT)}</span>
+                            <span className="ml-2 font-mono font-medium">{alert.quantityDisplay || formatMT(alert.pendingQuantity)}</span>
                           </div>
                         )}
                         <div>

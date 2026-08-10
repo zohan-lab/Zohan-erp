@@ -945,7 +945,7 @@ interface StyledInvoiceOptions {
   phone?: string
   items?: InvoiceItem[]
   itemMap: Map<string, Item>
-  quantityMT?: number
+  totalQuantity?: number
   invoiceAmount: number
   additionalCost?: number
   additionalCostRemarks?: string
@@ -1266,7 +1266,7 @@ export function exportPurchaseInvoicePDF(
     phone: options.phone,
     items: invoice.items,
     itemMap,
-    quantityMT: getInvoiceQtyForUnit(invoice, 'MT', itemMap),
+    totalQuantity: getInvoiceQtyForUnit(invoice, 'MT', itemMap),
     invoiceAmount: invoice.invoiceAmount,
     additionalCost: invoice.additionalCost,
     additionalCostRemarks: invoice.additionalCostRemarks,
@@ -1302,7 +1302,7 @@ export function exportSalesInvoicePDF(
     phone: options.phone,
     items: invoice.items,
     itemMap,
-    quantityMT: getInvoiceQtyForUnit(invoice, 'MT', itemMap),
+    totalQuantity: getInvoiceQtyForUnit(invoice, 'MT', itemMap),
     invoiceAmount: invoice.invoiceAmount,
     additionalCost: invoice.additionalCost,
     additionalCostRemarks: invoice.additionalCostRemarks,
