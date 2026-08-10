@@ -33,11 +33,16 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ─── 2. Tenant Data Snapshots (/tenants/{companyId}/snapshots/{tenantKey}) ──
-    match /tenants/{companyId}/snapshots/{tenantKey} {
-      // Active authenticated users can read tenant snapshots
+    // ─── 2. Tenant Data Partitions (/tenants/{companyId}/partitions/{partitionId}) ──
+    match /tenants/{companyId}/partitions/{partitionId} {
+      // Active authenticated users can read tenant partitions
       allow read: if isActiveUser();
-      // Active authenticated users can save/update/delete tenant snapshots
+      // Active authenticated users can save/update/delete tenant partitions
+      allow write: if isActiveUser();
+    }
+
+    match /tenants/{companyId}/snapshots/{tenantKey} {
+      allow read: if isActiveUser();
       allow write: if isActiveUser();
     }
 

@@ -59,8 +59,8 @@ export function saveMetadata(metadata: AppMetadata): void {
   localStorage.setItem(METADATA_KEY, JSON.stringify(metadata))
 }
 
-export function getTenantKey(companyId: string, fy: string): string {
-  return `data_${companyId}_${fy}`
+export function getTenantKey(companyId: string, _fy?: string): string {
+  return `data_${companyId}_master`
 }
 
 export function getBusinessDetails(companyId: string): any | null {
@@ -101,8 +101,8 @@ export function deleteTenantData(companyId: string): void {
   keysToRemove.forEach((k) => localStorage.removeItem(k))
 }
 
-export function getTenantData(companyId: string, fy: string): TenantData {
-  const key = getTenantKey(companyId, fy)
+export function getTenantData(companyId: string, _fy?: string): TenantData {
+  const key = getTenantKey(companyId)
   const stored = localStorage.getItem(key)
   
   if (!stored) {
@@ -160,9 +160,10 @@ export function getTenantData(companyId: string, fy: string): TenantData {
   return parsedData
 }
 
-export function saveTenantData(companyId: string, fy: string, data: TenantData): void {
-  const key = getTenantKey(companyId, fy)
-  localStorage.setItem(key, JSON.stringify(data))
+export function saveTenantData(companyId: string, fyOrData: string | TenantData, data?: TenantData): void {
+  const key = getTenantKey(companyId)
+  const payload = typeof fyOrData === 'object' ? fyOrData : (data || ({} as TenantData))
+  localStorage.setItem(key, JSON.stringify(payload))
 }
 
 export function generateFYOptions(): string[] {

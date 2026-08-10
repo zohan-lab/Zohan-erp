@@ -112,12 +112,12 @@ function withTimeout<T>(promise: Promise<T>, ms = 20000): Promise<T> {
 }
 
 /**
- * Returns the Firestore document reference for a tenant snapshot.
- * Path: tenants/{companyId}/snapshots/{tenantKey}
+ * Returns the Firestore document reference for a company's master partition.
+ * Path: tenants/{companyId}/partitions/master_data
  */
-function snapshotRef(companyId: string, tenantKey: string) {
+function masterPartitionRef(companyId: string) {
   if (!db) throw new RemoteStorageUnavailableError('Firestore not initialised.')
-  return doc(db, 'tenants', companyId, 'snapshots', tenantKey)
+  return doc(db, 'tenants', companyId, 'partitions', 'master_data')
 }
 
 function firestoreDocToSnapshot(
@@ -127,7 +127,7 @@ function firestoreDocToSnapshot(
 ): TenantSnapshot {
   return {
     company_id: companyId,
-    tenant_key: tenantKey,
+    tenant_key: tenantKey || 'master_data',
     payload: data.payload,
     revision: data.revision,
     updated_at: data.updatedAt,
@@ -143,13 +143,13 @@ function firestoreDocToSnapshot(
  */
 export async function loadRemoteTenantData(
   companyId: string,
-  tenantKey: string
+  tenantKey: string = 'master_data'
 ): Promise<TenantSnapshot | null> {
   if (!canUseRemoteStorage()) return null
   assertRemoteAvailable()
 
   try {
-    const snap = await withTimeout(getDoc(snapshotRef(companyId, tenantKey)))
+    const snap = await withTimeout(getDoc(masterPartitionRef(companyId)))
     if (!snap.exists()) return null
     return firestoreDocToSnapshot(companyId, tenantKey, snap.data() as FirestoreSnapshotDoc)
   } catch (error) {
@@ -169,14 +169,14 @@ export async function loadRemoteTenantData(
  */
 export async function saveRemoteTenantData(
   companyId: string,
-  tenantKey: string,
+  tenantKey: string = 'master_data',
   payload: TenantData,
   expectedRevision: number | null
 ): Promise<TenantSnapshot | null> {
   if (!canUseRemoteStorage() || !db) return null
   assertRemoteAvailable()
 
-  const ref = snapshotRef(companyId, tenantKey)
+  const ref = masterPartitionRef(companyId)
   const deviceId = getDeviceId()
 
   try {
@@ -237,7 +237,7 @@ export async function saveRemoteTenantData(
  */
 export function subscribeTenantData(
   companyId: string,
-  tenantKey: string,
+  tenantKey: string = 'master_data',
   onSnapshotReceived: (snapshot: TenantSnapshot) => void
 ): (() => void) | null {
   if (!canUseRemoteStorage() || !db) return null
@@ -247,7 +247,7 @@ export function subscribeTenantData(
 
   try {
     unsubscribe = onSnapshot(
-      snapshotRef(companyId, tenantKey),
+      masterPartitionRef(companyId),
       (snap) => {
         if (!snap.exists()) return
         const data = snap.data() as FirestoreSnapshotDoc

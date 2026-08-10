@@ -998,13 +998,12 @@ function App() {
       try {
         const restoredKeysStr = localStorage.getItem('restored_keys')
         const restoredKeys = restoredKeysStr ? JSON.parse(restoredKeysStr) : {}
-        const isRestored = restoredKeys[partitionKey] === true || restoredKeys[`data_${companyId}_${activeFY}`] === true
+        const isRestored = restoredKeys[partitionKey] === true
 
         if (canUseRemoteStorage()) {
           if (isRestored) {
             console.log(`Skipping remote load for ${partitionKey} because it was recently restored locally. Data will be pushed to remote.`)
             delete restoredKeys[partitionKey]
-            delete restoredKeys[`data_${companyId}_${activeFY}`]
             localStorage.setItem('restored_keys', JSON.stringify(restoredKeys))
             // Force expectedRevision to null so it overwrites remote without conflict
             remoteRevisionRef.current[partitionKey] = null
@@ -1622,7 +1621,7 @@ function App() {
     saveMetadata(updatedMetadata)
     saveBusinessToCloud(businessId, newBusiness, {})
     appendAuditLog('business_created', { businessId, businessName: newBusiness.name })
-    void appendServerAuditLog(businessId, `data_${businessId}_${newBusinessStartFY}`, 'business_created', { businessId, businessName: newBusiness.name })
+    void appendServerAuditLog(businessId, getTenantKey(businessId), 'business_created', { businessId, businessName: newBusiness.name })
     
     setSuppliers([])
     setCustomers([])
@@ -1864,16 +1863,12 @@ function App() {
           // Guard against double-stringification
           const cleanDataStr = typeof parsed.data === 'string' ? parsed.data : JSON.stringify(parsed.data);
 
-          // Write to all possible key variations to ensure data isolation hooks find it
-          localStorage.setItem(`data_${companyName}_${financialYear}`, cleanDataStr);
-          localStorage.setItem(`data_${companyId}_${financialYear}`, cleanDataStr);
-          if (parsed.cashBankData) {
-            localStorage.setItem(`cashbank_${companyId}_${financialYear}`, JSON.stringify(parsed.cashBankData));
-          }
+          // Write to unified master partition key
+          const masterKey = getTenantKey(companyId);
+          localStorage.setItem(masterKey, cleanDataStr);
 
           const restoredKeys = JSON.parse(localStorage.getItem('restored_keys') || '{}')
-          restoredKeys[`data_${companyId}_${financialYear}`] = true
-          restoredKeys[`data_v3_${companyId}_${financialYear}`] = true
+          restoredKeys[masterKey] = true
           localStorage.setItem('restored_keys', JSON.stringify(restoredKeys))
 
           // Update app_metadata to register the business
@@ -1923,8 +1918,8 @@ function App() {
           }
 
           toast.success(`Single Backup Restored successfully for ${companyName} (${financialYear})!`);
-          appendAuditLog('single_smart_restore', { companyName, companyId, financialYear }, `data_${companyId}_${financialYear}`)
-          void appendServerAuditLog(companyId, `data_${companyId}_${financialYear}`, 'single_smart_restore', { companyName, companyId, financialYear })
+          appendAuditLog('single_smart_restore', { companyName, companyId, financialYear }, getTenantKey(companyId))
+          void appendServerAuditLog(companyId, getTenantKey(companyId), 'single_smart_restore', { companyName, companyId, financialYear })
           setTimeout(() => window.location.reload(), 1200);
         } 
         else {

@@ -51,10 +51,15 @@ export async function deleteBusinessFromCloud(businessId: string) {
   try {
     await deleteDoc(doc(db, 'businesses', businessId));
     
-    // Also delete all snapshots for this business
+    // Also delete all partitions and snapshots for this business
+    const partitionsRef = collection(db, 'tenants', businessId, 'partitions');
+    const partSnap = await getDocs(partitionsRef);
     const snapshotsRef = collection(db, 'tenants', businessId, 'snapshots');
     const snap = await getDocs(snapshotsRef);
-    const deletePromises = snap.docs.map(snapshotDoc => deleteDoc(snapshotDoc.ref));
+    const deletePromises = [
+      ...partSnap.docs.map(docRef => deleteDoc(docRef.ref)),
+      ...snap.docs.map(docRef => deleteDoc(docRef.ref))
+    ];
     await Promise.all(deletePromises);
   } catch (e) {
     console.error('Failed to delete business from cloud:', e);
