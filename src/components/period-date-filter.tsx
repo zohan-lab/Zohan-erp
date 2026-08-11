@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input'
 import { Calendar } from '@phosphor-icons/react'
 import { getFYFromDate } from '@/lib/calculations'
 
-export type PeriodType = 'current_month' | 'previous_month' | 'current_fy' | 'previous_fy' | 'custom'
+export type PeriodType = 'all' | 'current_month' | 'previous_month' | 'current_fy' | 'previous_fy' | 'custom'
 
 export interface PeriodFilterState {
   periodType: PeriodType
@@ -13,7 +13,7 @@ export interface PeriodFilterState {
 }
 
 export const defaultPeriodFilterState: PeriodFilterState = {
-  periodType: 'current_fy',
+  periodType: 'all',
   fromDate: '',
   toDate: ''
 }
@@ -71,6 +71,7 @@ export function PeriodDateFilter({
             <SelectValue placeholder="Select Period" />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="all">All Time (All Transactions)</SelectItem>
             <SelectItem value="current_month">Current Month ({currentMonthLabel})</SelectItem>
             <SelectItem value="previous_month">Previous Month ({previousMonthLabel})</SelectItem>
             <SelectItem value="current_fy">Current FY ({normCurrentFY})</SelectItem>
@@ -196,6 +197,10 @@ export function isRecordInPeriod(
 ): boolean {
   if (!filterState) return true
   const { periodType, fromDate, toDate } = filterState
+
+  if (periodType === 'all') {
+    return true
+  }
 
   const currentFYNorm = currentFYSetting
     ? (currentFYSetting.startsWith('FY') ? currentFYSetting : `FY${currentFYSetting}`)

@@ -646,9 +646,8 @@ function App() {
 
   const currentActiveBusiness = metadata.businesses.find(b => b.id === metadata.activeCompanyId)
   const activeCompany = currentActiveBusiness?.name || 'SK TRADERS'
-  const activeFY = currentActiveBusiness?.startFY || metadata.activeFY || getCurrentFY()
-  const tenantKey = getTenantKey(metadata.activeCompanyId, activeFY)
-  const cashBankKey = `cashbank_${metadata.activeCompanyId}_${activeFY}`
+  const tenantKey = getTenantKey(metadata.activeCompanyId)
+  const cashBankKey = getTenantKey(metadata.activeCompanyId)
   const storedCompanies = metadata.businesses.map(b => b.name)
 
   const safeSuppliers = suppliers || []
@@ -672,7 +671,8 @@ function App() {
   const canSyncRemoteTenant = !useServerAuth || (authHydrated && isAuthenticated && Boolean(currentUser))
   const safeGstPercentage = gstPercentage || 18
   const safeBusinessName = activeCompany || 'SK TRADERS'
-  const safeCurrentFY = activeFY || getCurrentFY()
+  const activeFY = getCurrentFY()
+  const safeCurrentFY = activeFY
   const isMasterAdmin = useMemo(() => {
     if (!currentUser) return false
     if (currentUser.role === 'master_admin') return true
