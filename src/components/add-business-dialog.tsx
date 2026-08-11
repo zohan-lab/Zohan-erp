@@ -3,8 +3,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { generateFYOptions, createBusinessId } from '@/lib/storage-utils'
+import { createBusinessId } from '@/lib/storage-utils'
+import { getCurrentFY } from '@/lib/calculations'
 import { Plus } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 
@@ -16,26 +16,17 @@ interface AddBusinessDialogProps {
 
 export function AddBusinessDialog({ open, onOpenChange, onBusinessCreated }: AddBusinessDialogProps) {
   const [businessName, setBusinessName] = useState('')
-  const [startFY, setStartFY] = useState('')
-
-  const fyOptions = generateFYOptions()
 
   const handleCreate = () => {
     if (!businessName.trim()) {
       toast.error('Please enter a business name')
       return
     }
-    
-    if (!startFY) {
-      toast.error('Please select a starting financial year')
-      return
-    }
 
     const id = createBusinessId(businessName)
-    onBusinessCreated(id, businessName.trim(), startFY)
+    onBusinessCreated(id, businessName.trim(), getCurrentFY())
     
     setBusinessName('')
-    setStartFY('')
     onOpenChange(false)
   }
 
@@ -48,7 +39,7 @@ export function AddBusinessDialog({ open, onOpenChange, onBusinessCreated }: Add
             Add New Business
           </DialogTitle>
           <DialogDescription>
-            Create a new business entity with its starting financial year
+            Create a new business entity
           </DialogDescription>
         </DialogHeader>
         
@@ -61,22 +52,6 @@ export function AddBusinessDialog({ open, onOpenChange, onBusinessCreated }: Add
               onChange={(e) => setBusinessName(e.target.value)}
               placeholder="Enter business name"
             />
-          </div>
-          
-          <div className="space-y-2">
-            <Label htmlFor="start-fy">Starting Financial Year</Label>
-            <Select value={startFY} onValueChange={setStartFY}>
-              <SelectTrigger id="start-fy">
-                <SelectValue placeholder="Select FY" />
-              </SelectTrigger>
-              <SelectContent>
-                {fyOptions.map((fy) => (
-                  <SelectItem key={fy} value={fy}>
-                    {fy}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
           </div>
         </div>
         

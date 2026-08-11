@@ -1605,17 +1605,18 @@ function App() {
       return
     }
 
+    const currentFY = getCurrentFY()
     const newBusiness: BusinessMetadata = {
       id: businessId,
       name: newBusinessName.trim(),
-      startFY: newBusinessStartFY
+      startFY: currentFY
     }
 
     const updatedMetadata = {
       ...metadata,
       businesses: [...metadata.businesses, newBusiness],
       activeCompanyId: businessId,
-      activeFY: newBusinessStartFY
+      activeFY: currentFY
     }
 
     setMetadata(updatedMetadata)

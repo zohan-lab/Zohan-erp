@@ -229,14 +229,6 @@ export function AppDialogs({
                   <Input value={businessCity} onChange={(e) => setBusinessCity(e.target.value)} placeholder="Enter City" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Start Financial Year</Label>
-                  <select id="new-business-fy" value={newBusinessStartFY} onChange={(e) => setNewBusinessStartFY(e.target.value)} className="w-full border border-input bg-background px-3 py-2 text-sm rounded-md focus:outline-none focus:ring-2 focus:ring-ring">
-                    {generateFYOptions().map((fy) => (
-                      <option key={fy} value={fy}>{fy}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
                   <Label>PAN Number</Label>
                   <Input value={panNumber} onChange={(e) => setPanNumber(e.target.value.toUpperCase())} placeholder="Enter your PAN Number" />
                 </div>
