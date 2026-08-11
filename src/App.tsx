@@ -500,9 +500,8 @@ function App() {
     const meta = getMetadata()
     if (!meta.businesses || meta.businesses.length === 0) {
       const defaultMeta: AppMetadata = {
-        businesses: [{ id: 'sk_traders', name: 'SK TRADERS', startFY: getCurrentFY() }],
-        activeCompanyId: 'sk_traders',
-        activeFY: getCurrentFY()
+        businesses: [{ id: 'sk_traders', name: 'SK TRADERS' }],
+        activeCompanyId: 'sk_traders'
       }
       saveMetadata(defaultMeta)
       return defaultMeta
@@ -793,11 +792,11 @@ function App() {
             : cloudMetadataList[0]?.id || prev.activeCompanyId;
           const activeBiz = cloudMetadataList.find(b => b.id === validActive);
 
+          const cleanList = cloudMetadataList.map(b => ({ id: b.id, name: b.name }))
           const nextMeta: AppMetadata = {
             ...prev,
-            businesses: cloudMetadataList,
-            activeCompanyId: validActive,
-            activeFY: activeBiz?.startFY || prev.activeFY
+            businesses: cleanList,
+            activeCompanyId: validActive
           };
           saveMetadata(nextMeta);
           return nextMeta;
@@ -1605,18 +1604,15 @@ function App() {
       return
     }
 
-    const currentFY = getCurrentFY()
     const newBusiness: BusinessMetadata = {
       id: businessId,
-      name: newBusinessName.trim(),
-      startFY: currentFY
+      name: newBusinessName.trim()
     }
 
     const updatedMetadata = {
       ...metadata,
       businesses: [...metadata.businesses, newBusiness],
-      activeCompanyId: businessId,
-      activeFY: currentFY
+      activeCompanyId: businessId
     }
 
     setMetadata(updatedMetadata)

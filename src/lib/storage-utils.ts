@@ -6,13 +6,13 @@
 export interface BusinessMetadata {
   id: string
   name: string
-  startFY: string
+  startFY?: string
 }
 
 export interface AppMetadata {
   businesses: BusinessMetadata[]
   activeCompanyId: string
-  activeFY: string
+  activeFY?: string
 }
 
 export interface TenantData {

@@ -153,8 +153,7 @@ export function AppDialogs({
       
       const newBusinessMeta = {
         id: businessId,
-        name: newBusinessName.trim(),
-        startFY: newBusinessStartFY
+        name: newBusinessName.trim()
       }
       saveBusinessToCloud(businessId, newBusinessMeta, details)
     }

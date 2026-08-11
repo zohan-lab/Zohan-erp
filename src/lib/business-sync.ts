@@ -25,9 +25,13 @@ export interface BusinessCloudData {
 export async function saveBusinessToCloud(businessId: string, metadata: BusinessMetadata, details: BusinessDetails) {
   if (!isRemoteStorageEnabled || !isFirebaseConfigured || !db) return;
   try {
+    const cleanMeta = {
+      id: metadata.id,
+      name: metadata.name
+    }
     await setDoc(doc(db, 'businesses', businessId), {
-      metadata,
-      details,
+      metadata: cleanMeta,
+      details: details || {},
       updatedAt: new Date().toISOString()
     }, { merge: true });
   } catch (e) {
@@ -39,7 +43,27 @@ export async function loadBusinessesFromCloud(): Promise<BusinessCloudData[]> {
   if (!isRemoteStorageEnabled || !isFirebaseConfigured || !db) return [];
   try {
     const snap = await getDocs(collection(db, 'businesses'));
-    return snap.docs.map(doc => doc.data() as BusinessCloudData);
+    const list = snap.docs.map(d => {
+      const data = d.data() as BusinessCloudData;
+      return {
+        metadata: {
+          id: data.metadata?.id || d.id,
+          name: data.metadata?.name || d.id
+        },
+        details: data.details || {}
+      };
+    });
+
+    const hasSKTraders = list.some(b => b.metadata?.id === 'sk_traders');
+    if (!hasSKTraders) {
+      const skTradersData: BusinessCloudData = {
+        metadata: { id: 'sk_traders', name: 'SK TRADERS' },
+        details: {}
+      };
+      void saveBusinessToCloud('sk_traders', skTradersData.metadata, skTradersData.details);
+      list.unshift(skTradersData);
+    }
+    return list;
   } catch (e) {
     console.error('Failed to load businesses from cloud:', e);
     return [];
