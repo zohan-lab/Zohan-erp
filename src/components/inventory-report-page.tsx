@@ -7,8 +7,7 @@ import { Item, PurchaseInvoice, SalesInvoice, PurchaseReturn, SalesReturn } from
 import { calculateInventoryReport, InventoryData } from '@/lib/report-calculations'
 import { formatCurrency, formatMT } from '@/lib/calculations'
 import { Package, TrendUp, TrendDown, FilePdf } from '@phosphor-icons/react'
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
+import { exportInventoryReportPDF } from '@/lib/pdf-export'
 import { toast } from 'sonner'
 
 import { PeriodDateFilter, PeriodFilterState, defaultPeriodFilterState } from '@/components/period-date-filter'
@@ -73,105 +72,11 @@ export default function InventoryReportPage({
   }, [inventoryData])
 
   const handleExportPDF = () => {
-    const doc = new jsPDF('landscape')
-    
-    const formatAmount = (amount: number): string => {
-      const val = Number.isFinite(Number(amount)) ? Number(amount) : 0
-      const formatted = val.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
-      return `Rs.${formatted}`
-    }
-    
-    doc.setFontSize(18)
-    doc.setFont('helvetica', 'bold')
-    doc.text(businessName, 14, 15)
-    
-    doc.setFontSize(14)
-    doc.text('Inventory Report', 14, 23)
-    
-    doc.setFontSize(9)
-    doc.setFont('helvetica', 'normal')
-    doc.text(`Financial Year: ${currentFY}`, 14, 30)
-    doc.text(`Generated: ${new Date().toLocaleString('en-IN')}`, 14, 35)
-    
-    const yPos = 42
-    doc.setFillColor(245, 245, 250)
-    doc.rect(14, yPos, 268, 20, 'F')
-    
-    doc.setFontSize(8)
-    doc.setFont('helvetica', 'bold')
-    doc.text('SUMMARY', 16, yPos + 5)
-    
-    doc.setFontSize(10)
-    doc.text('Opening Stock:', 16, yPos + 11)
-    doc.setFont('helvetica', 'normal')
-    doc.text(formatAmount(totals.totalOpeningValue), 16, yPos + 15)
-
-    doc.setFont('helvetica', 'bold')
-    doc.text('Total Purchase:', 80, yPos + 11)
-    doc.setFont('helvetica', 'normal')
-    doc.text(formatAmount(totals.totalPurchaseValue), 80, yPos + 15)
-    
-    doc.setFont('helvetica', 'bold')
-    doc.text('Total Sales:', 140, yPos + 11)
-    doc.setFont('helvetica', 'normal')
-    doc.text(formatAmount(totals.totalSalesValue), 140, yPos + 15)
-    
-    doc.setFont('helvetica', 'bold')
-    doc.text('Closing Stock Value:', 200, yPos + 11)
-    doc.setFont('helvetica', 'normal')
-    doc.text(formatAmount(totals.totalStockValue), 200, yPos + 15)
-
-    const tableData = inventoryData.map(item => {
-      const secUnit = item.secondaryUnit
-      const fmt = (primaryQty: number, secQty?: number, preferAlt?: boolean) => {
-        const mainU = preferAlt && secUnit ? secUnit : item.unit
-        const mainQ = preferAlt && typeof secQty === 'number' ? secQty : primaryQty
-        
-        const secU = preferAlt && secUnit ? item.unit : secUnit
-        const secQ = preferAlt && typeof secQty === 'number' ? primaryQty : secQty
-
-        const primStr = `${mainQ.toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${mainU}`
-        if (secU && secU !== mainU && typeof secQ === 'number') {
-          const secStr = secQ.toLocaleString('en-IN', { maximumFractionDigits: 3 })
-          return `${primStr} (${secStr} ${secU})`
-        }
-        return primStr
-      }
-
-      return [
-        item.itemName,
-        secUnit && secUnit !== item.unit ? `${item.unit} / ${secUnit}` : item.unit,
-        item.openingStockMT > 0 ? fmt(item.openingStockMT, item.secondaryOpeningStock, false) : '-',
-        fmt(item.totalPurchaseMT, item.secondaryTotalPurchase, item.preferAltPurchase),
-        fmt(item.totalSalesMT, item.secondaryTotalSales, item.preferAltSale),
-        fmt(item.balanceMT, item.secondaryBalance, false),
-        formatAmount(item.avgPurchaseRate),
-        formatAmount(item.avgSalesRate),
-        formatAmount(item.currentStockValue)
-      ]
+    exportInventoryReportPDF(inventoryData, {
+      currentFY,
+      businessName,
+      totals
     })
-
-    autoTable(doc, {
-      startY: yPos + 24,
-      head: [['Item Name', 'Unit', 'Opening', 'Purchased', 'Sold', 'Balance', 'Avg Purch Rate', 'Avg Sales Rate', 'Stock Value']],
-      body: tableData.length > 0 ? tableData : [['No inventory data', '', '', '', '', '', '', '', '']],
-      theme: 'grid',
-      headStyles: { fillColor: [64, 44, 120], fontSize: 9, fontStyle: 'bold' },
-      bodyStyles: { fontSize: 8 },
-      columnStyles: {
-        2: { halign: 'right' },
-        3: { halign: 'right' },
-        4: { halign: 'right' },
-        5: { halign: 'right' },
-        6: { halign: 'right' },
-        7: { halign: 'right' },
-        8: { halign: 'right', fontStyle: 'bold' },
-      },
-      margin: { left: 14, right: 14 },
-    })
-
-    const fileName = `Inventory_Report_${currentFY}_${new Date().toISOString().split('T')[0]}.pdf`
-    doc.save(fileName)
     toast.success('PDF exported successfully')
   }
 

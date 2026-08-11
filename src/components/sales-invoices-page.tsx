@@ -653,7 +653,7 @@ export default function SalesInvoicesPage({
     return items.find(i => i.id === itemId)?.name || 'Unknown'
   }
 
-  const customerMap = new Map(customers.map(customer => [customer.id, customer]))
+  const customerMap = useMemo(() => new Map(customers.map(customer => [customer.id, customer])), [customers])
   const selectedInvoiceCustomer = selectedCustomerId ? customerMap.get(selectedCustomerId) : undefined
   const filteredCustomers = customers.filter((customer) => {
     const query = customerSearch.trim().toLowerCase()
@@ -662,7 +662,7 @@ export default function SalesInvoicesPage({
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(query))
   })
-  const itemMap = new Map(items.map(item => [item.id, item]))
+  const itemMap = useMemo(() => new Map(items.map(item => [item.id, item])), [items])
   const filteredPickerItems = useMemo(() => {
     const query = itemSearch.trim().toLowerCase()
 

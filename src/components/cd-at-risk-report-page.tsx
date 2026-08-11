@@ -28,8 +28,7 @@ import {
 } from "@/components/ui/popover"
 import { Checkbox } from "@/components/ui/checkbox"
 import { motion, AnimatePresence } from 'framer-motion'
-import { jsPDF } from 'jspdf'
-import autoTable from 'jspdf-autotable'
+import { exportCDAtRiskPDF } from '@/lib/pdf-export'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
@@ -93,182 +92,11 @@ export default function CDAtRiskReportPage({
   }, [cdAtRiskData, eligibleInvoices, ineligibleInvoices])
 
   const handleExportPDF = () => {
-    const doc = new jsPDF('landscape')
-    
-    const formatAmount = (amount: number): string => {
-      return amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    }
-    
-    doc.setFontSize(18)
-    doc.setFont('helvetica', 'bold')
-    doc.text(businessName, 14, 15)
-    
-    doc.setFontSize(14)
-    doc.text('CD at Risk Report (Multi-Unit Breakdown)', 14, 23)
-    
-    doc.setFontSize(9)
-    doc.setFont('helvetica', 'normal')
-    doc.text(`Financial Year: ${currentFY}`, 14, 30)
-    doc.text(`Generated: ${new Date().toLocaleString('en-IN')}`, 14, 35)
-    
-    const yPos = 42
-    doc.setFillColor(245, 245, 250)
-    doc.rect(14, yPos, 268, 20, 'F')
-    
-    doc.setFontSize(8)
-    doc.setFont('helvetica', 'bold')
-    doc.text('SUMMARY', 16, yPos + 5)
-    
-    doc.setFontSize(10)
-    doc.setFont('helvetica', 'bold')
-    doc.text('TOTAL CD RISK:', 16, yPos + 11)
-    doc.setFont('helvetica', 'normal')
-    doc.text(`Rs ${formatAmount(summary.totalPaymentCDAtCurrentSlab)}`, 16, yPos + 15)
-    
-    doc.setFont('helvetica', 'bold')
-    doc.text('Invoice CD Loss:', 80, yPos + 11)
-    doc.setFont('helvetica', 'normal')
-    doc.text(`Rs ${formatAmount(summary.totalInvoiceCDRisk)}`, 80, yPos + 15)
-    
-    doc.setFont('helvetica', 'bold')
-    doc.text('Pending Amount:', 145, yPos + 11)
-    doc.setFont('helvetica', 'normal')
-    doc.text(`Rs ${formatAmount(summary.totalPending)}`, 145, yPos + 15)
-    
-    doc.setFont('helvetica', 'bold')
-    doc.text('Eligible Invoices:', 210, yPos + 11)
-    doc.setFont('helvetica', 'normal')
-    doc.text(summary.totalEligible.toString(), 210, yPos + 15)
-
-    doc.setFontSize(11)
-    doc.setFont('helvetica', 'bold')
-    doc.text('Eligible Invoices - CD Available', 14, yPos + 26)
-
-    const eligibleTableData: any[] = []
-    eligibleInvoices.forEach(data => {
-      const cdSubRows: { cdType: string; amountAtRisk: number; nextSlab: string }[] = []
-      
-      if (data.totalPaymentCDAtCurrentSlab > 0 || data.paymentCDRisk > 0) {
-        const payNextDays = data.paymentCDNextSlabDays || 0
-        const payNextRate = data.nextSlabPaymentCDRate || 0
-        const payNextText = payNextDays > 0
-          ? `${payNextDays}d (${payNextRate}%)`
-          : (payNextRate > 0 ? `${payNextRate}%` : 'Max Slab')
-
-        cdSubRows.push({
-          cdType: `Payment Cd (${data.currentSlabPaymentCDRate}%)`,
-          amountAtRisk: data.paymentCDRisk > 0 ? data.paymentCDRisk : data.totalPaymentCDAtCurrentSlab,
-          nextSlab: payNextText
-        })
-      }
-
-      if (data.invoiceCloseCDBreakdown && data.invoiceCloseCDBreakdown.length > 0) {
-        data.invoiceCloseCDBreakdown.forEach(item => {
-          const unitNextDays = item.nextSlabDays || 0
-          const unitNextRate = item.nextRate || 0
-          const unitNextText = unitNextDays > 0
-            ? `${unitNextDays}d (Rs ${unitNextRate}/${item.unit})`
-            : (unitNextRate > 0 ? `Rs ${unitNextRate}/${item.unit}` : 'Max Slab')
-
-          cdSubRows.push({
-            cdType: `Invoice Closed Cd (${item.quantity} ${item.unit} @ Rs ${item.currentRate}/${item.unit})`,
-            amountAtRisk: item.riskAmount > 0 ? item.riskAmount : item.currentAmount,
-            nextSlab: unitNextText
-          })
-        })
-      } else if (data.invoiceCloseCDRisk > 0 || data.currentSlabInvoiceCloseCDRate > 0) {
-        const invNextDays = data.invoiceCloseCDNextSlabDays || 0
-        const invNextRate = data.nextSlabInvoiceCloseCDRate || 0
-        const invNextText = invNextDays > 0
-          ? `${invNextDays}d (Rs ${invNextRate}/MT)`
-          : (invNextRate > 0 ? `Rs ${invNextRate}/MT` : 'Max Slab')
-
-        cdSubRows.push({
-          cdType: `Invoice Closed Cd (Rs ${data.currentSlabInvoiceCloseCDRate}/MT)`,
-          amountAtRisk: data.invoiceCloseCDRisk,
-          nextSlab: invNextText
-        })
-      }
-
-      if (cdSubRows.length === 0) {
-        cdSubRows.push({
-          cdType: 'No CD',
-          amountAtRisk: 0,
-          nextSlab: '-'
-        })
-      }
-
-      cdSubRows.forEach((sub, idx) => {
-        eligibleTableData.push([
-          idx === 0 ? data.invoiceNo : '',
-          idx === 0 ? data.supplierName : '',
-          idx === 0 ? format(new Date(data.invoiceDate), 'dd MMM yyyy') : '',
-          idx === 0 ? `${data.daysSinceInvoice}d` : '',
-          idx === 0 ? formatAmount(data.pendingAmount) : '',
-          sub.cdType,
-          formatAmount(sub.amountAtRisk),
-          sub.nextSlab,
-          idx === 0 ? formatAmount(data.totalCDAtRisk) : ''
-        ])
-      })
+    exportCDAtRiskPDF(eligibleInvoices, {
+      currentFY,
+      businessName,
+      summary
     })
-
-    autoTable(doc, {
-      startY: yPos + 28,
-      head: [['Invoice No', 'Supplier', 'Date', 'Aging', 'Pending Amt (Rs)', 'CD Types', 'Amount At-Risk (Rs)', 'Next Slab', 'Total CD Risk (Rs)']],
-      body: eligibleTableData.length > 0 ? eligibleTableData : [['No eligible invoices', '', '', '', '', '', '', '', '']],
-      theme: 'grid',
-      headStyles: { fillColor: [30, 41, 59], fontSize: 8, fontStyle: 'bold', halign: 'center' },
-      bodyStyles: { fontSize: 7 },
-      columnStyles: {
-        0: { cellWidth: 23, halign: 'left' },
-        1: { cellWidth: 35, halign: 'left' },
-        2: { cellWidth: 23, halign: 'center' },
-        3: { cellWidth: 13, halign: 'center' },
-        4: { cellWidth: 27, halign: 'right' },
-        5: { cellWidth: 55, halign: 'left' },
-        6: { cellWidth: 30, halign: 'right' },
-        7: { cellWidth: 25, halign: 'center' },
-        8: { cellWidth: 30, halign: 'right', fontStyle: 'bold' },
-      },
-      margin: { left: 14, right: 14 },
-    })
-
-    const finalY = (doc as any).lastAutoTable.finalY + 10
-
-    doc.setFontSize(11)
-    doc.setFont('helvetica', 'bold')
-    doc.text('Ineligible Invoices - CD Expired', 14, finalY)
-
-    const ineligibleTableData = ineligibleInvoices.map(data => [
-      data.invoiceNo,
-      data.supplierName,
-      format(new Date(data.invoiceDate), 'dd MMM yyyy'),
-      `${data.daysSinceInvoice}d`,
-      formatAmount(data.pendingAmount),
-      'CD Expired'
-    ])
-
-    autoTable(doc, {
-      startY: finalY + 2,
-      head: [['Invoice No', 'Supplier', 'Date', 'Days', 'Pending (Rs)', 'Status']],
-      body: ineligibleTableData.length > 0 ? ineligibleTableData : [['No ineligible invoices', '', '', '', '', '']],
-      theme: 'grid',
-      headStyles: { fillColor: [30, 41, 59], fontSize: 8, fontStyle: 'bold', halign: 'center' },
-      bodyStyles: { fontSize: 7 },
-      columnStyles: {
-        0: { cellWidth: 30, halign: 'left' },
-        1: { cellWidth: 50, halign: 'left' },
-        2: { cellWidth: 30, halign: 'center' },
-        3: { cellWidth: 20, halign: 'center' },
-        4: { cellWidth: 40, halign: 'right' },
-        5: { cellWidth: 30, halign: 'center' },
-      },
-      margin: { left: 14, right: 14 },
-    })
-
-    const fileName = `CD_at_Risk_${currentFY}_${new Date().toISOString().split('T')[0]}.pdf`
-    doc.save(fileName)
     toast.success('PDF exported successfully')
   }
 

@@ -1402,3 +1402,455 @@ export function exportCustomerAgingToPDF(
   doc.save(`Customer_Aging_Report_${businessName.replace(/\s+/g, '_')}_${options.fy}.pdf`)
 }
 
+export interface CustomerLedgerEntry {
+  date: string
+  description: string
+  invoiceNo?: string
+  debit: number
+  credit: number
+  balance: number
+  type: 'invoice' | 'payment'
+  refId: string
+}
+
+export interface CustomerLedgerExportOptions {
+  customerName: string
+  fy: string
+  businessName?: string
+  totalDebit: number
+  totalCredit: number
+  closingBalance: number
+  openingBalance: number
+}
+
+export function exportCustomerLedgerPDF(
+  entries: CustomerLedgerEntry[],
+  options: CustomerLedgerExportOptions
+) {
+  const doc = new jsPDF('landscape')
+  
+  doc.setFontSize(18)
+  doc.setFont('helvetica', 'bold')
+  doc.text(options.businessName || 'Steel Trading ERP', 14, 15)
+  
+  doc.setFontSize(14)
+  doc.text('Customer Ledger Report', 14, 23)
+  
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.text(`Financial Year: ${options.fy}`, 14, 30)
+  doc.text(`Customer: ${options.customerName}`, 14, 35)
+  doc.text(`Generated: ${new Date().toLocaleString('en-IN')}`, 14, 40)
+
+  let yPos = 47
+
+  doc.setFillColor(245, 245, 250)
+  doc.rect(14, yPos, 268, 18, 'F')
+  
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'bold')
+  doc.text('SUMMARY', 16, yPos + 5)
+  
+  doc.setFontSize(10)
+  doc.text('Total Sales (Debit):', 16, yPos + 11)
+  doc.setFont('helvetica', 'normal')
+  doc.text(`Rs ${options.totalDebit.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`, 16, yPos + 15)
+  
+  doc.setFont('helvetica', 'bold')
+  doc.text('Total Receipts (Credit):', 80, yPos + 11)
+  doc.setFont('helvetica', 'normal')
+  doc.text(`Rs ${options.totalCredit.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`, 80, yPos + 15)
+  
+  doc.setFont('helvetica', 'bold')
+  doc.text('Outstanding Balance:', 155, yPos + 11)
+  doc.setFont('helvetica', 'normal')
+  const balanceText = options.closingBalance > 0 
+    ? `Rs ${Math.abs(options.closingBalance).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} Dr` 
+    : options.closingBalance < 0 
+    ? `Rs ${Math.abs(options.closingBalance).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} Cr`
+    : 'Rs 0.00'
+  doc.text(balanceText, 155, yPos + 15)
+
+  yPos += 22
+
+  doc.setFontSize(11)
+  doc.setFont('helvetica', 'bold')
+  doc.text('Ledger Entries', 14, yPos)
+  yPos += 2
+
+  const tableData = entries.map(entry => {
+    const balance = Math.abs(entry.balance)
+    const balanceStr = entry.balance > 0 
+      ? `${balance.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} Dr` 
+      : entry.balance < 0 
+      ? `${balance.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')} Cr`
+      : '0.00'
+    
+    return [
+      new Date(entry.date).toLocaleDateString('en-IN'),
+      entry.description,
+      entry.invoiceNo || '-',
+      entry.debit > 0 ? entry.debit.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '-',
+      entry.credit > 0 ? entry.credit.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '-',
+      balanceStr
+    ]
+  })
+
+  const totalRow = [
+    { content: 'TOTAL', colSpan: 3, styles: { halign: 'right', fontStyle: 'bold' } },
+    options.totalDebit.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','),
+    options.totalCredit.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','),
+    balanceText.replace('Rs ', '')
+  ]
+
+  autoTable(doc, {
+    startY: yPos,
+    head: [['Date', 'Description', 'Invoice No', 'Debit (Rs)', 'Credit (Rs)', 'Balance (Rs)']],
+    body: tableData.length > 0 ? [...tableData, totalRow as any] : [['No transactions', '', '', '', '', '']],
+    theme: 'grid',
+    headStyles: { fillColor: [40, 50, 70], fontSize: 9, fontStyle: 'bold', halign: 'center' },
+    bodyStyles: { fontSize: 8, valign: 'middle' },
+    columnStyles: {
+      0: { cellWidth: 30, halign: 'center' },
+      1: { cellWidth: 60, halign: 'left' },
+      2: { cellWidth: 40, halign: 'center' },
+      3: { cellWidth: 40, halign: 'right', fontStyle: 'bold' },
+      4: { cellWidth: 40, halign: 'right', fontStyle: 'bold' },
+      5: { cellWidth: 52, halign: 'right', fontStyle: 'bold' }
+    },
+    margin: { left: 14, right: 14 },
+  })
+
+  const fileName = `Customer_Ledger_${options.customerName.replace(/\s+/g, '_')}_${options.fy}_${new Date().toISOString().split('T')[0]}.pdf`
+  doc.save(fileName)
+}
+
+export interface CDAtRiskExportOptions {
+  currentFY: string
+  businessName?: string
+  summary: {
+    totalAtRisk: number
+    totalPaymentCDAtCurrentSlab: number
+    totalInvoiceCDRisk: number
+    totalPending: number
+    criticalCount: number
+    totalEligible: number
+    totalIneligible: number
+  }
+}
+
+export function exportCDAtRiskPDF(
+  eligibleInvoices: any[],
+  options: CDAtRiskExportOptions
+) {
+  const doc = new jsPDF('landscape')
+  
+  const formatAmount = (amount: number): string => {
+    return amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
+  
+  doc.setFontSize(18)
+  doc.setFont('helvetica', 'bold')
+  doc.text(options.businessName || 'Steel Trading ERP', 14, 15)
+  
+  doc.setFontSize(14)
+  doc.text('CD at Risk Report (Multi-Unit Breakdown)', 14, 23)
+  
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.text(`Financial Year: ${options.currentFY}`, 14, 30)
+  doc.text(`Generated: ${new Date().toLocaleString('en-IN')}`, 14, 35)
+  
+  const yPos = 42
+  doc.setFillColor(245, 245, 250)
+  doc.rect(14, yPos, 268, 20, 'F')
+  
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'bold')
+  doc.text('SUMMARY', 16, yPos + 5)
+  
+  doc.setFontSize(9)
+  doc.text(`Total CD at Risk: Rs.${formatAmount(options.summary.totalAtRisk)}`, 16, yPos + 12)
+  doc.text(`Payment CD Risk: Rs.${formatAmount(options.summary.totalPaymentCDAtCurrentSlab)}`, 90, yPos + 12)
+  doc.text(`Invoice Close CD Risk: Rs.${formatAmount(options.summary.totalInvoiceCDRisk)}`, 170, yPos + 12)
+  doc.text(`Eligible Invoices: ${options.summary.totalEligible}  |  Critical (>10k Risk): ${options.summary.criticalCount}`, 16, yPos + 17)
+
+  const tableData = eligibleInvoices.map((inv) => {
+    let unitBreakdownText = '-'
+    if (inv.invoiceCloseBreakdown && inv.invoiceCloseBreakdown.length > 0) {
+      unitBreakdownText = inv.invoiceCloseBreakdown
+        .map((b: any) => `${b.quantity} ${b.unit}: Rs.${formatAmount(b.riskAmount)}`)
+        .join('; ')
+    }
+
+    return [
+      inv.supplierName || 'Unknown',
+      inv.invoiceNo,
+      inv.invoiceDate ? new Date(inv.invoiceDate).toLocaleDateString('en-IN') : '-',
+      inv.dueDate ? new Date(inv.dueDate).toLocaleDateString('en-IN') : '-',
+      `Rs.${formatAmount(inv.pendingAmount)}`,
+      `Rs.${formatAmount(inv.paymentCDAtCurrentSlab)}`,
+      unitBreakdownText,
+      `Rs.${formatAmount(inv.totalCDAtRisk)}`
+    ]
+  })
+
+  autoTable(doc, {
+    startY: yPos + 24,
+    head: [[
+      'Supplier',
+      'Invoice No',
+      'Invoice Date',
+      'Due Date',
+      'Pending Amount',
+      'Payment CD Risk',
+      'Invoice Close Breakdown',
+      'Total CD at Risk'
+    ]],
+    body: tableData.length > 0 ? tableData : [['No CD at risk invoices', '', '', '', '', '', '', '']],
+    theme: 'grid',
+    headStyles: { fillColor: [180, 40, 40], fontSize: 8, fontStyle: 'bold', halign: 'center' },
+    bodyStyles: { fontSize: 8, valign: 'middle' },
+    columnStyles: {
+      0: { cellWidth: 40, halign: 'left' },
+      1: { cellWidth: 30, halign: 'center' },
+      2: { cellWidth: 25, halign: 'center' },
+      3: { cellWidth: 25, halign: 'center' },
+      4: { cellWidth: 32, halign: 'right' },
+      5: { cellWidth: 32, halign: 'right' },
+      6: { cellWidth: 50, halign: 'left' },
+      7: { cellWidth: 34, halign: 'right', fontStyle: 'bold' }
+    },
+    margin: { left: 14, right: 14 }
+  })
+
+  const fileName = `CD_at_Risk_${options.currentFY}_${new Date().toISOString().split('T')[0]}.pdf`
+  doc.save(fileName)
+}
+
+export interface MTBookingsExportOptions {
+  currentFY: string
+  supplierFilterName?: string
+  statusFilterName?: string
+  getSupplierName: (id: string) => string
+}
+
+export function exportMTBookingsPDF(
+  bookings: any[],
+  options: MTBookingsExportOptions
+) {
+  const doc = new jsPDF('landscape')
+  const pageWidth = doc.internal.pageSize.getWidth()
+  
+  doc.setFontSize(18)
+  doc.setFont('helvetica', 'bold')
+  doc.text('MT Booking Report', pageWidth / 2, 15, { align: 'center' })
+  
+  doc.setFontSize(10)
+  doc.setFont('helvetica', 'normal')
+  doc.text(`Financial Year: ${options.currentFY}`, pageWidth / 2, 22, { align: 'center' })
+  
+  let yPos = 30
+  
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'bold')
+  doc.text('Filters Applied:', 14, yPos)
+  yPos += 5
+  
+  doc.setFont('helvetica', 'normal')
+  doc.text(`Supplier: ${options.supplierFilterName || 'All Suppliers'}`, 14, yPos)
+  yPos += 5
+  doc.text(`Status: ${options.statusFilterName || 'All Status'}`, 14, yPos)
+  yPos += 8
+  
+  const formatDateStr = (dateStr?: string) => dateStr ? new Date(dateStr).toLocaleDateString('en-IN') : '-'
+  const formatCurr = (val: number) => `Rs.${val.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+  const tableData = bookings.map(booking => {
+    let schemeNames = 'No scheme'
+    if (booking.rateMode === 'manual') {
+      schemeNames = 'Manual Entry'
+    } else if (booking.lockedSchemes && booking.lockedSchemes.length > 0) {
+      schemeNames = booking.lockedSchemes.map((s: any) => s.schemeName).join(', ')
+    }
+    
+    return [
+      options.getSupplierName(booking.supplierId),
+      formatDateStr(booking.orderDate),
+      formatDateStr(booking.consumeStartDate),
+      `${booking.bookedMT.toFixed(3)} ${booking.unit || 'MT'}`,
+      `${booking.consumedMT.toFixed(3)} ${booking.unit || 'MT'}`,
+      `${booking.remainingMT.toFixed(3)} ${booking.unit || 'MT'}`,
+      schemeNames,
+      booking.totalLockedRate ? formatCurr(booking.totalLockedRate) : '-',
+      booking.status
+    ]
+  })
+  
+  autoTable(doc, {
+    startY: yPos,
+    head: [['Supplier', 'Order Date', 'Consume From', 'Booked', 'Consumed', 'Remaining', 'Locked Scheme', 'Scheme Rate', 'Status']],
+    body: tableData,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [59, 130, 246],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      fontSize: 8,
+      halign: 'center'
+    },
+    bodyStyles: {
+      fontSize: 8
+    },
+    columnStyles: {
+      0: { halign: 'left', cellWidth: 40 },
+      1: { halign: 'center', cellWidth: 25 },
+      2: { halign: 'center', cellWidth: 25 },
+      3: { halign: 'right', cellWidth: 25 },
+      4: { halign: 'right', cellWidth: 25 },
+      5: { halign: 'right', cellWidth: 25 },
+      6: { halign: 'left', cellWidth: 45 },
+      7: { halign: 'right', cellWidth: 25 },
+      8: { halign: 'center', cellWidth: 20 }
+    },
+    margin: { left: 14, right: 14 }
+  })
+  
+  const finalY = (doc as any).lastAutoTable.finalY || yPos + 20
+  
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'bold')
+  doc.text(`Total Bookings: ${bookings.length}`, 14, finalY + 10)
+  doc.text(`Active: ${bookings.filter(b => b.status === 'Active').length}`, 14, finalY + 15)
+  doc.text(`Consumed: ${bookings.filter(b => b.status === 'Consumed').length}`, 14, finalY + 20)
+  
+  const totalBookedMT = bookings.reduce((sum, b) => sum + b.bookedMT, 0)
+  const totalConsumedMT = bookings.reduce((sum, b) => sum + b.consumedMT, 0)
+  const totalRemainingMT = bookings.reduce((sum, b) => sum + b.remainingMT, 0)
+  
+  doc.text(`Total Booked: ${totalBookedMT.toFixed(3)}`, pageWidth - 80, finalY + 10)
+  doc.text(`Total Consumed: ${totalConsumedMT.toFixed(3)}`, pageWidth - 80, finalY + 15)
+  doc.text(`Total Remaining: ${totalRemainingMT.toFixed(3)}`, pageWidth - 80, finalY + 20)
+  
+  const fileName = `MT_Booking_Report_${options.currentFY}_${new Date().toISOString().split('T')[0]}.pdf`
+  doc.save(fileName)
+}
+
+export interface InventoryReportExportOptions {
+  currentFY: string
+  businessName?: string
+  totals: {
+    totalOpeningValue: number
+    totalPurchaseValue: number
+    totalSalesValue: number
+    totalStockValue: number
+  }
+}
+
+export function exportInventoryReportPDF(
+  inventoryData: any[],
+  options: InventoryReportExportOptions
+) {
+  const doc = new jsPDF('landscape')
+  const businessName = options.businessName || 'Steel Trading ERP'
+  
+  const formatAmount = (amount: number): string => {
+    const val = Number.isFinite(Number(amount)) ? Number(amount) : 0
+    const formatted = val.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+    return `Rs.${formatted}`
+  }
+  
+  doc.setFontSize(18)
+  doc.setFont('helvetica', 'bold')
+  doc.text(businessName, 14, 15)
+  
+  doc.setFontSize(14)
+  doc.text('Inventory Report', 14, 23)
+  
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.text(`Financial Year: ${options.currentFY}`, 14, 30)
+  doc.text(`Generated: ${new Date().toLocaleString('en-IN')}`, 14, 35)
+  
+  const yPos = 42
+  doc.setFillColor(245, 245, 250)
+  doc.rect(14, yPos, 268, 20, 'F')
+  
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'bold')
+  doc.text('SUMMARY', 16, yPos + 5)
+  
+  doc.setFontSize(10)
+  doc.text('Opening Stock:', 16, yPos + 11)
+  doc.setFont('helvetica', 'normal')
+  doc.text(formatAmount(options.totals.totalOpeningValue), 16, yPos + 15)
+
+  doc.setFont('helvetica', 'bold')
+  doc.text('Total Purchase:', 80, yPos + 11)
+  doc.setFont('helvetica', 'normal')
+  doc.text(formatAmount(options.totals.totalPurchaseValue), 80, yPos + 15)
+  
+  doc.setFont('helvetica', 'bold')
+  doc.text('Total Sales:', 140, yPos + 11)
+  doc.setFont('helvetica', 'normal')
+  doc.text(formatAmount(options.totals.totalSalesValue), 140, yPos + 15)
+  
+  doc.setFont('helvetica', 'bold')
+  doc.text('Closing Stock Value:', 200, yPos + 11)
+  doc.setFont('helvetica', 'normal')
+  doc.text(formatAmount(options.totals.totalStockValue), 200, yPos + 15)
+
+  const tableData = inventoryData.map(item => {
+    const secUnit = item.secondaryUnit
+    const fmt = (primaryQty: number, secQty?: number, preferAlt?: boolean) => {
+      const mainU = preferAlt && secUnit ? secUnit : item.unit
+      const mainQ = preferAlt && typeof secQty === 'number' ? secQty : primaryQty
+      
+      const secU = preferAlt && secUnit ? item.unit : secUnit
+      const secQ = preferAlt && typeof secQty === 'number' ? primaryQty : secQty
+
+      const primStr = `${mainQ.toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${mainU}`
+      if (secU && secU !== mainU && typeof secQ === 'number') {
+        const secStr = secQ.toLocaleString('en-IN', { maximumFractionDigits: 3 })
+        return `${primStr} (${secStr} ${secU})`
+      }
+      return primStr
+    }
+
+    return [
+      item.itemName,
+      secUnit && secUnit !== item.unit ? `${item.unit} / ${secUnit}` : item.unit,
+      item.openingStockMT > 0 ? fmt(item.openingStockMT, item.secondaryOpeningStock, false) : '-',
+      fmt(item.totalPurchaseMT, item.secondaryTotalPurchase, item.preferAltPurchase),
+      fmt(item.totalSalesMT, item.secondaryTotalSales, item.preferAltSale),
+      fmt(item.balanceMT, item.secondaryBalance, false),
+      formatAmount(item.avgPurchaseRate),
+      formatAmount(item.avgSalesRate),
+      formatAmount(item.currentStockValue)
+    ]
+  })
+
+  autoTable(doc, {
+    startY: yPos + 24,
+    head: [['Item Name', 'Unit', 'Opening', 'Purchased', 'Sold', 'Balance', 'Avg Purch Rate', 'Avg Sales Rate', 'Stock Value']],
+    body: tableData.length > 0 ? tableData : [['No inventory data', '', '', '', '', '', '', '', '']],
+    theme: 'grid',
+    headStyles: { fillColor: [64, 44, 120], fontSize: 9, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 8 },
+    columnStyles: {
+      2: { halign: 'right' },
+      3: { halign: 'right' },
+      4: { halign: 'right' },
+      5: { halign: 'right' },
+      6: { halign: 'right' },
+      7: { halign: 'right' },
+      8: { halign: 'right', fontStyle: 'bold' },
+    },
+    margin: { left: 14, right: 14 },
+  })
+
+  const fileName = `Inventory_Report_${options.currentFY}_${new Date().toISOString().split('T')[0]}.pdf`
+  doc.save(fileName)
+}
+
+

@@ -3,7 +3,10 @@ import { Customer, SalesInvoice, CustomerPayment, LedgerEntry, CustomerCreditNot
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { BookOpen, TrendUp, TrendDown } from '@phosphor-icons/react'
+import { BookOpen, TrendUp, TrendDown, FilePdf } from '@phosphor-icons/react'
+import { Button } from '@/components/ui/button'
+import { exportCustomerLedgerPDF, CustomerLedgerEntry } from '@/lib/pdf-export'
+import { toast } from 'sonner'
 import { formatCurrency, getFYFromDate, calculateLedger, RawLedgerTransaction } from '@/lib/calculations'
 import { PeriodDateFilter, PeriodFilterState, defaultPeriodFilterState, isRecordInPeriod, getPreviousFY, getPeriodDateBounds, isRecordBeforePeriod } from '@/components/period-date-filter'
 
@@ -14,9 +17,10 @@ interface CustomerLedgerPageProps {
   creditNotes: CustomerCreditNote[]
   salesReturns: SalesReturn[]
   currentFY: string
+  businessName?: string
 }
 
-export default function CustomerLedgerPage({ customers, salesInvoices, customerPayments, creditNotes, salesReturns, currentFY }: CustomerLedgerPageProps) {
+export default function CustomerLedgerPage({ customers, salesInvoices, customerPayments, creditNotes, salesReturns, currentFY, businessName = 'SK TRADERS' }: CustomerLedgerPageProps) {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('')
   const [periodFilter, setPeriodFilter] = useState<PeriodFilterState>(defaultPeriodFilterState)
 
@@ -104,13 +108,67 @@ export default function CustomerLedgerPage({ customers, salesInvoices, customerP
 
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId)
 
+  const handleExportPDF = () => {
+    if (!selectedCustomer) {
+      toast.error('Please select a customer first')
+      return
+    }
+
+    if (ledgerEntries.length === 0) {
+      toast.error('No transactions to export')
+      return
+    }
+
+    const exportEntries: CustomerLedgerEntry[] = ledgerEntries.map(entry => ({
+      date: entry.date,
+      description: entry.description,
+      invoiceNo: entry.invoiceNo,
+      debit: entry.debit,
+      credit: entry.credit,
+      balance: entry.balance,
+      type: entry.type,
+      refId: entry.refId
+    }))
+
+    exportCustomerLedgerPDF(exportEntries, {
+      customerName: selectedCustomer.name,
+      fy: currentFY,
+      businessName,
+      totalDebit: summary.totalDebit,
+      totalCredit: summary.totalCredit,
+      closingBalance: summary.closingBalance,
+      openingBalance: summary.openingBalance
+    })
+
+    toast.success('PDF exported successfully')
+  }
+
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold tracking-tight">Customer Ledger</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            View customer transaction history, invoices, payments and balances
+          </p>
+        </div>
+        {selectedCustomerId && ledgerEntries.length > 0 && (
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={handleExportPDF}
+          >
+            <FilePdf className="mr-2" size={16} />
+            Export PDF
+          </Button>
+        )}
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <BookOpen size={24} weight="duotone" className="text-primary" />
-            Customer Ledger
+            Select Party & Filters
           </CardTitle>
         </CardHeader>
         <CardContent>

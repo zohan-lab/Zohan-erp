@@ -706,7 +706,7 @@ export default function InvoicesPage({
     setOpen(true)
   }
 
-  const supplierMap = new Map(suppliers.map(s => [s.id, s]))
+  const supplierMap = useMemo(() => new Map(suppliers.map(s => [s.id, s])), [suppliers])
   const selectedInvoiceSupplier = selectedSupplierId ? supplierMap.get(selectedSupplierId) : undefined
   const filteredSuppliers = suppliers.filter((supplier) => {
     const query = supplierSearch.trim().toLowerCase()
@@ -715,7 +715,7 @@ export default function InvoicesPage({
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(query))
   })
-  const itemMap = new Map(items.map(i => [i.id, i]))
+  const itemMap = useMemo(() => new Map(items.map(i => [i.id, i])), [items])
   const filteredPickerItems = useMemo(() => {
     const query = itemSearch.trim().toLowerCase()
     return items

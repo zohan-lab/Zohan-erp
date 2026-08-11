@@ -43,8 +43,7 @@ import { toast } from 'sonner'
 import { MTBooking, Supplier, FixedScheme, PurchaseInvoice, Item } from '@/lib/types'
 import { formatCurrency, formatMT, calculateBookingConsumedMT, calculateBookingConsumption, getBookingNormalizedMT, roundQuantity } from '@/lib/calculations'
 import { getAvailableUnits } from '@/lib/custom-data-store'
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
+import { exportMTBookingsPDF } from '@/lib/pdf-export'
 
 const formatCurrencyForPDF = (value: number): string => {
   return `Rs. ${value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -385,99 +384,12 @@ export default function MTBookingsPage({
   }, [filterSupplier, filterStatus])
 
   const handleExportPDF = () => {
-    const doc = new jsPDF('landscape')
-    const pageWidth = doc.internal.pageSize.getWidth()
-    
-    doc.setFontSize(18)
-    doc.setFont('helvetica', 'bold')
-    doc.text('MT Booking Report', pageWidth / 2, 15, { align: 'center' })
-    
-    doc.setFontSize(10)
-    doc.setFont('helvetica', 'normal')
-    doc.text(`Financial Year: ${currentFY}`, pageWidth / 2, 22, { align: 'center' })
-    
-    let yPos = 30
-    
-    doc.setFontSize(9)
-    doc.setFont('helvetica', 'bold')
-    doc.text('Filters Applied:', 14, yPos)
-    yPos += 5
-    
-    doc.setFont('helvetica', 'normal')
-    const supplierName = filterSupplier === 'all' ? 'All Suppliers' : getSupplierName(filterSupplier)
-    doc.text(`Supplier: ${supplierName}`, 14, yPos)
-    yPos += 5
-    doc.text(`Status: ${filterStatus === 'all' ? 'All Status' : filterStatus}`, 14, yPos)
-    yPos += 8
-    
-    const tableData = sortedBookings.map(booking => {
-      let schemeNames = 'No scheme'
-      if (booking.rateMode === 'manual') {
-        schemeNames = 'Manual Entry'
-      } else if (booking.lockedSchemes && booking.lockedSchemes.length > 0) {
-        schemeNames = booking.lockedSchemes.map(s => s.schemeName).join(', ')
-      }
-      
-      return [
-        getSupplierName(booking.supplierId),
-        formatDate(booking.orderDate),
-        formatDate(booking.consumeStartDate),
-        `${booking.bookedMT.toFixed(3)} ${booking.unit || 'MT'}`,
-        `${booking.consumedMT.toFixed(3)} ${booking.unit || 'MT'}`,
-        `${booking.remainingMT.toFixed(3)} ${booking.unit || 'MT'}`,
-        schemeNames,
-        booking.totalLockedRate ? formatCurrencyForPDF(booking.totalLockedRate) : '-',
-        booking.status
-      ]
+    exportMTBookingsPDF(sortedBookings, {
+      currentFY,
+      supplierFilterName: filterSupplier === 'all' ? 'All Suppliers' : getSupplierName(filterSupplier),
+      statusFilterName: filterStatus === 'all' ? 'All Status' : filterStatus,
+      getSupplierName
     })
-    
-    autoTable(doc, {
-      startY: yPos,
-      head: [['Supplier', 'Order Date', 'Consume From', 'Booked', 'Consumed', 'Remaining', 'Locked Scheme', 'Scheme Rate', 'Status']],
-      body: tableData,
-      theme: 'grid',
-      headStyles: {
-        fillColor: [59, 130, 246],
-        textColor: [255, 255, 255],
-        fontStyle: 'bold',
-        fontSize: 8,
-        halign: 'center'
-      },
-      bodyStyles: {
-        fontSize: 8
-      },
-      columnStyles: {
-        0: { halign: 'left', cellWidth: 40 },
-        1: { halign: 'center', cellWidth: 25 },
-        2: { halign: 'center', cellWidth: 25 },
-        3: { halign: 'right', cellWidth: 25 },
-        4: { halign: 'right', cellWidth: 25 },
-        5: { halign: 'right', cellWidth: 25 },
-        6: { halign: 'left', cellWidth: 45 },
-        7: { halign: 'right', cellWidth: 25 },
-        8: { halign: 'center', cellWidth: 20 }
-      },
-      margin: { left: 14, right: 14 }
-    })
-    
-    const finalY = (doc as any).lastAutoTable.finalY || yPos + 20
-    
-    doc.setFontSize(9)
-    doc.setFont('helvetica', 'bold')
-    doc.text(`Total Bookings: ${sortedBookings.length}`, 14, finalY + 10)
-    doc.text(`Active: ${sortedBookings.filter(b => b.status === 'Active').length}`, 14, finalY + 15)
-    doc.text(`Consumed: ${sortedBookings.filter(b => b.status === 'Consumed').length}`, 14, finalY + 20)
-    
-    const totalBookedMT = sortedBookings.reduce((sum, b) => sum + b.bookedMT, 0)
-    const totalConsumedMT = sortedBookings.reduce((sum, b) => sum + b.consumedMT, 0)
-    const totalRemainingMT = sortedBookings.reduce((sum, b) => sum + b.remainingMT, 0)
-    
-    doc.text(`Total Booked: ${totalBookedMT.toFixed(3)}`, pageWidth - 80, finalY + 10)
-    doc.text(`Total Consumed: ${totalConsumedMT.toFixed(3)}`, pageWidth - 80, finalY + 15)
-    doc.text(`Total Remaining: ${totalRemainingMT.toFixed(3)}`, pageWidth - 80, finalY + 20)
-    
-    const fileName = `MT_Booking_Report_${currentFY}_${new Date().toISOString().split('T')[0]}.pdf`
-    doc.save(fileName)
     toast.success('PDF report downloaded successfully')
   }
 
