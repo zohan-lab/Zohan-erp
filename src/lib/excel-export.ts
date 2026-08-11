@@ -606,3 +606,66 @@ export function exportGenericTableToCSV(data: any[], filename: string) {
   })
   downloadCSV(csv, filename.endsWith('.csv') ? filename : `${filename}.csv`)
 }
+
+export function exportCustomerAgingToExcel(
+  aggregate: {
+    customers: Array<{
+      customerName: string
+      gstin?: string
+      phone?: string
+      city?: string
+      totalSales: number
+      totalPayments: number
+      totalOutstanding: number
+      bracket0to30: number
+      bracket31to60: number
+      bracket61to90: number
+      bracket90plus: number
+      maxDaysOverdue: number
+      performanceBadge: string
+    }>
+    totalOutstanding: number
+    totalOverdue: number
+    totalCritical90Plus: number
+    bestPayerCount: number
+    capitalBlockerCount: number
+    heavyLifterCount: number
+  },
+  businessName: string,
+  fy: string
+) {
+  let csv = `${escapeCSV(businessName)}\n`
+  csv += `Customer Receivables & Aging Intelligence Report\n`
+  csv += `Financial Year: ${escapeCSV(fy)}\n`
+  csv += `Generated: ${new Date().toLocaleString('en-IN')}\n\n`
+
+  csv += `SUMMARY METRICS\n`
+  csv += `Total Outstanding Receivables,${aggregate.totalOutstanding}\n`
+  csv += `Total Overdue (>30 Days),${aggregate.totalOverdue}\n`
+  csv += `Critical Capital (>90 Days),${aggregate.totalCritical90Plus}\n`
+  csv += `Best Payers,${aggregate.bestPayerCount}\n`
+  csv += `Heavy Lifters,${aggregate.heavyLifterCount}\n`
+  csv += `Capital Blockers,${aggregate.capitalBlockerCount}\n\n`
+
+  csv += `CUSTOMER AGING BREAKDOWN\n`
+  csv += `Customer Name,GSTIN,Phone,City,Total Sales,Total Payments,Total Outstanding,0-30 Days,31-60 Days,61-90 Days,90+ Days,Max Overdue (Days),Performance Badge\n`
+
+  aggregate.customers.forEach((c) => {
+    csv += `${escapeCSV(c.customerName)},`
+    csv += `${escapeCSV(c.gstin || '-')},`
+    csv += `${escapeCSV(c.phone || '-')},`
+    csv += `${escapeCSV(c.city || '-')},`
+    csv += `${c.totalSales},`
+    csv += `${c.totalPayments},`
+    csv += `${c.totalOutstanding},`
+    csv += `${c.bracket0to30},`
+    csv += `${c.bracket31to60},`
+    csv += `${c.bracket61to90},`
+    csv += `${c.bracket90plus},`
+    csv += `${c.maxDaysOverdue},`
+    csv += `${escapeCSV(c.performanceBadge)}\n`
+  })
+
+  downloadCSV(csv, `Customer_Aging_Report_${businessName.replace(/\s+/g, '_')}_${fy}.csv`)
+}
+

@@ -14,6 +14,7 @@ export type ShortcutAction =
   | 'customer-payments'
   | 'expense-entries'
   | 'cd-profit-report'
+  | 'customer-aging'
   | 'inventory'
   | 'cd-risk'
   | 'wallet'

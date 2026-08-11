@@ -114,10 +114,12 @@ import {
   Bank,
   UserGear,
   Scales,
-  Percent
+  Percent,
+  Clock
 } from '@phosphor-icons/react'
 
 import SupplierCDRulesPage from '@/components/supplier-cd-rules-page'
+import CustomerAgingReportPage from '@/components/customer-aging-report-page'
 import { toast, Toaster } from 'sonner'
 import { getCurrentFY } from '@/lib/calculations'
 import { cn } from '@/lib/utils'
@@ -428,6 +430,7 @@ const navGroups: NavGroup[] = [
     title: 'Reports',
     items: [
       { id: 'cd-profit-report', label: 'Payment CD & Profit Analytics', icon: Scales },
+      { id: 'customer-aging', label: 'Customer Aging & Receivables', icon: Clock },
       { id: 'inventory', label: 'Inventory Report', icon: Cube },
       { id: 'cd-risk', label: 'CD at Risk', icon: ChartBar },
       { id: 'wallet', label: 'Discount Wallet', icon: Wallet },
@@ -473,6 +476,7 @@ const viewNames: Record<string, string> = {
   'customer-payments': 'Customer Payments',
   'expense-entries': 'Expense Entries',
   'cd-profit-report': 'Payment CD & Profit Analytics',
+  'customer-aging': 'Customer Aging & Receivables',
   'inventory': 'Inventory Report',
   'cd-risk': 'CD at Risk',
   'wallet': 'Discount Wallet',
@@ -1983,6 +1987,7 @@ function App() {
       case 'customer-payments':
       case 'expense-entries':
       case 'cd-profit-report':
+      case 'customer-aging':
       case 'inventory':
       case 'cd-risk':
       case 'wallet':
@@ -2284,6 +2289,18 @@ function App() {
               fixedSchemes={safeFixedSchemes}
               mtBookings={mtBookings}
               expenseEntries={safeExpenseEntries}
+              currentFY={safeCurrentFY}
+              businessName={safeBusinessName}
+            />
+          )
+        case 'customer-aging':
+          return (
+            <CustomerAgingReportPage
+              customers={safeCustomers}
+              salesInvoices={safeSalesInvoices}
+              customerPayments={safeCustomerPayments}
+              creditNotes={safeCreditNotes}
+              salesReturns={safeSalesReturns}
               currentFY={safeCurrentFY}
               businessName={safeBusinessName}
             />

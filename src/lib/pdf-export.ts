@@ -1312,3 +1312,93 @@ export function exportSalesInvoicePDF(
     filePrefix: 'Sales_Invoice'
   })
 }
+
+export function exportCustomerAgingToPDF(
+  aggregate: {
+    customers: Array<{
+      customerName: string
+      city?: string
+      totalSales: number
+      totalOutstanding: number
+      bracket0to30: number
+      bracket31to60: number
+      bracket61to90: number
+      bracket90plus: number
+      maxDaysOverdue: number
+      performanceBadge: string
+    }>
+    totalOutstanding: number
+    totalOverdue: number
+    totalCritical90Plus: number
+    bestPayerCount: number
+    capitalBlockerCount: number
+    heavyLifterCount: number
+  },
+  options: { title: string; fy: string; generatedDate: string; businessName?: string }
+) {
+  const doc = new jsPDF('landscape')
+  const businessName = options.businessName || 'Sahil ERP'
+
+  doc.setFontSize(18)
+  doc.setFont('helvetica', 'bold')
+  doc.text(businessName, 14, 15)
+
+  doc.setFontSize(14)
+  doc.text(options.title || 'Customer Receivables & Aging Intelligence Report', 14, 23)
+
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.text(`Financial Year: ${options.fy}`, 14, 30)
+  doc.text(`Generated: ${options.generatedDate}`, 14, 35)
+
+  const yPos = 42
+  doc.setFillColor(245, 245, 250)
+  doc.rect(14, yPos, 268, 20, 'F')
+
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'bold')
+  doc.text('SUMMARY KPI DASHBOARD', 16, yPos + 5)
+
+  doc.setFontSize(9)
+  doc.text(`Total Outstanding: Rs.${aggregate.totalOutstanding.toLocaleString('en-IN')}`, 16, yPos + 12)
+  doc.text(`Total Overdue (>30d): Rs.${aggregate.totalOverdue.toLocaleString('en-IN')}`, 90, yPos + 12)
+  doc.text(`Critical (>90d): Rs.${aggregate.totalCritical90Plus.toLocaleString('en-IN')}`, 170, yPos + 12)
+  doc.text(`Best Payers: ${aggregate.bestPayerCount}  |  Heavy Lifters: ${aggregate.heavyLifterCount}  |  Capital Blockers: ${aggregate.capitalBlockerCount}`, 16, yPos + 17)
+
+  const tableData = aggregate.customers.map((c) => [
+    c.customerName,
+    c.city || '-',
+    `Rs.${c.totalSales.toLocaleString('en-IN')}`,
+    `Rs.${c.totalOutstanding.toLocaleString('en-IN')}`,
+    `Rs.${c.bracket0to30.toLocaleString('en-IN')}`,
+    `Rs.${c.bracket31to60.toLocaleString('en-IN')}`,
+    `Rs.${c.bracket61to90.toLocaleString('en-IN')}`,
+    `Rs.${c.bracket90plus.toLocaleString('en-IN')}`,
+    `${c.maxDaysOverdue} days`,
+    c.performanceBadge
+  ])
+
+  autoTable(doc, {
+    startY: yPos + 24,
+    head: [[
+      'Customer',
+      'City',
+      'Total Sales',
+      'Outstanding',
+      '0-30 Days',
+      '31-60 Days',
+      '61-90 Days',
+      '90+ Days',
+      'Max Overdue',
+      'Badge'
+    ]],
+    body: tableData,
+    theme: 'grid',
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: [40, 50, 70], textColor: 255, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [250, 250, 252] }
+  })
+
+  doc.save(`Customer_Aging_Report_${businessName.replace(/\s+/g, '_')}_${options.fy}.pdf`)
+}
+

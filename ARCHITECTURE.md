@@ -1,289 +1,180 @@
-# SK TRADERS - Architecture Documentation
+# Steel Trading ERP - Technical Architecture Document
 
-## Source-Driven Financial Management System
-
-### Core Principle: Source-Driven Reports
-
-This application follows a **strict source-driven architecture** where all reports and calculations are computed in real-time from source data, and source data is **never automatically modified** after save, restore, or refresh operations.
+> **Document Status**: Production Baseline (2026 Edition)  
+> **Codebase Target**: React 19 + TypeScript + Vite + Firebase Cloud Firestore  
 
 ---
 
-## Data Architecture
+## 1. Core Architecture Philosophy: Source-Driven Realtime Engine
 
-### 1. Source Data (Persisted via Cloud Firestore `master_data`)
+The application adheres to a **Strict Source-Driven Architecture**. Operational data consists exclusively of raw transaction records entered by users. Reports, ledger balances, FIFO payment allocations, discount entitlements, and statement metrics are **never saved as static pre-aggregated values** in the database. Instead, they are calculated live in real-time on every render using optimized React `useMemo` computation hooks.
 
-Source data is the **single source of truth** and is stored exactly as entered by the user:
-
-- **Suppliers** - Basic supplier information and CD rules
-- **Customers** - Customer information
-- **Items** - Product/material catalog
-- **Purchase Invoices** - Including:
-  - `invoiceDate` - For FIFO, payments, ageing, reports
-  - `orderDate` - For Fixed Scheme eligibility ONLY
-  - `items[]` - Line items with quantities and rates
-  - `additionalCost` - Transport/other costs
-  - `roundOffAdjustment` - Paisa rounding
-- **Sales Invoices** - Customer sales records
-- **Payments** - Supplier monetary payments (standalone MT Booking Master handles volume rate bookings)
-- **Customer Payments** - Customer payment records
-- **Received Discounts** - CD actually received from suppliers
-- **Expense Types** - Expense categories
-- **Expense Entries** - Actual expenses incurred
-- **Fixed Schemes** - Discount scheme definitions with `dateCalculationBasis`
-
-### 2. Computed Data (Live Calculation via `useMemo`)
-
-Computed data is **calculated on every render** from source data:
-
-- **Payment Allocations** - FIFO-based allocation of payments to invoices
-- **Expected Discounts** - CD earned but not yet received
-  - Payment CD
-  - Invoice Close CD
-  - Fixed Scheme CD
-  - Annual Discount
-- **Pending Discounts** - Expected minus Received
-- **All Reports** - Dashboard, Ledgers, Inventory, etc.
-- **Month-wise Aggregations** - Filtered calculations by month
-
----
-
-## Data Integrity Rules
-
-### ✅ DO - Source Data
-
-1. **Store exactly what user enters**
-   - All dates (`orderDate`, `invoiceDate`, `paymentDate`) preserved as entered
-   - All numeric values preserved with exact precision
-   - No automatic formatting, trimming, or transformation
-
-2. **Preserve data through operations**
-   - **Save** - Store exactly what user entered
-   - **Edit** - Update only fields user changed
-   - **Restore** - Load backup data without transformation
-   - **Refresh** - Reload from storage without recalculation
-
-3. **User edits are the ONLY way to modify source data**
-   - No background processes modify source data
-   - No automatic date synchronization
-   - No automatic recalculation of stored amounts
-
-### ❌ DON'T - Source Data
-
-1. **Never auto-modify after save**
-   ```typescript
-   // ❌ WRONG - Auto-changing orderDate
-   if (!invoice.orderDate) {
-     invoice.orderDate = invoice.invoiceDate
-   }
-   
-   // ✅ CORRECT - Preserve as-is
-   orderDate: orderDate !== undefined ? orderDate : editingInvoice.orderDate
-   ```
-
-2. **Never recalculate stored values**
-   ```typescript
-   // ❌ WRONG - Recalculating invoice amount on load
-   invoice.invoiceAmount = recalculateTotal(invoice.items)
-   
-   // ✅ CORRECT - Use stored value
-   invoice.invoiceAmount // Use as-is from storage
-   ```
-
-3. **Never sync dates automatically**
-   ```typescript
-   // ❌ WRONG - Auto-syncing dates
-   if (invoice.invoiceDate !== invoice.orderDate) {
-     invoice.orderDate = invoice.invoiceDate
-   }
-   
-   // ✅ CORRECT - Keep independent
-   // Both dates serve different purposes
-   ```
-
----
-
-## Calculation Rules
-
-### Date Usage by Feature
-
-| Feature | Date Used | Purpose |
-|---------|-----------|---------|
-| **FIFO Allocation** | `invoiceDate` | Chronological payment allocation |
-| **Payment Ageing** | `invoiceDate` | Outstanding calculation |
-| **Fixed Scheme CD** | `orderDate` OR `invoiceDate` | Per scheme's `dateCalculationBasis` |
-| **Payment CD** | `paymentDate` | When payment is made |
-| **Invoice Close CD** | Invoice close date (FIFO) | When invoice fully paid |
-| **Annual Discount** | `orderDate` | MT aggregation for target |
-| **Reports (General)** | `invoiceDate` | Display and filtering |
-
-### Fixed Scheme Date Basis
-
-Each Fixed Scheme has a `dateCalculationBasis` field:
-
-```typescript
-type DateCalculationBasis = 'orderDate' | 'invoiceDate'
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        PERSISTED SOURCE DATA                           │
+│  (Invoices, Payments, Expenses, Vouchers, Items, Parties, Schemes)     │
+└──────────────────────────────────┬─────────────────────────────────────┘
+                                   │
+                                   ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                     REACTIVE CALCULATION ENGINE                        │
+│   (useMemo hooks: calculations.ts, fifo-engine.ts, report-calc.ts)     │
+└──────────────────────────────────┬─────────────────────────────────────┘
+                                   │
+                                   ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                        LIVE COMPUTED OUTPUTS                           │
+│ (FIFO Allocations, Outstanding Balances, CD Entitlements, Ledgers)     │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Order Date basis** - Uses `invoice.orderDate` for scheme eligibility
-- **Invoice Date basis** - Uses `invoice.invoiceDate` for scheme eligibility
+### Key Rules of Source Integrity
+1. **Preserve Raw Inputs**: Dates (`orderDate`, `invoiceDate`, `paymentDate`), numeric quantities, and unit rates are saved exactly as entered by the user.
+2. **Zero Modification on Restore**: Loading backups or refreshing data performs pure deserialization without mutating or "fixing" stored dates or amounts.
+3. **User Action Priority**: Only an explicit edit operation by an authorized user can modify source records. No background routine or calculated hook writes back to source data.
 
-This allows schemes like "Early Bird" to use order date while others use invoice date.
+---
 
-### Month-wise Filtering
+## 2. Multi-Tenant Partitioning Architecture
 
-When a month filter is applied:
+### 2.1 Unified Master Partition (`data_${companyId}_master`)
+Legacy architectures partitioned data into financial-year-specific keys (`data_company_FY2024-25`). The 2026 production architecture unifies all business data into a single continuous master partition per tenant:
 
-1. **Filter source data first** by the relevant date field
-2. **Calculate from filtered data** - no pre-aggregation
-3. **Expected Discount** = Sum of CDs earned in selected month
-4. **Received Amount** = Allocations against those CDs
-5. **Pending** = Expected - Received (live calculation)
+- **Local Storage Partition Key**: `data_${companyId}_master` (managed via `src/lib/storage-utils.ts`)
+- **Cloud Firestore Path**: `tenants/{companyId}/partitions/master_data` (managed via `src/lib/business-sync.ts`)
 
-Example:
 ```typescript
-// ✅ CORRECT - Filter then calculate
-const filteredInvoices = invoices.filter(inv => 
-  isInSelectedMonth(inv.orderDate) // or invoiceDate based on context
-)
-const expectedCD = calculateExpectedDiscounts(filteredInvoices, ...)
+// Unified Partition Key Resolver
+export function getTenantKey(companyId: string, _fy?: string): string {
+  return `data_${companyId}_master`
+}
+```
 
-// ❌ WRONG - Calculate then filter
-const allExpectedCD = calculateExpectedDiscounts(invoices, ...)
-const filteredCD = allExpectedCD.filter(cd => isInSelectedMonth(cd.date))
+### 2.2 Schema Collection Definitions
+Each master tenant partition contains 19 core entity collections:
+
+| Collection Entity | Type Definition | Description |
+|-------------------|-----------------|-------------|
+| `suppliers` | `Supplier[]` | Supplier directory and default CD terms |
+| `customers` | `Customer[]` | Customer directory and credit limits |
+| `items` | `Item[]` | Item catalog with primary/alternate units and conversion factors |
+| `invoices` | `PurchaseInvoice[]` | Purchase invoices with line-item array and additional costs |
+| `payments` | `Payment[]` | Supplier monetary cash/bank payments |
+| `receivedDiscounts` | `ReceivedDiscount[]` | Supplier discount receipt entries |
+| `salesInvoices` | `SalesInvoice[]` | Sales invoices with customer tax items |
+| `customerPayments` | `CustomerPayment[]` | Customer monetary payment receipts |
+| `expenseTypes` | `ExpenseType[]` | Expense category definitions |
+| `expenseEntries` | `ExpenseEntry[]` | Operational expense transaction records |
+| `fixedSchemes` | `FixedScheme[]` | Date-range promotion discount rules |
+| `mtBookings` | `MTBooking[]` | Standalone volume rate lock bookings |
+| `discountLedgerEntries`| `DiscountLedgerEntry[]`| Historical discount ledger overrides/adjustments |
+| `cashBankCounters` | `CashBankCounter[]` | Cash chests and bank account counters |
+| `cashBankTransactions`| `CashBankTransaction[]`| Cash/Bank voucher entries (Receipts/Payments) |
+| `creditNotes` | `CreditNote[]` | Customer credit notes for sales returns/adjustments |
+| `debitNotes` | `DebitNote[]` | Supplier debit notes for purchase returns/adjustments |
+| `salesReturns` | `SalesReturn[]` | Sales return line-item vouchers |
+| `purchaseReturns` | `PurchaseReturn[]` | Purchase return line-item vouchers |
+
+---
+
+## 3. Unit Conversion & Multi-Unit Normalization Service
+
+The legacy single-unit `quantityMT` metric has been purged. Multi-unit operations are governed by `src/lib/unit-conversion-service.ts`:
+
+### 3.1 Primary (Base) Unit Architecture
+Each catalog item defines a **Primary Unit** (e.g. `KG`, `MT`, `PCS`, `BND`, `MTR`) and optional `alternativeUnit` with `conversionFactor`.
+
+### 3.2 Normalization Formulas
+For any transaction line item, the entered values are converted into normalized primary base units before calculating base amounts:
+
+$$\text{Base Quantity} = \text{Entered Quantity} \times \text{Conversion Factor}$$
+
+$$\text{Base Rate} = \frac{\text{Entered Rate}}{\text{Conversion Factor}}$$
+
+$$\text{Base Amount} = \text{Base Quantity} \times \text{Base Rate} = \text{Entered Quantity} \times \text{Entered Rate}$$
+
+```typescript
+// Core Normalization Functions (src/lib/unit-conversion-service.ts)
+export function toBaseQuantity(item?: Item | null, quantity: number = 0, unit?: string): number
+export function toBaseRate(item?: Item | null, rate: number = 0, unit?: string): number
+export function toBaseAmount(baseQuantity: number, baseRate: number): number
 ```
 
 ---
 
-## Implementation Guidelines
+## 4. FIFO Engine & Discount Allocation Architecture
 
-### Form Handling
+The FIFO calculation engine (`src/lib/fifo-engine.ts`) handles payment-to-invoice matching and discount computations:
 
-When editing invoices:
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        FIFO ALLOCATION FLOW                            │
+│                                                                        │
+│  Purchase Invoices (Sorted chronologically by invoiceDate)             │
+│  ├── Invoice #101 (Jan 05) - ₹100,000 [Unpaid: ₹40,000]               │
+│  └── Invoice #102 (Jan 12) - ₹150,000 [Unpaid: ₹150,000]              │
+│                                                                        │
+│  Supplier Payments                                                     │
+│  └── Payment #P1 (Jan 15) - ₹100,000                                   │
+│      ├── Allocates ₹40,000 to Invoice #101 ──► Fully Paid!             │
+│      └── Allocates ₹60,000 to Invoice #102 ──► Remaining: ₹90,000     │
+└────────────────────────────────────────────────────────────────────────┘
+```
 
-```typescript
-const handleSubmit = (e: FormEvent) => {
-  const orderDate = formData.get('orderDate') as string
-  
-  if (editingInvoice) {
-    const updated: PurchaseInvoice = {
-      ...editingInvoice, // Start with existing data
-      invoiceNo: formData.get('invoiceNo'),
-      invoiceDate: formData.get('invoiceDate'),
-      // Preserve orderDate if not changed
-      orderDate: orderDate !== undefined ? orderDate : editingInvoice.orderDate,
-      items: invoiceItems,
-      // ... other fields
+### 4.1 Payment Allocation Rules
+1. **Invoice Date Order**: Invoices are sorted by `invoiceDate` ascending.
+2. **Sequential FIFO Consumption**: Payments settle the oldest unpaid invoice balance first.
+3. **Automatic Advance Detection**: Any unallocated payment amount exceeding total outstanding purchase invoices is categorized as an **Advance Payment** and auto-allocated to future invoices as they are created.
+
+### 4.2 Discount Entitlement Classification
+- **Payment CD**: Calculated based on payment date vs invoice date difference against payment CD slab rules.
+- **Invoice Close CD**: Earned when an invoice reaches fully settled status within specified cutoff days.
+- **Fixed Scheme CD**: Evaluated based on invoice line item date (using `orderDate` or `invoiceDate` as configured per scheme).
+- **Annual Target Rebate**: Calculated on cumulative volume achieved against annual slab targets.
+
+---
+
+## 5. Cloud Integration & Security Architecture
+
+### 5.1 Hybrid Storage Model
+- **Local First**: Local storage (`localStorage`) provides zero-latency offline access.
+- **Cloud Sync**: When `VITE_ENABLE_REMOTE_STORAGE=true`, changes synchronize asynchronously with Cloud Firestore (`src/lib/business-sync.ts`).
+- **Conflict Prevention**: Optimistic concurrency control via `revision` counters and `deviceId` echo filtering prevents race conditions during multi-device edits.
+
+### 5.2 Firestore Security Rules Hierarchy
+Cloud Firestore rules (`firestore.rules`) enforce strict tenant and role isolation:
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Master Admin Helper Check
+    function isMasterAdmin() {
+      return userExists() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'master_admin';
     }
-    setInvoices(prev => prev.map(inv => 
-      inv.id === editingInvoice.id ? updated : inv
-    ))
+    // Tenant Partition Rules
+    match /tenants/{companyId}/partitions/{partitionId} {
+      allow read, write: if isActiveUser();
+    }
+    // Audit Log Append-Only Rules
+    match /audit_logs/{logId} {
+      allow create: if isAuthenticated();
+      allow read: if isMasterAdmin();
+      allow update, delete: if false;
+    }
   }
 }
 ```
 
-### Backup/Restore
+---
+
+## 6. Dynamic Date Filtering Architecture
+
+The period date filter component (`src/components/period-date-filter.tsx`) isolates reporting views without altering database keys:
 
 ```typescript
-// Backup - Pure serialization
-const backup = {
-  version: '1.0',
-  timestamp: new Date().toISOString(),
-  fy: currentFY,
-  data: {
-    invoices,  // No transformation
-    payments,  // No transformation
-    // ... all source data as-is
-  }
-}
-
-// Restore - Pure deserialization
-setInvoicesRaw(backupData.data.invoices)  // Direct assignment
-setPaymentsRaw(backupData.data.payments)  // No processing
+export type PeriodType = 'all' | 'current_month' | 'previous_month' | 'current_fy' | 'previous_fy' | 'custom'
 ```
 
-### Report Calculation
-
-```typescript
-// ✅ CORRECT - Calculate fresh from source
-const expectedDiscounts = useMemo(() => 
-  calculateExpectedDiscounts(invoices, payments, suppliers, fixedSchemes),
-  [invoices, payments, suppliers, fixedSchemes]
-)
-
-// ❌ WRONG - Store calculated values
-const [expectedDiscounts, setExpectedDiscounts] = useKV('expected-discounts', [])
-```
-
----
-
-## Common Pitfalls to Avoid
-
-### 1. Auto-Syncing Dates
-
-**Problem**: Automatically changing `orderDate` to match `invoiceDate` on save/restore.
-
-**Solution**: Store both dates independently. They serve different purposes.
-
-### 2. Recalculating on Restore
-
-**Problem**: Recalculating invoice amounts or allocations during data restore.
-
-**Solution**: Restore data exactly as saved. Calculations happen in `useMemo` hooks.
-
-### 3. Storing Computed Values
-
-**Problem**: Saving calculated discounts or allocations to storage.
-
-**Solution**: Only store source data. Compute everything else on-demand.
-
-### 4. Pre-filtering for Performance
-
-**Problem**: Creating month-wise pre-aggregated data to improve performance.
-
-**Solution**: Use `useMemo` to cache calculations. Filter source data, then calculate.
-
----
-
-## Testing Data Integrity
-
-### Manual Tests
-
-1. **Create Invoice** with specific `orderDate` and `invoiceDate`
-2. **Save** and verify both dates are stored correctly
-3. **Edit** the invoice without changing dates
-4. **Save** and verify dates remain unchanged
-5. **Backup** and verify JSON contains exact dates
-6. **Clear all data** and verify clean state
-7. **Restore** from backup and verify dates match original
-8. **Refresh page** and verify dates still match
-
-### Validation Checklist
-
-- [ ] orderDate preserved after save
-- [ ] orderDate preserved after edit (when not modified)
-- [ ] orderDate preserved after backup/restore
-- [ ] orderDate preserved after page refresh
-- [ ] Invoice amounts match original after restore
-- [ ] All dates use correct format (YYYY-MM-DD)
-- [ ] Reports calculate from source data (not stored calculations)
-- [ ] Month filters work correctly with both date types
-
----
-
-## Version History
-
-- **v1.0** - Initial source-driven architecture
-- All future changes must maintain source data integrity principle
-
----
-
-## Questions?
-
-If you need to add a new calculated field:
-
-1. **Is it derived from source data?** → Calculate in `useMemo`, don't store
-2. **Does user enter it?** → Add to source data model, store in Firestore snapshot
-3. **Does it need to persist?** → Add to backup/restore, store in Firestore snapshot
-4. **Should it survive refresh?** → Use Firestore snapshot sync, not temporary `useState`
-
-**Remember**: When in doubt, calculate from source. Storage is for user input only.
+- **Default State**: `periodType: 'all'` (`All Time (All Transactions)`).
+- **Behavior**: Filters master transaction collections dynamically in `useMemo` hooks using transaction date fields (`invoiceDate`, `paymentDate`, `voucherDate`).
