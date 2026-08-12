@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Plus, Package, Trash, Pencil, Warning, SquaresFour, Scales, Folder, Check, X } from '@phosphor-icons/react'
 import { toast } from 'sonner'
+import { deleteItem } from '@/lib/firebase-storage'
 import { ItemEditorDialog } from '@/components/item-editor-dialog'
 import { 
   getCustomCategories, 
@@ -119,6 +120,9 @@ export default function ItemsPage({
   const confirmDelete = () => {
     if (itemToDelete) {
       setItems((prev) => prev.filter(item => item.id !== itemToDelete.id))
+      if (activeCompanyId) {
+        void deleteItem(activeCompanyId, itemToDelete.id)
+      }
       toast.success('Item deleted successfully')
       setDeleteDialogOpen(false)
       setItemToDelete(null)

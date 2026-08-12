@@ -282,13 +282,11 @@ export async function saveRemoteTenantData(
 export function subscribeTenantData(
   companyId: string,
   tenantKey: string = 'master_data',
-  onSnapshotReceived: (snapshot: TenantSnapshot) => void
+  onCollectionUpdate: (key: keyof TenantData, docs: any[]) => void
 ): (() => void) | null {
   if (!canUseRemoteStorage() || !db) return null
 
-  const deviceId = getDeviceId()
   const unsubscribes: Unsubscribe[] = []
-  const payload: any = {}
 
   try {
     TENANT_COLLECTION_KEYS.forEach((key) => {
@@ -298,17 +296,11 @@ export function subscribeTenantData(
         (snap) => {
           if (snap.metadata.hasPendingWrites) return
 
-          const docs = snap.docs.map(d => d.data())
-          payload[key] = docs
-
-          onSnapshotReceived({
-            company_id: companyId,
-            tenant_key: tenantKey,
-            payload: payload as TenantData,
-            revision: 1,
-            updated_at: new Date().toISOString(),
-            device_id: deviceId
-          })
+          const docs = snap.docs.map(doc => ({
+            ...doc.data(),
+            id: doc.id
+          }))
+          onCollectionUpdate(key, docs)
         },
         (error) => {
           console.error(`Firestore realtime subscription error for ${key}:`, error)
@@ -339,6 +331,66 @@ export async function updateItem(companyId: string, item: any): Promise<void> {
 
 export async function deleteCustomer(companyId: string, customerId: string): Promise<void> {
   await deleteEntityRemote(companyId, 'customers', customerId)
+}
+
+export async function deleteSupplier(companyId: string, supplierId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'suppliers', supplierId)
+}
+
+export async function deleteItem(companyId: string, itemId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'items', itemId)
+}
+
+export async function deleteInvoice(companyId: string, invoiceId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'invoices', invoiceId)
+}
+
+export async function deletePayment(companyId: string, paymentId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'payments', paymentId)
+}
+
+export async function deleteSalesInvoice(companyId: string, invoiceId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'salesInvoices', invoiceId)
+}
+
+export async function deleteCustomerPayment(companyId: string, paymentId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'customerPayments', paymentId)
+}
+
+export async function deleteExpenseEntry(companyId: string, entryId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'expenseEntries', entryId)
+}
+
+export async function deleteExpenseType(companyId: string, typeId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'expenseTypes', typeId)
+}
+
+export async function deleteFixedScheme(companyId: string, schemeId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'fixedSchemes', schemeId)
+}
+
+export async function deleteMTBooking(companyId: string, bookingId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'mtBookings', bookingId)
+}
+
+export async function deleteCreditNote(companyId: string, noteId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'creditNotes', noteId)
+}
+
+export async function deleteDebitNote(companyId: string, noteId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'debitNotes', noteId)
+}
+
+export async function deleteSalesReturn(companyId: string, returnId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'salesReturns', returnId)
+}
+
+export async function deletePurchaseReturn(companyId: string, returnId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'purchaseReturns', returnId)
+}
+
+export async function deleteReceivedDiscount(companyId: string, discountId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'receivedDiscounts', discountId)
 }
 
 export async function saveEntityRemote(companyId: string, collectionKey: string, entity: any): Promise<void> {

@@ -564,15 +564,6 @@ function App() {
               void saveEntityRemote(companyId, collectionKey, item)
             }
           })
-
-          prev.forEach((prevItem) => {
-            if (!prevItem || !prevItem.id) return
-            const stillExists = next.some((c) => c.id === prevItem.id)
-            if (!stillExists) {
-              console.log(`🗑️ Action-driven sync deleteDoc: tenants/${companyId}/${collectionKey}/${prevItem.id}`)
-              void deleteEntityRemote(companyId, collectionKey, prevItem.id)
-            }
-          })
         }
 
         const partitionKey = tenantKey
@@ -1193,62 +1184,41 @@ function App() {
     const activeCompanyIdAtSub = metadata.activeCompanyId
     const triggerGenerationId = switchSessionIdRef.current
 
-    return subscribeTenantData(metadata.activeCompanyId, tenantKey, (remoteSnapshot) => {
+    return subscribeTenantData(metadata.activeCompanyId, tenantKey, (key, docs) => {
       if (triggerGenerationId !== switchSessionIdRef.current || activeCompanyIdAtSub !== metadata.activeCompanyId) {
         console.log('🛑 Realtime update ignored due to tenant switch.')
         return
       }
 
-      console.log('📡 Realtime subscription received update:', {
-        revision: remoteSnapshot.revision,
-        deviceId: remoteSnapshot.device_id,
-        localDeviceId: localStorage.getItem('app_device_id'),
-        itemsCount: remoteSnapshot.payload.items?.length || 0
-      })
-      remoteRevisionRef.current[tenantKey] = remoteSnapshot.revision
-      const normalizedData: TenantData = {
-        suppliers: remoteSnapshot.payload.suppliers || [],
-        customers: remoteSnapshot.payload.customers || [],
-        items: remoteSnapshot.payload.items || [],
-        invoices: remoteSnapshot.payload.invoices || [],
-        payments: remoteSnapshot.payload.payments || [],
-        receivedDiscounts: remoteSnapshot.payload.receivedDiscounts || [],
-        salesInvoices: remoteSnapshot.payload.salesInvoices || [],
-        customerPayments: remoteSnapshot.payload.customerPayments || [],
-        expenseTypes: remoteSnapshot.payload.expenseTypes || [],
-        expenseEntries: remoteSnapshot.payload.expenseEntries || [],
-        fixedSchemes: remoteSnapshot.payload.fixedSchemes || [],
-        mtBookings: remoteSnapshot.payload.mtBookings || [],
-        discountLedgerEntries: remoteSnapshot.payload.discountLedgerEntries || [],
-        cashBankCounters: remoteSnapshot.payload.cashBankCounters || [],
-        cashBankTransactions: remoteSnapshot.payload.cashBankTransactions || [],
-        creditNotes: remoteSnapshot.payload.creditNotes || [],
-        debitNotes: remoteSnapshot.payload.debitNotes || [],
-        salesReturns: remoteSnapshot.payload.salesReturns || [],
-        purchaseReturns: remoteSnapshot.payload.purchaseReturns || []
+      console.log(`📡 Realtime subscription received update for ${key}. Count: ${docs.length}`)
+
+      const setters: Record<keyof TenantData, React.Dispatch<React.SetStateAction<any[]>>> = {
+        suppliers: setSuppliers,
+        customers: setCustomers,
+        items: setItems,
+        invoices: setInvoices,
+        payments: setPayments,
+        receivedDiscounts: setReceivedDiscounts,
+        salesInvoices: setSalesInvoices,
+        customerPayments: setCustomerPayments,
+        expenseTypes: setExpenseTypes,
+        expenseEntries: setExpenseEntries,
+        fixedSchemes: setFixedSchemes,
+        mtBookings: setMTBookings,
+        discountLedgerEntries: setDiscountLedgerEntries,
+        cashBankCounters: setCashBankCounters,
+        cashBankTransactions: setCashBankTransactions,
+        creditNotes: setCreditNotes,
+        debitNotes: setDebitNotes,
+        salesReturns: setSalesReturns,
+        purchaseReturns: setPurchaseReturns,
+        userAccounts: setUserAccounts
       }
-      lastSavedDataRef.current[tenantKey] = JSON.stringify(normalizedData)
-      writeTenantCache(metadata.activeCompanyId, tenantKey, normalizedData, remoteSnapshot.revision)
-      setSuppliers(normalizedData.suppliers)
-      setCustomers(normalizedData.customers)
-      setItems(normalizedData.items)
-      setInvoices(normalizedData.invoices)
-      setPayments(normalizedData.payments)
-      setReceivedDiscounts(normalizedData.receivedDiscounts)
-      setSalesInvoices(normalizedData.salesInvoices)
-      setCustomerPayments(normalizedData.customerPayments)
-      setExpenseTypes(normalizedData.expenseTypes)
-      setExpenseEntries(normalizedData.expenseEntries)
-      setFixedSchemes(normalizedData.fixedSchemes)
-      setMTBookings(normalizedData.mtBookings)
-      setDiscountLedgerEntries(normalizedData.discountLedgerEntries)
-      setCashBankCounters(normalizedData.cashBankCounters)
-      setCashBankTransactions(normalizedData.cashBankTransactions)
-      setCreditNotes(normalizedData.creditNotes)
-      setDebitNotes(normalizedData.debitNotes)
-      setSalesReturns(normalizedData.salesReturns)
-      setPurchaseReturns(normalizedData.purchaseReturns)
-      appendAuditLog('remote_tenant_realtime_update', undefined, tenantKey)
+
+      const setter = setters[key]
+      if (setter) {
+        setter(docs)
+      }
     }) || undefined
   }, [metadata.activeCompanyId, tenantHydrated, tenantKey, useServerAuth, canSyncRemoteTenant])
 
@@ -2048,10 +2018,11 @@ function App() {
               payments={safePayments}
               isLocked={isViewReadOnly('suppliers')}
               changedBy={currentUser?.displayName || currentUser?.username || 'Master Admin'}
+              activeCompanyId={metadata.activeCompanyId}
             />
           )
         case 'customers':
-          return <CustomersPage customers={safeCustomers} setCustomers={syncSetCustomers} isLocked={isViewReadOnly('customers')} salesInvoices={safeSalesInvoices} customerPayments={safeCustomerPayments} />
+          return <CustomersPage customers={safeCustomers} setCustomers={syncSetCustomers} isLocked={isViewReadOnly('customers')} salesInvoices={safeSalesInvoices} customerPayments={safeCustomerPayments} activeCompanyId={metadata.activeCompanyId} />
         case 'items':
           return (
             <ItemsPage
@@ -2094,6 +2065,7 @@ function App() {
               expenseEntries={safeExpenseEntries}
               expenseTypes={safeExpenseTypes}
               onNavigateToInvoiceDetails={handleNavigateToInvoiceDetails}
+              activeCompanyId={metadata.activeCompanyId}
             />
           )
         case 'payments':
@@ -2138,6 +2110,7 @@ function App() {
                 setCashBankCounters(c)
                 setCashBankTransactions(t)
               }}
+              activeCompanyId={metadata.activeCompanyId}
             />
           )
         case 'customer-payments':

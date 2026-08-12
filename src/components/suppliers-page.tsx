@@ -40,6 +40,7 @@ import { formatCurrency } from '@/lib/calculations'
 import { calculateTotalSupplierPayables, getSupplierYTDInvoiced, getSupplierPendingPayments } from '@/lib/report-calculations'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { deleteSupplier } from '@/lib/firebase-storage'
 
 interface SuppliersPageProps {
   suppliers: Supplier[]
@@ -49,6 +50,7 @@ interface SuppliersPageProps {
   isLocked?: boolean
   changedBy?: string
   activeFY?: string
+  activeCompanyId?: string
 }
 
 export default function SuppliersPage({ 
@@ -58,7 +60,8 @@ export default function SuppliersPage({
   payments = [], 
   isLocked = false, 
   changedBy = 'Master Admin',
-  activeFY
+  activeFY,
+  activeCompanyId
 }: SuppliersPageProps) {
   // View mode: 'list' (Register table) | 'editor' (Full screen edit matching screenshot 2)
   const [viewMode, setViewMode] = useState<'list' | 'editor'>('list')
@@ -292,6 +295,9 @@ export default function SuppliersPage({
   const confirmDeleteSupplier = () => {
     if (supplierToDelete) {
       setSuppliers((prev) => prev.filter((s) => s.id !== supplierToDelete.id))
+      if (activeCompanyId) {
+        void deleteSupplier(activeCompanyId, supplierToDelete.id)
+      }
       toast.success(`Supplier "${supplierToDelete.name}" deleted`)
       setDeleteDialogOpen(false)
       setSupplierToDelete(null)

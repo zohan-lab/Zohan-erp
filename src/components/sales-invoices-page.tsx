@@ -27,6 +27,8 @@ import { PartyEditorDialog } from '@/components/party-editor-dialog'
 import { ItemEditorDialog } from '@/components/item-editor-dialog'
 import { cn } from '@/lib/utils'
 
+import { deleteSalesInvoice, deleteCustomerPayment } from '@/lib/firebase-storage'
+
 interface SalesInvoicesPageProps {
   salesInvoices: SalesInvoice[]
   setSalesInvoices: (updater: (prev: SalesInvoice[]) => SalesInvoice[]) => void
@@ -44,6 +46,7 @@ interface SalesInvoicesPageProps {
   counters: Counter[]
   transactions: CashBankTransaction[]
   onUpdateCashBank: (counters: Counter[], transactions: CashBankTransaction[]) => void
+  activeCompanyId?: string
 }
 
 const DEFAULT_INVOICE_TERMS = '1. Goods once sold will not be taken back or exchanged\n2. All disputes are subject to [ENTER_YOUR_CITY_NAME] jurisdiction only'
@@ -66,7 +69,8 @@ export default function SalesInvoicesPage({
   isLocked = false,
   counters,
   transactions,
-  onUpdateCashBank
+  onUpdateCashBank,
+  activeCompanyId
 }: SalesInvoicesPageProps) {
   const stockMap = useMemo(() => {
     return calculateItemStockMap(items, purchaseInvoices, salesInvoices, purchaseReturns, salesReturns)
@@ -633,6 +637,10 @@ export default function SalesInvoicesPage({
     if (invoiceToDelete) {
       setSalesInvoices((prev) => prev.filter((inv) => inv.id !== invoiceToDelete.id))
       setCustomerPayments((prev) => prev.filter((payment) => payment.id !== getInvoicePaymentId(invoiceToDelete.id)))
+      if (activeCompanyId) {
+        void deleteSalesInvoice(activeCompanyId, invoiceToDelete.id)
+        void deleteCustomerPayment(activeCompanyId, getInvoicePaymentId(invoiceToDelete.id))
+      }
       toast.success('Sales invoice deleted successfully')
       setDeleteDialogOpen(false)
       setInvoiceToDelete(null)

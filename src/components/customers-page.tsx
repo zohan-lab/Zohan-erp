@@ -24,6 +24,7 @@ import { formatCurrency } from '@/lib/calculations'
 import { getCustomerBalanceDetails, calculateTotalCustomerReceivables } from '@/lib/report-calculations'
 import { toast } from 'sonner'
 import { PartyEditorDialog } from '@/components/party-editor-dialog'
+import { deleteCustomer } from '@/lib/firebase-storage'
 
 interface CustomersPageProps {
   customers: Customer[]
@@ -31,6 +32,7 @@ interface CustomersPageProps {
   salesInvoices?: SalesInvoice[]
   customerPayments?: CustomerPayment[]
   isLocked?: boolean
+  activeCompanyId?: string
 }
 
 export default function CustomersPage({ 
@@ -38,7 +40,8 @@ export default function CustomersPage({
   setCustomers, 
   salesInvoices = [], 
   customerPayments = [], 
-  isLocked = false 
+  isLocked = false,
+  activeCompanyId
 }: CustomersPageProps) {
   const [open, setOpen] = useState(false)
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
@@ -87,6 +90,9 @@ export default function CustomersPage({
   const confirmDelete = () => {
     if (customerToDelete) {
       setCustomers((prev) => prev.filter((c) => c.id !== customerToDelete.id))
+      if (activeCompanyId) {
+        void deleteCustomer(activeCompanyId, customerToDelete.id)
+      }
       toast.success('Customer deleted successfully')
       setDeleteDialogOpen(false)
       setCustomerToDelete(null)
