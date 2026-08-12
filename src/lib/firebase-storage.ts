@@ -5,10 +5,13 @@ import {
   onSnapshot,
   runTransaction,
   serverTimestamp,
+  collection,
+  getDocs,
+  deleteDoc,
   type Unsubscribe
 } from 'firebase/firestore'
 import { db, isRemoteStorageEnabled, isFirebaseConfigured } from './firebase-client'
-import { TenantData } from './storage-utils'
+import { TenantData, TENANT_COLLECTION_KEYS } from './storage-utils'
 
 // ─── Error Classes (kept identical to remote-storage.ts for App.tsx compatibility) ───
 
@@ -145,13 +148,69 @@ export async function loadRemoteTenantData(
   companyId: string,
   tenantKey: string = 'master_data'
 ): Promise<TenantSnapshot | null> {
-  if (!canUseRemoteStorage()) return null
+  if (!canUseRemoteStorage() || !db) return null
   assertRemoteAvailable()
 
   try {
-    const snap = await withTimeout(getDoc(masterPartitionRef(companyId)))
-    if (!snap.exists()) return null
-    return firestoreDocToSnapshot(companyId, tenantKey, snap.data() as FirestoreSnapshotDoc)
+    const payload: any = {}
+    let hasData = false
+
+    const promises = TENANT_COLLECTION_KEYS.map(async (key) => {
+      const colRef = collection(db!, 'tenants', companyId, key)
+      const snap = await getDocs(colRef)
+      if (!snap.empty) {
+        hasData = true
+      }
+      payload[key] = snap.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id
+      }))
+    })
+
+    await withTimeout(Promise.all(promises))
+
+    if (!hasData) {
+      // Backward-compatible migration check: does the legacy master_data monolithic doc exist?
+      const legacyRef = masterPartitionRef(companyId)
+      const legacySnap = await getDoc(legacyRef)
+      if (legacySnap.exists()) {
+        const legacyData = legacySnap.data() as FirestoreSnapshotDoc
+        if (legacyData && legacyData.payload) {
+          console.log(`🔄 Found legacy monolithic document for ${companyId}, migrating to subcollections...`)
+          
+          // Migrate each array in parallel
+          const migratePromises: Promise<void>[] = []
+          for (const key of TENANT_COLLECTION_KEYS) {
+            const arr = legacyData.payload[key]
+            if (Array.isArray(arr)) {
+              for (const item of arr) {
+                if (item && item.id) {
+                  const docRef = doc(db!, 'tenants', companyId, key, item.id)
+                  migratePromises.push(setDoc(docRef, stripUndefined(item)))
+                }
+              }
+            }
+          }
+          await Promise.all(migratePromises)
+
+          // Delete the legacy monolithic document
+          await deleteDoc(legacyRef)
+          console.log(`✅ Legacy monolithic document deleted for ${companyId}. Migration complete.`)
+
+          // Recursively call loadRemoteTenantData to load from new subcollections
+          return loadRemoteTenantData(companyId, tenantKey)
+        }
+      }
+      return null
+    }
+
+    return {
+      company_id: companyId,
+      tenant_key: tenantKey,
+      payload: payload as TenantData,
+      revision: 1,
+      updated_at: new Date().toISOString()
+    }
   } catch (error) {
     if (error instanceof RemoteStorageUnavailableError) {
       markRemoteUnavailable()
@@ -176,58 +235,43 @@ export async function saveRemoteTenantData(
   if (!canUseRemoteStorage() || !db) return null
   assertRemoteAvailable()
 
-  const ref = masterPartitionRef(companyId)
-  const deviceId = getDeviceId()
-
   try {
-    let savedRevision = 0
-
-    await withTimeout(
-      runTransaction(db, async (tx) => {
-        const existing = await tx.get(ref)
-
-        if (existing.exists()) {
-          const existingData = existing.data() as FirestoreSnapshotDoc
-          const currentRevision = existingData.revision ?? 0
-
-          // Optimistic concurrency: if caller has a tracked revision, enforce it
-          if (expectedRevision !== null && currentRevision !== expectedRevision) {
-            throw new RemoteSnapshotConflictError()
+    const deviceId = getDeviceId()
+    const promises: Promise<void>[] = []
+    
+    for (const key of TENANT_COLLECTION_KEYS) {
+      const arr = payload[key]
+      if (Array.isArray(arr)) {
+        for (const item of arr) {
+          if (item && item.id) {
+            const docRef = doc(db, 'tenants', companyId, key, item.id)
+            promises.push(setDoc(docRef, {
+              ...stripUndefined(item),
+              deviceId
+            }))
           }
-
-          savedRevision = currentRevision + 1
-        } else {
-          savedRevision = 1
         }
-
-        const now = new Date().toISOString()
-        tx.set(ref, {
-          payload: stripUndefined(payload),
-          revision: savedRevision,
-          updatedAt: now,
-          deviceId
-        } satisfies FirestoreSnapshotDoc)
-      })
-    )
-
+      }
+    }
+    
+    await withTimeout(Promise.all(promises))
+    
     return {
       company_id: companyId,
       tenant_key: tenantKey,
       payload,
-      revision: savedRevision,
+      revision: 1,
       updated_at: new Date().toISOString(),
       device_id: deviceId
     }
   } catch (error) {
-    if (error instanceof RemoteSnapshotConflictError) throw error
     if (error instanceof RemoteStorageUnavailableError) {
       markRemoteUnavailable()
       throw error
     }
-    console.error('Firestore save failed:', error)
+    console.error('Firestore batch save failed:', error)
     markRemoteUnavailable()
-    const errMsg = error instanceof Error ? error.message : 'Unknown Firestore save error'
-    throw new RemoteStorageUnavailableError(`Firebase is temporarily unavailable: ${errMsg}`)
+    throw new RemoteStorageUnavailableError('Firebase temporary batch save error.')
   }
 }
 
@@ -243,26 +287,41 @@ export function subscribeTenantData(
   if (!canUseRemoteStorage() || !db) return null
 
   const deviceId = getDeviceId()
-  let unsubscribe: Unsubscribe
+  const unsubscribes: Unsubscribe[] = []
+  const payload: any = {}
 
   try {
-    unsubscribe = onSnapshot(
-      masterPartitionRef(companyId),
-      (snap) => {
-        if (!snap.exists()) return
-        const data = snap.data() as FirestoreSnapshotDoc
-        // Ignore updates from this same device (we already applied them locally)
-        if (data.deviceId === deviceId) return
-        onSnapshotReceived(firestoreDocToSnapshot(companyId, tenantKey, data))
-      },
-      (error) => {
-        console.error('Firestore realtime subscription error:', error)
-      }
-    )
+    TENANT_COLLECTION_KEYS.forEach((key) => {
+      const colRef = collection(db!, 'tenants', companyId, key)
+      const unsub = onSnapshot(
+        colRef,
+        (snap) => {
+          if (snap.metadata.hasPendingWrites) return
+
+          const docs = snap.docs.map(d => d.data())
+          payload[key] = docs
+
+          onSnapshotReceived({
+            company_id: companyId,
+            tenant_key: tenantKey,
+            payload: payload as TenantData,
+            revision: 1,
+            updated_at: new Date().toISOString(),
+            device_id: deviceId
+          })
+        },
+        (error) => {
+          console.error(`Firestore realtime subscription error for ${key}:`, error)
+        }
+      )
+      unsubscribes.push(unsub)
+    })
   } catch (error) {
-    console.error('Failed to subscribe to Firestore snapshot:', error)
+    console.error('Failed to subscribe to Firestore subcollections:', error)
     return null
   }
 
-  return () => unsubscribe()
+  return () => {
+    unsubscribes.forEach(unsub => unsub())
+  }
 }

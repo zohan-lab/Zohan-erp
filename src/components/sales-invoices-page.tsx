@@ -469,17 +469,22 @@ export default function SalesInvoicesPage({
     }
     const invoiceNo = formData.get('invoiceNo') as string
 
-    const sanitizedItems: InvoiceItem[] = invoiceItems.map(item => ({
-      itemId: item.itemId,
-      enteredQuantity: item.enteredQuantity,
-      enteredUnit: item.enteredUnit,
-      baseQuantity: item.baseQuantity,
-      rate: item.rate,
-      amount: item.amount,
-      basicRate: item.basicRate,
-      baseRate: item.baseRate,
-      enteredRate: item.enteredRate
-    }))
+    const sanitizedItems: InvoiceItem[] = invoiceItems.map(item => {
+      const itemDef = items.find(i => i.id === item.itemId)
+      return {
+        itemId: item.itemId,
+        enteredQuantity: item.enteredQuantity,
+        enteredUnit: item.enteredUnit,
+        baseQuantity: item.baseQuantity,
+        rate: item.rate,
+        amount: item.amount,
+        basicRate: item.basicRate,
+        baseRate: item.baseRate,
+        enteredRate: item.enteredRate,
+        itemNameSnapshot: itemDef?.name,
+        itemUnitSnapshot: itemDef?.unit
+      }
+    })
 
     if (editingInvoice) {
       const updatedInvoice: SalesInvoice = {

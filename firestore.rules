@@ -33,17 +33,18 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ─── 2. Tenant Data Partitions (/tenants/{companyId}/partitions/{partitionId}) ──
+    // ─── 2. Tenant Data Subcollections & Legacy Partitions ─────────────────────────
+    match /tenants/{companyId}/{collectionId}/{docId} {
+      allow read, write: if isActiveUser();
+    }
+
+    // Keep legacy partitions rules for migration and backward compatibility
     match /tenants/{companyId}/partitions/{partitionId} {
-      // Active authenticated users can read tenant partitions
-      allow read: if isActiveUser();
-      // Active authenticated users can save/update/delete tenant partitions
-      allow write: if isActiveUser();
+      allow read, write: if isActiveUser();
     }
 
     match /tenants/{companyId}/snapshots/{tenantKey} {
-      allow read: if isActiveUser();
-      allow write: if isActiveUser();
+      allow read, write: if isActiveUser();
     }
 
     // ─── 3. Businesses (/businesses/{businessId}) ────────────────────

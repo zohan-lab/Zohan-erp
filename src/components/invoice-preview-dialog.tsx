@@ -127,7 +127,7 @@ export function InvoicePreviewDialog({
                     <tr key={`${line.itemId}-${index}`}>
                       <td>{index + 1}</td>
                       <td>
-                        <strong>{item?.name || 'Unknown item'}</strong>
+                        <strong>{line.itemNameSnapshot || item?.name || 'Unknown item'}</strong>
                         <span>{item?.description || unit}</span>
                       </td>
                       <td>{qty.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {unit}</td>

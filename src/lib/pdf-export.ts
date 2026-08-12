@@ -1083,7 +1083,7 @@ function exportStyledInvoicePDF(options: StyledInvoiceOptions) {
     const rate = line.rate || (qty > 0 ? line.amount / qty : 0);
     return [
       (index + 1).toString(),
-      item?.name || 'Unknown item',
+      line.itemNameSnapshot || item?.name || 'Unknown item',
       '-', // HSN/SAC
       qty.toLocaleString('en-IN', { maximumFractionDigits: 3 }),
       rate.toFixed(2), // Rate

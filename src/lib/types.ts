@@ -150,6 +150,8 @@ export interface InvoiceItem {
   amount: number
   baseRate?: number
   enteredRate?: number
+  itemNameSnapshot?: string
+  itemUnitSnapshot?: string
 }
 
 export interface PurchaseInvoice {

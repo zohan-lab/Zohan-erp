@@ -38,6 +38,29 @@ export interface TenantData {
   userAccounts?: any[]
 }
 
+export const TENANT_COLLECTION_KEYS: Array<keyof TenantData> = [
+  'suppliers',
+  'customers',
+  'items',
+  'invoices',
+  'payments',
+  'receivedDiscounts',
+  'salesInvoices',
+  'customerPayments',
+  'expenseTypes',
+  'expenseEntries',
+  'fixedSchemes',
+  'mtBookings',
+  'discountLedgerEntries',
+  'cashBankCounters',
+  'cashBankTransactions',
+  'creditNotes',
+  'debitNotes',
+  'salesReturns',
+  'purchaseReturns',
+  'userAccounts'
+]
+
 const METADATA_KEY = 'app_metadata'
 
 export function getMetadata(): AppMetadata {

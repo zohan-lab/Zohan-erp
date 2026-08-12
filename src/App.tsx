@@ -176,7 +176,9 @@ import {
   subscribeTenantData
 } from '@/lib/firebase-storage'
 import { appendServerAuditLog } from '@/lib/remote-audit'
-import { isLocalCacheDisabled } from '@/lib/firebase-client'
+import { isLocalCacheDisabled, db } from '@/lib/firebase-client'
+import { doc, setDoc, deleteDoc } from 'firebase/firestore'
+import { TENANT_COLLECTION_KEYS } from '@/lib/storage-utils'
 import {
   canUseFirebaseAuth,
   createRemoteAgentAccount,
@@ -654,6 +656,7 @@ function App() {
   const hydratedCompanyIdRef = useRef<string | null>(null)
   const isTenantLoadingRef = useRef<boolean>(false)
   const saveTimerRef = useRef<any>(null)
+  const prevCollectionsRef = useRef<Record<string, any[]>>({})
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false)
   const [addBusinessDialogOpen, setAddBusinessDialogOpen] = useState(false)
   const [editBusinessDialogOpen, setEditBusinessDialogOpen] = useState(false)
@@ -1095,14 +1098,59 @@ function App() {
   }, [metadata.activeCompanyId, activeFY, tenantKey, useServerAuth, canSyncRemoteTenant])
 
   useEffect(() => {
-    // Mandatory Guard: No auto-save until hydrated and active UI company matches loaded company
-    if (!tenantHydrated || hydratedCompanyIdRef.current !== metadata.activeCompanyId || isTenantLoadingRef.current) return
-    if (useServerAuth && !canSyncRemoteTenant) return
+    const stateGetters: Record<string, any[]> = {
+      suppliers,
+      customers,
+      items,
+      invoices,
+      payments,
+      receivedDiscounts,
+      salesInvoices,
+      customerPayments,
+      expenseTypes,
+      expenseEntries,
+      fixedSchemes,
+      mtBookings,
+      discountLedgerEntries,
+      cashBankCounters,
+      cashBankTransactions,
+      creditNotes,
+      debitNotes,
+      salesReturns,
+      purchaseReturns,
+      userAccounts: userAccounts || []
+    }
 
+    const localStripUndefined = (val: any): any => {
+      if (val === undefined) return undefined
+      if (val === null) return null
+      if (Array.isArray(val)) {
+        return val.map(localStripUndefined).filter(v => v !== undefined)
+      }
+      if (typeof val === 'object') {
+        const cleaned: any = {}
+        for (const key in val) {
+          const cleanedVal = localStripUndefined(val[key])
+          if (cleanedVal !== undefined) {
+            cleaned[key] = cleanedVal
+          }
+        }
+        return cleaned
+      }
+      return val
+    }
+
+    if (!tenantHydrated || hydratedCompanyIdRef.current !== metadata.activeCompanyId || isTenantLoadingRef.current) {
+      const baselineMap: Record<string, any[]> = {}
+      TENANT_COLLECTION_KEYS.forEach(key => {
+        baselineMap[key] = [...(stateGetters[key] || [])]
+      })
+      prevCollectionsRef.current = baselineMap
+      return
+    }
+
+    const companyId = metadata.activeCompanyId
     const partitionKey = tenantKey
-    const activeCompanyIdAtTrigger = metadata.activeCompanyId
-    const triggerGenerationId = switchSessionIdRef.current
-
     const tenantData: TenantData = {
       suppliers,
       customers,
@@ -1125,120 +1173,59 @@ function App() {
       purchaseReturns,
       userAccounts
     }
+    writeTenantCache(companyId, partitionKey, tenantData, null)
 
-    const lastSavedJson = lastSavedDataRef.current[partitionKey]
-    if (lastSavedJson) {
-      try {
-        const last = JSON.parse(lastSavedJson)
-        if (areObjectsSemanticallyEqual(tenantData, last)) {
-          return
-        }
-      } catch (e) { }
-    }
-
-    if (canUseRemoteStorage() && remoteRevisionRef.current[partitionKey] == null && !hasTenantRecords(tenantData)) {
+    if (!canUseRemoteStorage() || !db) {
+      const baselineMap: Record<string, any[]> = {}
+      TENANT_COLLECTION_KEYS.forEach(key => {
+        baselineMap[key] = [...(stateGetters[key] || [])]
+      })
+      prevCollectionsRef.current = baselineMap
       return
     }
 
-    console.log('💾 Scheduling remote save. itemsCount:', items.length, 'expectedRevision:', remoteRevisionRef.current[partitionKey])
+    const deviceId = localStorage.getItem('app_device_id') || 'unknown'
 
-    writeTenantCache(
-      activeCompanyIdAtTrigger,
-      partitionKey,
-      tenantData,
-      remoteRevisionRef.current[partitionKey] ?? null
-    )
-    if (canUseRemoteStorage()) {
-      if (saveTimerRef.current) {
-        clearTimeout(saveTimerRef.current)
-      }
-      saveTimerRef.current = setTimeout(() => {
-        const saveRemote = async () => {
-          if (
-            triggerGenerationId !== switchSessionIdRef.current ||
-            activeCompanyIdAtTrigger !== metadata.activeCompanyId ||
-            hydratedCompanyIdRef.current !== activeCompanyIdAtTrigger
-          ) {
-            console.log('🛑 Save cancelled due to tenant switch race condition guard.')
-            return
-          }
+    TENANT_COLLECTION_KEYS.forEach((key) => {
+      const prevList = prevCollectionsRef.current[key] || []
+      const currentList = stateGetters[key] || []
 
-          console.log('💾 Running saveRemote to Firestore. itemsCount:', items.length, 'expectedRevision:', remoteRevisionRef.current[partitionKey])
-          const snapshot = await saveRemoteTenantData(
-            activeCompanyIdAtTrigger,
-            partitionKey,
-            tenantData,
-            remoteRevisionRef.current[partitionKey] ?? null
-          )
-          if (snapshot && triggerGenerationId === switchSessionIdRef.current) {
-            console.log('💾 saveRemote SUCCESS. New revision:', snapshot.revision, 'New itemsCount:', snapshot.payload.items?.length || 0)
-            remoteRevisionRef.current[partitionKey] = snapshot.revision
-            lastSavedDataRef.current[partitionKey] = JSON.stringify(tenantData)
-            writeTenantCache(activeCompanyIdAtTrigger, partitionKey, snapshot.payload, snapshot.revision)
-          }
-        }
-
-        saveRemote()
-          .catch(async (error) => {
-            console.error('❌ saveRemote FAILED:', error)
-            if (error instanceof RemoteSnapshotConflictError) {
-              toast.error('Remote data changed. Reloading latest company data.')
-              const latest = await loadRemoteTenantData(activeCompanyIdAtTrigger, partitionKey)
-              if (latest && triggerGenerationId === switchSessionIdRef.current) {
-                console.log('💾 Reloaded snapshot after conflict. Revision:', latest.revision, 'itemsCount:', latest.payload.items?.length || 0)
-                remoteRevisionRef.current[partitionKey] = latest.revision
-                const normalizedData: TenantData = {
-                  suppliers: latest.payload.suppliers || [],
-                  customers: latest.payload.customers || [],
-                  items: latest.payload.items || [],
-                  invoices: latest.payload.invoices || [],
-                  payments: latest.payload.payments || [],
-                  receivedDiscounts: latest.payload.receivedDiscounts || [],
-                  salesInvoices: latest.payload.salesInvoices || [],
-                  customerPayments: latest.payload.customerPayments || [],
-                  expenseTypes: latest.payload.expenseTypes || [],
-                  expenseEntries: latest.payload.expenseEntries || [],
-                  fixedSchemes: latest.payload.fixedSchemes || [],
-                  mtBookings: latest.payload.mtBookings || [],
-                  discountLedgerEntries: latest.payload.discountLedgerEntries || [],
-                  cashBankCounters: latest.payload.cashBankCounters || [],
-                  cashBankTransactions: latest.payload.cashBankTransactions || [],
-                  creditNotes: latest.payload.creditNotes || [],
-                  debitNotes: latest.payload.debitNotes || [],
-                  salesReturns: latest.payload.salesReturns || [],
-                  purchaseReturns: latest.payload.purchaseReturns || []
-                }
-                lastSavedDataRef.current[partitionKey] = JSON.stringify(normalizedData)
-                writeTenantCache(activeCompanyIdAtTrigger, partitionKey, normalizedData, latest.revision)
-                setSuppliers(normalizedData.suppliers)
-                setCustomers(normalizedData.customers)
-                setItems(normalizedData.items)
-                setInvoices(normalizedData.invoices)
-                setPayments(normalizedData.payments)
-                setReceivedDiscounts(normalizedData.receivedDiscounts)
-                setSalesInvoices(normalizedData.salesInvoices)
-                setCustomerPayments(normalizedData.customerPayments)
-                setExpenseTypes(normalizedData.expenseTypes)
-                setExpenseEntries(normalizedData.expenseEntries)
-                setFixedSchemes(normalizedData.fixedSchemes)
-                setMTBookings(normalizedData.mtBookings)
-                setDiscountLedgerEntries(normalizedData.discountLedgerEntries)
-                setCashBankCounters(normalizedData.cashBankCounters)
-                setCashBankTransactions(normalizedData.cashBankTransactions)
-              }
-              return
-            }
-            toast.error(error instanceof Error ? error.message : 'Remote save failed')
+      // 1. Detect additions and modifications
+      currentList.forEach((item) => {
+        if (!item || !item.id) return
+        const prevItem = prevList.find((p: any) => p.id === item.id)
+        if (!prevItem || !areObjectsSemanticallyEqual(item, prevItem)) {
+          console.log(`💾 Syncing individual subcollection doc write for ${key}/${item.id}`)
+          const docRef = doc(db!, 'tenants', companyId, key, item.id)
+          void setDoc(docRef, {
+            ...localStripUndefined(item),
+            deviceId
+          }).catch((err) => {
+            console.error(`Failed to write subcollection doc ${key}/${item.id}:`, err)
           })
-      }, 1500)
-
-      return () => {
-        if (saveTimerRef.current) {
-          clearTimeout(saveTimerRef.current)
-          saveTimerRef.current = null
         }
-      }
-    }
+      })
+
+      // 2. Detect deletions
+      prevList.forEach((prevItem) => {
+        if (!prevItem || !prevItem.id) return
+        const stillExists = currentList.some((c: any) => c.id === prevItem.id)
+        if (!stillExists) {
+          console.log(`🗑️ Syncing individual subcollection doc delete for ${key}/${prevItem.id}`)
+          const docRef = doc(db!, 'tenants', companyId, key, prevItem.id)
+          void deleteDoc(docRef).catch((err) => {
+            console.error(`Failed to delete subcollection doc ${key}/${prevItem.id}:`, err)
+          })
+        }
+      })
+    })
+
+    const baselineMap: Record<string, any[]> = {}
+    TENANT_COLLECTION_KEYS.forEach(key => {
+      baselineMap[key] = [...(stateGetters[key] || [])]
+    })
+    prevCollectionsRef.current = baselineMap
+
     appendAuditLog('tenant_data_saved', {
       suppliers: suppliers.length,
       customers: customers.length,
@@ -1265,6 +1252,11 @@ function App() {
     discountLedgerEntries,
     cashBankCounters,
     cashBankTransactions,
+    creditNotes,
+    debitNotes,
+    salesReturns,
+    purchaseReturns,
+    userAccounts,
     tenantKey,
     tenantHydrated,
     useServerAuth,
