@@ -27,7 +27,7 @@ import { PartyEditorDialog } from '@/components/party-editor-dialog'
 import { ItemEditorDialog } from '@/components/item-editor-dialog'
 import { cn } from '@/lib/utils'
 
-import { deleteSalesInvoice, deleteCustomerPayment } from '@/lib/firebase-storage'
+import { deleteSalesInvoice, deleteCustomerPayment, saveSalesInvoice, saveCustomerPayment } from '@/lib/firebase-storage'
 
 interface SalesInvoicesPageProps {
   salesInvoices: SalesInvoice[]
@@ -166,20 +166,28 @@ export default function SalesInvoicesPage({
     const selectedCounter = counters.find(c => c.id === counterId)
     const oldPayment = customerPayments.find(p => p.id === paymentId)
 
+    const payment: CustomerPayment = {
+      id: paymentId,
+      customerId,
+      paymentDate: invoiceDate,
+      amount: receivedAmount,
+      notes: `Auto-created from sales invoice ${invoiceNo}`,
+      counterId: counterId,
+      counterName: selectedCounter?.name || 'Unknown',
+      fy: getFYFromDate(invoiceDate)
+    }
+
+    if (activeCompanyId) {
+      if (receivedAmount <= 0) {
+        void deleteCustomerPayment(activeCompanyId, paymentId)
+      } else {
+        void saveCustomerPayment(activeCompanyId, payment)
+      }
+    }
+
     setCustomerPayments((prev) => {
       if (receivedAmount <= 0) {
         return prev.filter((payment) => payment.id !== paymentId)
-      }
-
-      const payment: CustomerPayment = {
-        id: paymentId,
-        customerId,
-        paymentDate: invoiceDate,
-        amount: receivedAmount,
-        notes: `Auto-created from sales invoice ${invoiceNo}`,
-        counterId: counterId,
-        counterName: selectedCounter?.name || 'Unknown',
-        fy: getFYFromDate(invoiceDate)
       }
 
       const exists = prev.some((candidate) => candidate.id === paymentId)
@@ -504,6 +512,9 @@ export default function SalesInvoicesPage({
         roundOffAdjustment: roundOffAdjustment || undefined,
       }
       setSalesInvoices((prev) => prev.map(inv => inv.id === editingInvoice.id ? updatedInvoice : inv))
+      if (activeCompanyId) {
+        void saveSalesInvoice(activeCompanyId, updatedInvoice)
+      }
       syncInvoicePayment(editingInvoice.id, customerId, invoiceNo, invoiceDate, finalAmountReceived, counterId)
     } else {
       const invoiceId = `sales-invoice-${Date.now()}`
@@ -521,6 +532,9 @@ export default function SalesInvoicesPage({
         fy: getFYFromDate(invoiceDate)
       }
       setSalesInvoices((prev) => [...prev, invoice])
+      if (activeCompanyId) {
+        void saveSalesInvoice(activeCompanyId, invoice)
+      }
       syncInvoicePayment(invoiceId, customerId, formData.get('invoiceNo') as string, formData.get('invoiceDate') as string, finalAmountReceived, counterId)
     }
 

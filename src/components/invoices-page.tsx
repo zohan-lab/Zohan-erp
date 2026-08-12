@@ -26,7 +26,7 @@ import { exportPurchaseInvoicePDF } from '@/lib/pdf-export'
 import { PartyEditorDialog } from '@/components/party-editor-dialog'
 import { ItemEditorDialog } from '@/components/item-editor-dialog'
 
-import { deleteInvoice, deletePayment } from '@/lib/firebase-storage'
+import { deleteInvoice, deletePayment, saveInvoice, savePayment } from '@/lib/firebase-storage'
 
 interface InvoicesPageProps {
   invoices: PurchaseInvoice[]
@@ -146,22 +146,30 @@ export default function InvoicesPage({
     const selectedCounter = counters.find(c => c.id === counterId)
     const oldPayment = payments.find(p => p.id === paymentId)
 
+    const payment: Payment = {
+      id: paymentId,
+      supplierId,
+      paymentDate: invoiceDate,
+      amount: paidAmount,
+      counterId: counterId,
+      counterName: selectedCounter?.name || 'Unknown',
+      isAdvance: false,
+      doNotApplyCD: false,
+      fy: currentFY,
+      createdAt: Date.now()
+    }
+
+    if (activeCompanyId) {
+      if (paidAmount <= 0) {
+        void deletePayment(activeCompanyId, paymentId)
+      } else {
+        void savePayment(activeCompanyId, payment)
+      }
+    }
+
     setPayments((prev) => {
       if (paidAmount <= 0) {
         return prev.filter((payment) => payment.id !== paymentId)
-      }
-
-      const payment: Payment = {
-        id: paymentId,
-        supplierId,
-        paymentDate: invoiceDate,
-        amount: paidAmount,
-        counterId: counterId,
-        counterName: selectedCounter?.name || 'Unknown',
-        isAdvance: false,
-        doNotApplyCD: false,
-        fy: currentFY,
-        createdAt: Date.now()
       }
 
       const exists = prev.some((candidate) => candidate.id === paymentId)
@@ -558,6 +566,9 @@ export default function InvoicesPage({
         roundOffAdjustment: roundOffAdjustment || undefined,
       }
       setInvoices((prev) => prev.map(inv => inv.id === editingInvoice.id ? updated : inv))
+      if (activeCompanyId) {
+        void saveInvoice(activeCompanyId, updated)
+      }
       syncInvoicePayment(editingInvoice.id, supplierId, invoiceNo, invoiceDate, finalAmountPaid, counterId)
       toast.success('Invoice updated successfully')
     } else {
@@ -577,6 +588,9 @@ export default function InvoicesPage({
         createdAt: Date.now()
       }
       setInvoices((prev) => [...prev, invoice])
+      if (activeCompanyId) {
+        void saveInvoice(activeCompanyId, invoice)
+      }
       syncInvoicePayment(invoiceId, supplierId, formData.get('invoiceNo') as string, formData.get('invoiceDate') as string, finalAmountPaid, counterId)
       toast.success('Invoice added successfully')
     }

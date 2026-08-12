@@ -40,7 +40,7 @@ import { formatCurrency } from '@/lib/calculations'
 import { calculateTotalSupplierPayables, getSupplierYTDInvoiced, getSupplierPendingPayments } from '@/lib/report-calculations'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { deleteSupplier } from '@/lib/firebase-storage'
+import { deleteSupplier, saveSupplier } from '@/lib/firebase-storage'
 
 interface SuppliersPageProps {
   suppliers: Supplier[]
@@ -246,10 +246,12 @@ export default function SuppliersPage({
       }
 
       setSuppliers((prev) => prev.map((s) => (s.id === editingSupplier.id ? updatedSupplier : s)))
+      if (activeCompanyId) {
+        void saveSupplier(activeCompanyId, updatedSupplier)
+      }
       toast.success(`Supplier "${name}" updated successfully`)
     } else {
       const newId = `sup-${Date.now()}`
-
 
       const newSupplier: Supplier = {
         id: newId,
@@ -264,10 +266,12 @@ export default function SuppliersPage({
         paymentCDRules,
         invoiceCloseCDRules,
         annualTarget,
-
       }
 
       setSuppliers((prev) => [newSupplier, ...prev])
+      if (activeCompanyId) {
+        void saveSupplier(activeCompanyId, newSupplier)
+      }
       toast.success(`Supplier "${name}" added successfully`)
     }
 

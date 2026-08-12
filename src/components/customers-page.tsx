@@ -24,7 +24,7 @@ import { formatCurrency } from '@/lib/calculations'
 import { getCustomerBalanceDetails, calculateTotalCustomerReceivables } from '@/lib/report-calculations'
 import { toast } from 'sonner'
 import { PartyEditorDialog } from '@/components/party-editor-dialog'
-import { deleteCustomer } from '@/lib/firebase-storage'
+import { deleteCustomer, saveCustomer } from '@/lib/firebase-storage'
 
 interface CustomersPageProps {
   customers: Customer[]
@@ -57,9 +57,15 @@ export default function CustomersPage({
   const handleSaveCustomer = (customer: Customer) => {
     if (editingCustomer) {
       setCustomers((prev) => prev.map(c => c.id === customer.id ? customer : c))
+      if (activeCompanyId) {
+        void saveCustomer(activeCompanyId, customer)
+      }
       toast.success('Customer updated successfully')
     } else {
       setCustomers((prev) => [...prev, customer])
+      if (activeCompanyId) {
+        void saveCustomer(activeCompanyId, customer)
+      }
       toast.success('Customer added successfully')
     }
     setEditingCustomer(null)

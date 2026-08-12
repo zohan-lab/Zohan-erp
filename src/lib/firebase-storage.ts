@@ -325,8 +325,32 @@ export async function saveInvoice(companyId: string, invoice: any): Promise<void
   await saveEntityRemote(companyId, 'invoices', invoice)
 }
 
+export async function saveSalesInvoice(companyId: string, invoice: any): Promise<void> {
+  await saveEntityRemote(companyId, 'salesInvoices', invoice)
+}
+
 export async function updateItem(companyId: string, item: any): Promise<void> {
   await saveEntityRemote(companyId, 'items', item)
+}
+
+export async function saveItem(companyId: string, item: any): Promise<void> {
+  await saveEntityRemote(companyId, 'items', item)
+}
+
+export async function saveSupplier(companyId: string, supplier: any): Promise<void> {
+  await saveEntityRemote(companyId, 'suppliers', supplier)
+}
+
+export async function saveCustomer(companyId: string, customer: any): Promise<void> {
+  await saveEntityRemote(companyId, 'customers', customer)
+}
+
+export async function savePayment(companyId: string, payment: any): Promise<void> {
+  await saveEntityRemote(companyId, 'payments', payment)
+}
+
+export async function saveCustomerPayment(companyId: string, payment: any): Promise<void> {
+  await saveEntityRemote(companyId, 'customerPayments', payment)
 }
 
 export async function deleteCustomer(companyId: string, customerId: string): Promise<void> {

@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Plus, Package, Trash, Pencil, Warning, SquaresFour, Scales, Folder, Check, X } from '@phosphor-icons/react'
 import { toast } from 'sonner'
-import { deleteItem } from '@/lib/firebase-storage'
+import { deleteItem, saveItem } from '@/lib/firebase-storage'
 import { ItemEditorDialog } from '@/components/item-editor-dialog'
 import { 
   getCustomCategories, 
@@ -161,9 +161,15 @@ export default function ItemsPage({
   const handleSaveItem = (savedItem: Item) => {
     if (editingItem) {
       setItems((prev) => prev.map(item => item.id === savedItem.id ? savedItem : item))
+      if (activeCompanyId) {
+        void saveItem(activeCompanyId, savedItem)
+      }
       toast.success('Item updated successfully')
     } else {
       setItems((prev) => [...prev, savedItem])
+      if (activeCompanyId) {
+        void saveItem(activeCompanyId, savedItem)
+      }
       toast.success('Item added successfully')
     }
     setEditingItem(null)
