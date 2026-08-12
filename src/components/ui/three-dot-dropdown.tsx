@@ -45,7 +45,7 @@ export function ThreeDotDropdown({
   }, [isOpen])
 
   return (
-    <div className="relative inline-block text-left" ref={dropdownRef}>
+    <div className="relative inline-block text-left z-[999]" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="p-2 text-slate-500 hover:text-slate-900 rounded-full hover:bg-slate-100 transition-colors focus:outline-none cursor-pointer"
@@ -55,7 +55,7 @@ export function ThreeDotDropdown({
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-1 w-44 rounded-xl bg-white border border-slate-200 shadow-lg z-50 overflow-hidden py-1 animate-in fade-in slide-in-from-top-1 duration-150">
+        <div className="absolute right-0 mt-1 w-44 rounded-xl bg-white border border-slate-200 shadow-lg z-[999] overflow-hidden py-1 animate-in fade-in slide-in-from-top-1 duration-150">
           <button
             type="button"
             disabled={isLocked}
