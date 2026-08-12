@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { DotsThreeVertical, PencilSimple, Trash, Clock, User } from '@phosphor-icons/react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -27,26 +28,71 @@ export function ThreeDotDropdown({
 }: ThreeDotDropdownProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
-  const dropdownRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
+
+  // Calculate position of the dropdown relative to the viewport
+  const updatePosition = useCallback(() => {
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect()
+      const menuWidth = 176 // w-44 = 11rem = 176px
+      const menuHeight = 140 // approximate height of menu
+
+      let top = rect.bottom + 4
+      let left = rect.right - menuWidth
+
+      // If menu would overflow bottom of viewport, show above the trigger
+      if (top + menuHeight > window.innerHeight) {
+        top = rect.top - menuHeight - 4
+      }
+
+      // If menu would overflow left edge, align to left of trigger
+      if (left < 8) {
+        left = rect.left
+      }
+
+      setMenuPosition({ top, left })
+    }
+  }, [])
 
   // Close dropdown on click outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as Node
+      if (
+        triggerRef.current && !triggerRef.current.contains(target) &&
+        menuRef.current && !menuRef.current.contains(target)
+      ) {
         setIsOpen(false)
       }
     }
+
+    function handleScroll() {
+      setIsOpen(false)
+    }
+
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside)
+      window.addEventListener('scroll', handleScroll, true)
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside)
+      window.removeEventListener('scroll', handleScroll, true)
     }
   }, [isOpen])
 
+  // Update position when opened
+  useEffect(() => {
+    if (isOpen) {
+      updatePosition()
+    }
+  }, [isOpen, updatePosition])
+
   return (
-    <div className="relative inline-block text-left z-[999]" ref={dropdownRef}>
+    <>
       <button
+        ref={triggerRef}
         onClick={() => setIsOpen(!isOpen)}
         className="p-2 text-slate-500 hover:text-slate-900 rounded-full hover:bg-slate-100 transition-colors focus:outline-none cursor-pointer"
         type="button"
@@ -54,8 +100,17 @@ export function ThreeDotDropdown({
         <DotsThreeVertical size={18} weight="bold" />
       </button>
 
-      {isOpen && (
-        <div className="absolute right-0 mt-1 w-44 rounded-xl bg-white border border-slate-200 shadow-lg z-[999] overflow-hidden py-1 animate-in fade-in slide-in-from-top-1 duration-150">
+      {/* Portal-rendered dropdown menu */}
+      {isOpen && createPortal(
+        <div
+          ref={menuRef}
+          className="fixed w-44 rounded-xl bg-white border border-slate-200 shadow-xl overflow-hidden py-1 animate-in fade-in slide-in-from-top-1 duration-150"
+          style={{
+            top: menuPosition.top,
+            left: menuPosition.left,
+            zIndex: 9999,
+          }}
+        >
           <button
             type="button"
             disabled={isLocked}
@@ -68,7 +123,7 @@ export function ThreeDotDropdown({
             <PencilSimple size={16} className="text-slate-500" />
             Edit
           </button>
-          
+
           <button
             type="button"
             onClick={() => {
@@ -95,12 +150,13 @@ export function ThreeDotDropdown({
             <Trash size={16} className="text-red-500" />
             Delete
           </button>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* History Dialog */}
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
-        <DialogContent className="sm:max-w-[480px] rounded-2xl p-6 bg-white shadow-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[480px] rounded-2xl p-6 bg-white shadow-xl max-h-[90vh] overflow-y-auto" style={{ zIndex: 9999 }}>
           <DialogHeader className="flex flex-row items-center justify-between border-b pb-4 border-slate-100">
             <DialogTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <Clock size={20} className="text-blue-600" />
@@ -115,7 +171,7 @@ export function ThreeDotDropdown({
                   <div key={idx} className="relative">
                     {/* Circle Indicator */}
                     <div className="absolute -left-[27.5px] top-1.5 h-3.5 w-3.5 rounded-full border-2 border-white bg-blue-600 flex items-center justify-center shadow-sm" />
-                    
+
                     <div className="space-y-1">
                       <div className="flex items-center justify-between text-xs text-slate-400">
                         <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded capitalize">
@@ -160,6 +216,6 @@ export function ThreeDotDropdown({
           </div>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   )
 }
