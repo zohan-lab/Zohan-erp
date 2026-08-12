@@ -325,3 +325,33 @@ export function subscribeTenantData(
     unsubscribes.forEach(unsub => unsub())
   }
 }
+
+/**
+ * Standalone action-driven database operations.
+ */
+export async function saveInvoice(companyId: string, invoice: any): Promise<void> {
+  await saveEntityRemote(companyId, 'invoices', invoice)
+}
+
+export async function updateItem(companyId: string, item: any): Promise<void> {
+  await saveEntityRemote(companyId, 'items', item)
+}
+
+export async function deleteCustomer(companyId: string, customerId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'customers', customerId)
+}
+
+export async function saveEntityRemote(companyId: string, collectionKey: string, entity: any): Promise<void> {
+  if (!canUseRemoteStorage() || !db) return
+  const docRef = doc(db!, 'tenants', companyId, collectionKey, entity.id)
+  await setDoc(docRef, {
+    ...stripUndefined(entity),
+    deviceId: getDeviceId()
+  })
+}
+
+export async function deleteEntityRemote(companyId: string, collectionKey: string, entityId: string): Promise<void> {
+  if (!canUseRemoteStorage() || !db) return
+  const docRef = doc(db!, 'tenants', companyId, collectionKey, entityId)
+  await deleteDoc(docRef)
+}

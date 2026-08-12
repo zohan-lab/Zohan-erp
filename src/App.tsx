@@ -173,7 +173,9 @@ import {
   RemoteSnapshotConflictError,
   RemoteStorageUnavailableError,
   saveRemoteTenantData,
-  subscribeTenantData
+  subscribeTenantData,
+  saveEntityRemote,
+  deleteEntityRemote
 } from '@/lib/firebase-storage'
 import { appendServerAuditLog } from '@/lib/remote-audit'
 import { isLocalCacheDisabled, db } from '@/lib/firebase-client'
@@ -535,6 +537,92 @@ function App() {
   const [salesReturns, setSalesReturns] = useState<SalesReturn[]>([])
   const [purchaseReturns, setPurchaseReturns] = useState<PurchaseReturn[]>([])
   const [selectedInvoiceDetailsNo, setSelectedInvoiceDetailsNo] = useState<string>('')
+
+  // Wrap state setters for action-driven subcollection sync
+  const syncSetState = <T extends { id: string }>(
+    setStateAction: React.Dispatch<React.SetStateAction<T[]>>,
+    collectionKey: string
+  ) => {
+    return (updater: React.SetStateAction<T[]>) => {
+      if (isTenantLoadingRef.current) {
+        console.warn(`Blocked update to ${collectionKey} because tenant loading is in progress.`);
+        return
+      }
+
+      setStateAction((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater
+
+        if (canUseRemoteStorage()) {
+          const companyId = metadata.activeCompanyId
+
+          next.forEach((item) => {
+            if (!item || !item.id) return
+            const prevItem = prev.find((p) => p.id === item.id)
+            if (!prevItem || !areObjectsSemanticallyEqual(item, prevItem)) {
+              console.log(`💾 Action-driven sync setDoc: tenants/${companyId}/${collectionKey}/${item.id}`)
+              void saveEntityRemote(companyId, collectionKey, item)
+            }
+          })
+
+          prev.forEach((prevItem) => {
+            if (!prevItem || !prevItem.id) return
+            const stillExists = next.some((c) => c.id === prevItem.id)
+            if (!stillExists) {
+              console.log(`🗑️ Action-driven sync deleteDoc: tenants/${companyId}/${collectionKey}/${prevItem.id}`)
+              void deleteEntityRemote(companyId, collectionKey, prevItem.id)
+            }
+          })
+        }
+
+        const partitionKey = tenantKey
+        const tenantData: TenantData = {
+          suppliers: collectionKey === 'suppliers' ? next : suppliers,
+          customers: collectionKey === 'customers' ? next : customers,
+          items: collectionKey === 'items' ? next : items,
+          invoices: collectionKey === 'invoices' ? next : invoices,
+          payments: collectionKey === 'payments' ? next : payments,
+          receivedDiscounts: collectionKey === 'receivedDiscounts' ? next : receivedDiscounts,
+          salesInvoices: collectionKey === 'salesInvoices' ? next : salesInvoices,
+          customerPayments: collectionKey === 'customerPayments' ? next : customerPayments,
+          expenseTypes: collectionKey === 'expenseTypes' ? next : expenseTypes,
+          expenseEntries: collectionKey === 'expenseEntries' ? next : expenseEntries,
+          fixedSchemes: collectionKey === 'fixedSchemes' ? next : fixedSchemes,
+          mtBookings: collectionKey === 'mtBookings' ? next : mtBookings,
+          discountLedgerEntries: collectionKey === 'discountLedgerEntries' ? next : discountLedgerEntries,
+          cashBankCounters: collectionKey === 'cashBankCounters' ? next : cashBankCounters,
+          cashBankTransactions: collectionKey === 'cashBankTransactions' ? next : cashBankTransactions,
+          creditNotes: collectionKey === 'creditNotes' ? next : creditNotes,
+          debitNotes: collectionKey === 'debitNotes' ? next : debitNotes,
+          salesReturns: collectionKey === 'salesReturns' ? next : salesReturns,
+          purchaseReturns: collectionKey === 'purchaseReturns' ? next : purchaseReturns,
+          userAccounts
+        }
+        writeTenantCache(metadata.activeCompanyId, partitionKey, tenantData, null)
+
+        return next
+      })
+    }
+  }
+
+  const syncSetSuppliers = syncSetState(setSuppliers, 'suppliers')
+  const syncSetCustomers = syncSetState(setCustomers, 'customers')
+  const syncSetItems = syncSetState(setItems, 'items')
+  const syncSetInvoices = syncSetState(setInvoices, 'invoices')
+  const syncSetPayments = syncSetState(setPayments, 'payments')
+  const syncSetReceivedDiscounts = syncSetState(setReceivedDiscounts, 'receivedDiscounts')
+  const syncSetSalesInvoices = syncSetState(setSalesInvoices, 'salesInvoices')
+  const syncSetCustomerPayments = syncSetState(setCustomerPayments, 'customerPayments')
+  const syncSetExpenseTypes = syncSetState(setExpenseTypes, 'expenseTypes')
+  const syncSetExpenseEntries = syncSetState(setExpenseEntries, 'expenseEntries')
+  const syncSetFixedSchemes = syncSetState(setFixedSchemes, 'fixedSchemes')
+  const syncSetMTBookings = syncSetState(setMTBookings, 'mtBookings')
+  const syncSetDiscountLedgerEntries = syncSetState(setDiscountLedgerEntries, 'discountLedgerEntries')
+  const syncSetCashBankCounters = syncSetState(setCashBankCounters, 'cashBankCounters')
+  const syncSetCashBankTransactions = syncSetState(setCashBankTransactions, 'cashBankTransactions')
+  const syncSetCreditNotes = syncSetState(setCreditNotes, 'creditNotes')
+  const syncSetDebitNotes = syncSetState(setDebitNotes, 'debitNotes')
+  const syncSetSalesReturns = syncSetState(setSalesReturns, 'salesReturns')
+  const syncSetPurchaseReturns = syncSetState(setPurchaseReturns, 'purchaseReturns')
 
   const handleNavigateToInvoiceDetails = (invoiceNo: string) => {
     setSelectedInvoiceDetailsNo(invoiceNo)
@@ -2120,7 +2208,7 @@ function App() {
           return (
             <SuppliersPage
               suppliers={safeSuppliers}
-              setSuppliers={setSuppliers}
+              setSuppliers={syncSetSuppliers}
               invoices={safeInvoices}
               payments={safePayments}
               isLocked={isViewReadOnly('suppliers')}
@@ -2128,12 +2216,12 @@ function App() {
             />
           )
         case 'customers':
-          return <CustomersPage customers={safeCustomers} setCustomers={setCustomers} isLocked={isViewReadOnly('customers')} salesInvoices={safeSalesInvoices} customerPayments={safeCustomerPayments} />
+          return <CustomersPage customers={safeCustomers} setCustomers={syncSetCustomers} isLocked={isViewReadOnly('customers')} salesInvoices={safeSalesInvoices} customerPayments={safeCustomerPayments} />
         case 'items':
           return (
             <ItemsPage
               items={safeItems}
-              setItems={setItems}
+              setItems={syncSetItems}
               purchaseInvoices={safeInvoices}
               salesInvoices={safeSalesInvoices}
               purchaseReturns={safePurchaseReturns}
@@ -2146,16 +2234,16 @@ function App() {
           return (
             <InvoicesPage
               invoices={safeInvoices}
-              setInvoices={setInvoices}
+              setInvoices={syncSetInvoices}
               salesInvoices={safeSalesInvoices}
               purchaseReturns={safePurchaseReturns}
               salesReturns={safeSalesReturns}
               suppliers={safeSuppliers}
-              setSuppliers={setSuppliers}
+              setSuppliers={syncSetSuppliers}
               payments={safePayments}
-              setPayments={setPayments}
+              setPayments={syncSetPayments}
               items={safeItems}
-              setItems={setItems}
+              setItems={syncSetItems}
               currentFY={safeCurrentFY}
               isLocked={isViewReadOnly('invoices')}
               gstPercentage={safeGstPercentage}
@@ -2177,8 +2265,8 @@ function App() {
           return (
             <PaymentsPage
               payments={safePayments}
-              setPayments={setPayments}
-              setMTBookings={setMTBookings}
+              setPayments={syncSetPayments}
+              setMTBookings={syncSetMTBookings}
               invoices={safeInvoices}
               items={safeItems}
               suppliers={safeSuppliers}
@@ -2197,16 +2285,16 @@ function App() {
           return (
             <SalesInvoicesPage
               salesInvoices={safeSalesInvoices}
-              setSalesInvoices={setSalesInvoices}
+              setSalesInvoices={syncSetSalesInvoices}
               purchaseInvoices={safeInvoices}
               purchaseReturns={safePurchaseReturns}
               salesReturns={safeSalesReturns}
               customers={safeCustomers}
-              setCustomers={setCustomers}
+              setCustomers={syncSetCustomers}
               customerPayments={safeCustomerPayments}
-              setCustomerPayments={setCustomerPayments}
+              setCustomerPayments={syncSetCustomerPayments}
               items={safeItems}
-              setItems={setItems}
+              setItems={syncSetItems}
               currentFY={safeCurrentFY}
               isLocked={isViewReadOnly('sales-invoices')}
               counters={visibleCashBankCounters}
@@ -2221,7 +2309,7 @@ function App() {
           return (
             <CustomerPaymentsPage
               customerPayments={safeCustomerPayments}
-              setCustomerPayments={setCustomerPayments}
+              setCustomerPayments={syncSetCustomerPayments}
               customers={safeCustomers}
               salesInvoices={safeSalesInvoices}
               currentFY={safeCurrentFY}
@@ -2240,7 +2328,7 @@ function App() {
           return (
             <SupplierCDRulesPage
               suppliers={safeSuppliers}
-              setSuppliers={setSuppliers}
+              setSuppliers={syncSetSuppliers}
               isLocked={isViewReadOnly('supplier-cd-rules')}
             />
           )
@@ -2248,7 +2336,7 @@ function App() {
           return (
             <FixedSchemesPage
               fixedSchemes={safeFixedSchemes}
-              setFixedSchemes={setFixedSchemes}
+              setFixedSchemes={syncSetFixedSchemes}
               suppliers={safeSuppliers}
               currentFY={safeCurrentFY}
               isLocked={isViewReadOnly('fixed-schemes')}
@@ -2258,7 +2346,7 @@ function App() {
           return (
             <MTBookingsPage
               mtBookings={safeMTBookings}
-              setMTBookings={setMTBookings}
+              setMTBookings={syncSetMTBookings}
               suppliers={safeSuppliers}
               fixedSchemes={safeFixedSchemes}
               invoices={safeInvoices}
@@ -2275,7 +2363,7 @@ function App() {
               payments={safePayments}
               receivedDiscounts={safeReceivedDiscounts}
               items={safeItems}
-              setReceivedDiscounts={setReceivedDiscounts}
+              setReceivedDiscounts={syncSetReceivedDiscounts}
               fixedSchemes={safeFixedSchemes}
               mtBookings={safeMTBookings}
               currentFY={safeCurrentFY}
@@ -2320,9 +2408,9 @@ function App() {
           return (
             <ExpenseEntriesPage
               expenseEntries={safeExpenseEntries}
-              setExpenseEntries={setExpenseEntries}
+              setExpenseEntries={syncSetExpenseEntries}
               expenseTypes={safeExpenseTypes}
-              setExpenseTypes={setExpenseTypes}
+              setExpenseTypes={syncSetExpenseTypes}
               suppliers={safeSuppliers}
               invoices={safeInvoices}
               currentFY={safeCurrentFY}
@@ -2430,20 +2518,20 @@ function App() {
             />
           )
         case 'customer-credit-notes':
-          return <CustomerCreditNotePage creditNotes={safeCreditNotes} setCreditNotes={setCreditNotes} customers={safeCustomers} currentFY={safeCurrentFY} isLocked={isViewReadOnly('customer-credit-notes')} />
+          return <CustomerCreditNotePage creditNotes={safeCreditNotes} setCreditNotes={syncSetCreditNotes} customers={safeCustomers} currentFY={safeCurrentFY} isLocked={isViewReadOnly('customer-credit-notes')} />
         case 'supplier-debit-notes':
-          return <SupplierDebitNotePage debitNotes={safeDebitNotes} setDebitNotes={setDebitNotes} suppliers={safeSuppliers} currentFY={safeCurrentFY} isLocked={isViewReadOnly('supplier-debit-notes')} />
+          return <SupplierDebitNotePage debitNotes={safeDebitNotes} setDebitNotes={syncSetDebitNotes} suppliers={safeSuppliers} currentFY={safeCurrentFY} isLocked={isViewReadOnly('supplier-debit-notes')} />
         case 'sales-returns':
           return (
             <SalesReturnPage
               salesReturns={safeSalesReturns}
-              setSalesReturns={setSalesReturns}
+              setSalesReturns={syncSetSalesReturns}
               customers={safeCustomers}
-              setCustomers={setCustomers}
+              setCustomers={syncSetCustomers}
               items={safeItems}
-              setItems={setItems}
+              setItems={syncSetItems}
               creditNotes={safeCreditNotes}
-              setCreditNotes={setCreditNotes}
+              setCreditNotes={syncSetCreditNotes}
               currentFY={safeCurrentFY}
               isLocked={isViewReadOnly('sales-returns')}
             />
@@ -2452,13 +2540,13 @@ function App() {
           return (
             <PurchaseReturnPage
               purchaseReturns={safePurchaseReturns}
-              setPurchaseReturns={setPurchaseReturns}
+              setPurchaseReturns={syncSetPurchaseReturns}
               suppliers={safeSuppliers}
-              setSuppliers={setSuppliers}
+              setSuppliers={syncSetSuppliers}
               items={safeItems}
-              setItems={setItems}
+              setItems={syncSetItems}
               debitNotes={safeDebitNotes}
-              setDebitNotes={setDebitNotes}
+              setDebitNotes={syncSetDebitNotes}
               currentFY={safeCurrentFY}
               isLocked={isViewReadOnly('purchase-returns')}
             />
