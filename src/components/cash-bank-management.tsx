@@ -29,6 +29,7 @@ import {
 import { formatCurrency } from '@/lib/calculations'
 import { toast } from 'sonner'
 import { Counter, CashBankTransaction, isManualCounterTransaction } from '@/lib/cash-bank-types'
+import { calculateTotalCash, calculateTotalBank } from '@/lib/report-calculations'
 
 type DisplayTransaction = CashBankTransaction & {
   displayId: string
@@ -85,17 +86,9 @@ export default function CashBankManagement({
   const [searchTerm, setSearchTerm] = useState('')
 
   // Calculate totals
-  const totalCash = useMemo(() => {
-    return counters
-      .filter((c) => c.type === 'Cash' || !c.type)
-      .reduce((sum, c) => sum + (c.currentBalance || 0), 0)
-  }, [counters])
+  const totalCash = useMemo(() => calculateTotalCash(counters), [counters])
 
-  const totalBank = useMemo(() => {
-    return counters
-      .filter((c) => c.type === 'Bank')
-      .reduce((sum, c) => sum + (c.currentBalance || 0), 0)
-  }, [counters])
+  const totalBank = useMemo(() => calculateTotalBank(counters), [counters])
 
   // Filtered Ledger Calculation
   const ledgerData = useMemo(() => {

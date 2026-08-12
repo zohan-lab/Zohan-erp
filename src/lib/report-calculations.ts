@@ -589,3 +589,20 @@ export function getSupplierPendingPayments(
   return Math.max(0, (totalInvoicedYTD + bal) - totalPaid)
 }
 
+export function calculateTotalCash(counters: any[]): number {
+  return (counters || [])
+    .filter((c) => c.type === 'Cash' || !c.type)
+    .reduce((sum, c) => sum + (c.currentBalance || 0), 0)
+}
+
+export function calculateTotalBank(counters: any[]): number {
+  return (counters || [])
+    .filter((c) => c.type === 'Bank')
+    .reduce((sum, c) => sum + (c.currentBalance || 0), 0)
+}
+
+export function calculateTotalLiquid(counters: any[]): number {
+  return calculateTotalCash(counters) + calculateTotalBank(counters)
+}
+
+

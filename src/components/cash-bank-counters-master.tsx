@@ -40,6 +40,7 @@ import {
 } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { Counter, CashBankTransaction } from '@/lib/cash-bank-types'
+import { calculateTotalCash, calculateTotalBank } from '@/lib/report-calculations'
 
 interface CashBankCountersMasterProps {
   counters: Counter[]
@@ -159,13 +160,9 @@ export default function CashBankCountersMaster({
     setOpeningBalance('')
   }
 
-  const totalCash = counters
-    .filter(c => c.type === 'Cash')
-    .reduce((sum, c) => sum + c.currentBalance, 0)
+  const totalCash = calculateTotalCash(counters)
 
-  const totalBank = counters
-    .filter(c => c.type === 'Bank')
-    .reduce((sum, c) => sum + c.currentBalance, 0)
+  const totalBank = calculateTotalBank(counters)
 
   return (
     <div className="space-y-6">

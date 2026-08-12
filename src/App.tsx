@@ -2056,8 +2056,8 @@ function App() {
               counters={visibleCashBankCounters}
               transactions={visibleCashBankTransactions}
               onUpdateCashBank={(c, t) => {
-                setCashBankCounters(c)
-                setCashBankTransactions(t)
+                syncSetCashBankCounters(c)
+                syncSetCashBankTransactions(t)
               }}
               fixedSchemes={safeFixedSchemes}
               mtBookings={mtBookings}
@@ -2083,8 +2083,8 @@ function App() {
               counters={visibleCashBankCounters}
               transactions={visibleCashBankTransactions}
               onUpdateCashBank={(c, t) => {
-                setCashBankCounters(c)
-                setCashBankTransactions(t)
+                syncSetCashBankCounters(c)
+                syncSetCashBankTransactions(t)
               }}
             />
           )
@@ -2107,8 +2107,8 @@ function App() {
               counters={visibleCashBankCounters}
               transactions={visibleCashBankTransactions}
               onUpdateCashBank={(c, t) => {
-                setCashBankCounters(c)
-                setCashBankTransactions(t)
+                syncSetCashBankCounters(c)
+                syncSetCashBankTransactions(t)
               }}
               activeCompanyId={metadata.activeCompanyId}
             />
@@ -2127,8 +2127,8 @@ function App() {
               counters={visibleCashBankCounters}
               transactions={visibleCashBankTransactions}
               onUpdateCashBank={(c, t) => {
-                setCashBankCounters(c)
-                setCashBankTransactions(t)
+                syncSetCashBankCounters(c)
+                syncSetCashBankTransactions(t)
               }}
             />
           )
@@ -2226,8 +2226,8 @@ function App() {
               counters={visibleCashBankCounters}
               transactions={visibleCashBankTransactions}
               onUpdateCashBank={(c, t) => {
-                setCashBankCounters(c)
-                setCashBankTransactions(t)
+                syncSetCashBankCounters(c)
+                syncSetCashBankTransactions(t)
               }}
             />
           )
@@ -2319,8 +2319,8 @@ function App() {
               counters={visibleCashBankCounters}
               transactions={visibleCashBankTransactions}
               onUpdateAll={(c, t) => {
-                setCashBankCounters(c)
-                setCashBankTransactions(t)
+                syncSetCashBankCounters(c)
+                syncSetCashBankTransactions(t)
               }}
               isLocked={isViewReadOnly('cash-bank-master')}
             />

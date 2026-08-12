@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/table'
 import { Wallet, Funnel, X, ArrowLeft, ArrowRight, ArrowUpRight, ArrowDownLeft, Coins, Bank } from '@phosphor-icons/react'
 import { Counter, CashBankTransaction } from '@/lib/cash-bank-types'
+import { calculateTotalCash, calculateTotalBank, calculateTotalLiquid } from '@/lib/report-calculations'
 
 type DisplayTransaction = CashBankTransaction & {
   displayId: string;
@@ -148,15 +149,11 @@ export default function CashBankBookReport({
     (dateFrom ? 1 : 0) + 
     (dateTo ? 1 : 0)
 
-  const totalCash = counters
-    .filter(c => c.type === 'Cash')
-    .reduce((sum, c) => sum + c.currentBalance, 0)
+  const totalCash = calculateTotalCash(counters)
 
-  const totalBank = counters
-    .filter(c => c.type === 'Bank')
-    .reduce((sum, c) => sum + c.currentBalance, 0)
+  const totalBank = calculateTotalBank(counters)
 
-  const totalLiquid = totalCash + totalBank
+  const totalLiquid = calculateTotalLiquid(counters)
 
   return (
     <div className="space-y-8 max-w-[1400px] mx-auto animate-in fade-in duration-700 ease-out p-2 sm:p-4 lg:p-6">
