@@ -1,3 +1,4 @@
+import { getChangedByLabel } from '@/lib/security-utils'
 import { useState, useMemo, useEffect } from 'react'
 import { CustomerPayment, Customer, SalesInvoice } from '@/lib/types'
 import { Counter, CashBankTransaction } from '@/lib/cash-bank-types'
@@ -119,7 +120,7 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
           {
             timestamp: new Date().toISOString(),
             action: 'updated',
-            changedBy: 'Master Admin',
+            changedBy: getChangedByLabel(),
             changes: [
               ...(editingPayment.amount !== paymentAmount ? [{ field: 'Amount', from: String(editingPayment.amount), to: String(paymentAmount) }] : []),
               ...(editingPayment.customerId !== customerId ? [{ field: 'Customer', from: getCustomerName(editingPayment.customerId), to: customerName }] : []),
@@ -189,7 +190,7 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
           {
             timestamp: new Date().toISOString(),
             action: 'created',
-            changedBy: 'Master Admin',
+            changedBy: getChangedByLabel(),
             changes: [
               { field: 'Customer', from: '', to: customerName },
               { field: 'Amount', from: '', to: String(paymentAmount) },

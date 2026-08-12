@@ -1,3 +1,4 @@
+import { getChangedByLabel } from '@/lib/security-utils'
 import { useState, useMemo } from 'react'
 import { FixedScheme, Item, MTBooking, Payment, PurchaseInvoice, Supplier } from '@/lib/types'
 import { Counter, CashBankTransaction } from '@/lib/cash-bank-types'
@@ -117,7 +118,7 @@ export default function PaymentsPage({ payments, setPayments, setMTBookings, inv
           {
             timestamp: new Date().toISOString(),
             action: 'updated',
-            changedBy: 'Master Admin',
+            changedBy: getChangedByLabel(),
             changes: [
               ...(editingPayment.amount !== amount ? [{ field: 'Amount', from: String(editingPayment.amount), to: String(amount) }] : []),
               ...(editingPayment.supplierId !== supplierId ? [{ field: 'Supplier', from: suppliers.find(s => s.id === editingPayment.supplierId)?.name || '-', to: suppliers.find(s => s.id === supplierId)?.name || '-' }] : []),
@@ -188,7 +189,7 @@ export default function PaymentsPage({ payments, setPayments, setMTBookings, inv
           {
             timestamp: new Date().toISOString(),
             action: 'created',
-            changedBy: 'Master Admin',
+            changedBy: getChangedByLabel(),
             changes: [
               { field: 'Supplier', from: '', to: suppliers.find(s => s.id === supplierId)?.name || '-' },
               { field: 'Amount', from: '', to: String(amount) },

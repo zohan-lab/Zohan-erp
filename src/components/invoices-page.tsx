@@ -1,3 +1,4 @@
+import { getChangedByLabel } from '@/lib/security-utils'
 import { useState, useMemo } from 'react'
 import { PurchaseInvoice, Supplier, Item, InvoiceItem, Payment, SalesInvoice, PurchaseReturn, SalesReturn, FixedScheme, ReceivedDiscount, ExpenseEntry, ExpenseType, MTBooking } from '@/lib/types'
 import { calculateItemStockMap } from '@/lib/report-calculations'
@@ -570,7 +571,7 @@ export default function InvoicesPage({
           {
             timestamp: new Date().toISOString(),
             action: 'updated',
-            changedBy: 'Master Admin',
+            changedBy: getChangedByLabel(),
             changes: [
               ...(editingInvoice.invoiceAmount !== finalInvoiceAmount ? [{ field: 'Amount', from: String(editingInvoice.invoiceAmount), to: String(finalInvoiceAmount) }] : []),
               ...(editingInvoice.invoiceNo !== invoiceNo ? [{ field: 'Invoice No', from: editingInvoice.invoiceNo, to: invoiceNo }] : []),
@@ -605,7 +606,7 @@ export default function InvoicesPage({
           {
             timestamp: new Date().toISOString(),
             action: 'created',
-            changedBy: 'Master Admin',
+            changedBy: getChangedByLabel(),
             changes: [
               { field: 'Invoice No', from: '', to: invoiceNo },
               { field: 'Supplier', from: '', to: suppliers.find(s => s.id === supplierId)?.name || '-' },

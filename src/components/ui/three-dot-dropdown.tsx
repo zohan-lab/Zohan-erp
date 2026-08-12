@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { DotsThreeVertical, PencilSimple, Trash, Clock, User, ArrowRight } from '@phosphor-icons/react'
+import { DotsThreeVertical, PencilSimple, Trash, Clock, User, Crown, UserCircle } from '@phosphor-icons/react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 
@@ -196,10 +196,23 @@ export function ThreeDotDropdown({
                         </div>
 
                         {/* Changed by */}
-                        <div className="flex items-center gap-1.5 text-sm text-slate-700 font-medium">
-                          <User size={14} className="text-slate-400" />
-                          <span>{log.changedBy}</span>
-                        </div>
+                        {(() => {
+                          const email = log.changedBy || ''
+                          const isMaster = email.toLowerCase().includes('master') || email.toLowerCase().includes('admin') || log.changedBy === 'Master Admin'
+                          return (
+                            <div className="flex items-center gap-1.5 text-sm font-medium">
+                              {isMaster ? (
+                                <Crown size={15} weight="fill" className="text-amber-500" />
+                              ) : (
+                                <UserCircle size={15} weight="fill" className="text-blue-500" />
+                              )}
+                              <span className={isMaster ? 'text-amber-700' : 'text-blue-700'}>{log.changedBy}</span>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${isMaster ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-blue-50 text-blue-600 border border-blue-200'}`}>
+                                {isMaster ? 'Master' : 'Agent'}
+                              </span>
+                            </div>
+                          )
+                        })()}
 
                         {/* From → To Changes Table */}
                         {log.changes && log.changes.length > 0 && (

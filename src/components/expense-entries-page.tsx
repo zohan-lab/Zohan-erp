@@ -1,3 +1,4 @@
+import { getChangedByLabel } from '@/lib/security-utils'
 import { useState, useMemo } from 'react'
 import { PeriodDateFilter, PeriodFilterState, defaultPeriodFilterState, isRecordInPeriod } from '@/components/period-date-filter'
 import { Card, CardContent } from '@/components/ui/card'
@@ -198,7 +199,7 @@ export default function ExpenseEntriesPage({
           {
             timestamp: new Date().toISOString(),
             action: 'updated',
-            changedBy: 'Master Admin',
+            changedBy: getChangedByLabel(),
             changes: [
               ...(editingExpense.amount !== amt ? [{ field: 'Amount', from: String(editingExpense.amount), to: String(amt) }] : []),
               ...(editingExpense.expenseTypeId !== expenseTypeId ? [{ field: 'Type', from: expenseTypes.find(t => t.id === editingExpense.expenseTypeId)?.name || '-', to: typeObj?.name || '-' }] : []),
@@ -247,7 +248,7 @@ export default function ExpenseEntriesPage({
           {
             timestamp: new Date().toISOString(),
             action: 'created',
-            changedBy: 'Master Admin',
+            changedBy: getChangedByLabel(),
             changes: [
               { field: 'Type', from: '', to: typeObj?.name || '-' },
               { field: 'Amount', from: '', to: String(amt) },

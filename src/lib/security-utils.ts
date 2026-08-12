@@ -238,6 +238,18 @@ export function getCurrentUser(): AuthenticatedUser | null {
   return null
 }
 
+/** Returns the current user's email (username) for edit history audit trails. */
+export function getChangedByLabel(): string {
+  const user = getCurrentUser()
+  return user?.username || user?.displayName || 'Unknown User'
+}
+
+/** Returns the current user's role for edit history icon differentiation. */
+export function getChangedByRole(): UserRole | 'unknown' {
+  const user = getCurrentUser()
+  return user?.role || 'unknown'
+}
+
 export async function createMasterAdmin(username: string, displayName: string, passcode: string): Promise<AuthenticatedUser> {
   const now = new Date().toISOString()
   const accounts = getUserAccounts()
