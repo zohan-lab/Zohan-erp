@@ -19,15 +19,19 @@ import { cn } from '@/lib/utils'
 
 import { PeriodDateFilter, PeriodFilterState, defaultPeriodFilterState, isRecordInPeriod } from '@/components/period-date-filter'
 
+import { saveEntityRemote, deleteEntityRemote } from '@/lib/firebase-storage'
+import { ThreeDotDropdown } from '@/components/ui/three-dot-dropdown'
+
 interface CustomerCreditNotePageProps {
   creditNotes: CustomerCreditNote[]
   setCreditNotes: (updater: (prev: CustomerCreditNote[]) => CustomerCreditNote[]) => void
   customers: Customer[]
   currentFY: string
   isLocked?: boolean
+  activeCompanyId?: string
 }
 
-export default function CustomerCreditNotePage({ creditNotes, setCreditNotes, customers, currentFY, isLocked = false }: CustomerCreditNotePageProps) {
+export default function CustomerCreditNotePage({ creditNotes, setCreditNotes, customers, currentFY, isLocked = false, activeCompanyId }: CustomerCreditNotePageProps) {
   const [open, setOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<CustomerCreditNote | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -81,8 +85,20 @@ export default function CustomerCreditNotePage({ creditNotes, setCreditNotes, cu
         date,
         amount,
         remarks,
+        history: [
+          ...(editingItem.history || []),
+          {
+            timestamp: new Date().toISOString(),
+            action: 'updated',
+            changedBy: 'Master Admin',
+            details: `Credit note amount updated to ${amount}`
+          }
+        ]
       }
       setCreditNotes((prev) => prev.map(p => p.id === editingItem.id ? updated : p))
+      if (activeCompanyId) {
+        void saveEntityRemote(activeCompanyId, 'creditNotes', updated)
+      }
       toast.success('Credit Note updated')
     } else {
       const newItem: CustomerCreditNote = {
@@ -92,9 +108,20 @@ export default function CustomerCreditNotePage({ creditNotes, setCreditNotes, cu
         amount,
         remarks,
         fy: getFYFromDate(date),
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        history: [
+          {
+            timestamp: new Date().toISOString(),
+            action: 'created',
+            changedBy: 'Master Admin',
+            details: 'Initial Credit Note creation'
+          }
+        ]
       }
       setCreditNotes((prev) => [...prev, newItem])
+      if (activeCompanyId) {
+        void saveEntityRemote(activeCompanyId, 'creditNotes', newItem)
+      }
       toast.success('Credit Note added')
     }
 
@@ -106,6 +133,9 @@ export default function CustomerCreditNotePage({ creditNotes, setCreditNotes, cu
   const handleDelete = () => {
     if (isLocked || !itemToDelete) return
     setCreditNotes((prev) => prev.filter(p => p.id !== itemToDelete.id))
+    if (activeCompanyId) {
+      void deleteEntityRemote(activeCompanyId, 'creditNotes', itemToDelete.id)
+    }
     setDeleteDialogOpen(false)
     setItemToDelete(null)
     toast.success('Credit Note deleted')
@@ -276,32 +306,20 @@ export default function CustomerCreditNotePage({ creditNotes, setCreditNotes, cu
                       </TableCell>
                       <TableCell className="max-w-[200px] truncate">{item.remarks || '-'}</TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
+                        <ThreeDotDropdown
+                          onEdit={() => {
                             setEditingItem(item)
                             setSelectedEntityInForm(item.customerId)
                             setOpen(true)
                           }}
-                          disabled={isLocked || isAuto}
-                          title={isAuto ? "Auto-generated from Sales Return. Edit from Sales Return page." : "Edit Credit Note"}
-                        >
-                          <PencilSimple className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-destructive"
-                          onClick={() => {
+                          onDelete={() => {
                             setItemToDelete(item)
                             setDeleteDialogOpen(true)
                           }}
-                          disabled={isLocked || isAuto}
-                          title={isAuto ? "Auto-generated from Sales Return. Delete from Sales Return page." : "Delete Credit Note"}
-                        >
-                          <Trash className="h-4 w-4" />
-                        </Button>
+                          history={item.history}
+                          entityType="Credit Note"
+                          isLocked={isLocked || isAuto}
+                        />
                       </TableCell>
                     </TableRow>
                   )

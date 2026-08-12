@@ -19,6 +19,9 @@ import { toast } from 'sonner'
 
 import { PeriodDateFilter, PeriodFilterState, defaultPeriodFilterState, isRecordInPeriod } from '@/components/period-date-filter'
 
+import { deletePayment, savePayment } from '@/lib/firebase-storage'
+import { ThreeDotDropdown } from '@/components/ui/three-dot-dropdown'
+
 interface PaymentsPageProps {
   payments: Payment[]
   setPayments: (updater: (prev: Payment[]) => Payment[]) => void
@@ -32,9 +35,10 @@ interface PaymentsPageProps {
   counters: Counter[]
   transactions: CashBankTransaction[]
   onUpdateCashBank: (counters: Counter[], transactions: CashBankTransaction[]) => void
+  activeCompanyId?: string
 }
 
-export default function PaymentsPage({ payments, setPayments, setMTBookings, invoices, items, suppliers, fixedSchemes, currentFY, isLocked = false, counters, transactions, onUpdateCashBank }: PaymentsPageProps) {
+export default function PaymentsPage({ payments, setPayments, setMTBookings, invoices, items, suppliers, fixedSchemes, currentFY, isLocked = false, counters, transactions, onUpdateCashBank, activeCompanyId }: PaymentsPageProps) {
   const [open, setOpen] = useState(false)
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -107,9 +111,21 @@ export default function PaymentsPage({ payments, setPayments, setMTBookings, inv
         amount,
         doNotApplyCD: false,
         counterId: counterId,
-        counterName: selectedCounter.name
+        counterName: selectedCounter.name,
+        history: [
+          ...(editingPayment.history || []),
+          {
+            timestamp: new Date().toISOString(),
+            action: 'updated',
+            changedBy: 'Master Admin',
+            details: `Payment amount updated to ${amount}`
+          }
+        ]
       }
       setPayments((prev) => prev.map(p => p.id === editingPayment.id ? updatedPayment : p))
+      if (activeCompanyId) {
+        void savePayment(activeCompanyId, updatedPayment)
+      }
       
       let newCounters = [...counters]
       let newTransactions = [...transactions]
@@ -162,9 +178,20 @@ export default function PaymentsPage({ payments, setPayments, setMTBookings, inv
         counterId: counterId,
         counterName: selectedCounter.name,
         fy: getFYFromDate(paymentDate),
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        history: [
+          {
+            timestamp: new Date().toISOString(),
+            action: 'created',
+            changedBy: 'Master Admin',
+            details: 'Initial Payment creation'
+          }
+        ]
       }
       setPayments((prev) => [...prev, payment])
+      if (activeCompanyId) {
+        void savePayment(activeCompanyId, payment)
+      }
       
       const newCounters = counters.map(c => 
         c.id === counterId ? { ...c, currentBalance: c.currentBalance - amount } : c
@@ -596,22 +623,13 @@ export default function PaymentsPage({ payments, setPayments, setMTBookings, inv
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center justify-end gap-1">
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm"
-                                  onClick={() => handleEdit(payment)}
-                                  className="text-primary hover:text-primary hover:bg-primary/10"
-                                >
-                                  <PencilSimple size={16} />
-                                </Button>
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm"
-                                  onClick={() => handleDeleteClick(payment)}
-                                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                                >
-                                  <Trash size={16} />
-                                </Button>
+                              <ThreeDotDropdown
+                                onEdit={() => handleEdit(payment)}
+                                onDelete={() => handleDeleteClick(payment)}
+                                history={payment.history}
+                                entityType="Supplier Payment"
+                                isLocked={isLocked}
+                              />
                               </div>
                             </TableCell>
                           </TableRow>

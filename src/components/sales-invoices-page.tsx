@@ -28,6 +28,7 @@ import { ItemEditorDialog } from '@/components/item-editor-dialog'
 import { cn } from '@/lib/utils'
 
 import { deleteSalesInvoice, deleteCustomerPayment, saveSalesInvoice, saveCustomerPayment } from '@/lib/firebase-storage'
+import { ThreeDotDropdown } from '@/components/ui/three-dot-dropdown'
 
 interface SalesInvoicesPageProps {
   salesInvoices: SalesInvoice[]
@@ -510,6 +511,15 @@ export default function SalesInvoicesPage({
         additionalCostBasicRate: additionalCostBasicRate || undefined,
         additionalCostRemarks: additionalCostRemarks || undefined,
         roundOffAdjustment: roundOffAdjustment || undefined,
+        history: [
+          ...(editingInvoice.history || []),
+          {
+            timestamp: new Date().toISOString(),
+            action: 'updated',
+            changedBy: 'Master Admin',
+            details: `Invoice amount updated to ${finalInvoiceAmount}`
+          }
+        ]
       }
       setSalesInvoices((prev) => prev.map(inv => inv.id === editingInvoice.id ? updatedInvoice : inv))
       if (activeCompanyId) {
@@ -529,7 +539,15 @@ export default function SalesInvoicesPage({
         additionalCostBasicRate: additionalCostBasicRate || undefined,
         additionalCostRemarks: additionalCostRemarks || undefined,
         roundOffAdjustment: roundOffAdjustment || undefined,
-        fy: getFYFromDate(invoiceDate)
+        fy: getFYFromDate(invoiceDate),
+        history: [
+          {
+            timestamp: new Date().toISOString(),
+            action: 'created',
+            changedBy: 'Master Admin',
+            details: 'Initial Sales Invoice creation'
+          }
+        ]
       }
       setSalesInvoices((prev) => [...prev, invoice])
       if (activeCompanyId) {
@@ -1726,24 +1744,13 @@ export default function SalesInvoicesPage({
                               <DownloadSimple size={14} weight="bold" />
                               PDF
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleEdit(invoice)}
-                              className="h-8 w-8 p-0 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg"
-                              aria-label={`Edit invoice ${invoice.invoiceNo}`}
-                            >
-                              <PencilSimple size={16} weight="bold" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDeleteClick(invoice)}
-                              className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg"
-                              aria-label={`Delete invoice ${invoice.invoiceNo}`}
-                            >
-                              <Trash size={16} weight="bold" />
-                            </Button>
+                            <ThreeDotDropdown
+                              onEdit={() => handleEdit(invoice)}
+                              onDelete={() => handleDeleteClick(invoice)}
+                              history={invoice.history}
+                              entityType="Sales Invoice"
+                              isLocked={isLocked}
+                            />
                           </div>
                         </TableCell>
                       </TableRow>

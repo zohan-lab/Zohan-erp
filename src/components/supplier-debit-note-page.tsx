@@ -19,15 +19,19 @@ import { cn } from '@/lib/utils'
 
 import { PeriodDateFilter, PeriodFilterState, defaultPeriodFilterState, isRecordInPeriod } from '@/components/period-date-filter'
 
+import { saveEntityRemote, deleteEntityRemote } from '@/lib/firebase-storage'
+import { ThreeDotDropdown } from '@/components/ui/three-dot-dropdown'
+
 interface SupplierDebitNotePageProps {
   debitNotes: SupplierDebitNote[]
   setDebitNotes: (updater: (prev: SupplierDebitNote[]) => SupplierDebitNote[]) => void
   suppliers: Supplier[]
   currentFY: string
   isLocked?: boolean
+  activeCompanyId?: string
 }
 
-export default function SupplierDebitNotePage({ debitNotes, setDebitNotes, suppliers, currentFY, isLocked = false }: SupplierDebitNotePageProps) {
+export default function SupplierDebitNotePage({ debitNotes, setDebitNotes, suppliers, currentFY, isLocked = false, activeCompanyId }: SupplierDebitNotePageProps) {
   const [open, setOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<SupplierDebitNote | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -80,8 +84,20 @@ export default function SupplierDebitNotePage({ debitNotes, setDebitNotes, suppl
         date,
         amount,
         remarks,
+        history: [
+          ...(editingItem.history || []),
+          {
+            timestamp: new Date().toISOString(),
+            action: 'updated',
+            changedBy: 'Master Admin',
+            details: `Debit note amount updated to ${amount}`
+          }
+        ]
       }
       setDebitNotes((prev) => prev.map(p => p.id === editingItem.id ? updated : p))
+      if (activeCompanyId) {
+        void saveEntityRemote(activeCompanyId, 'debitNotes', updated)
+      }
       toast.success('Debit Note updated')
     } else {
       const newItem: SupplierDebitNote = {
@@ -91,9 +107,20 @@ export default function SupplierDebitNotePage({ debitNotes, setDebitNotes, suppl
         amount,
         remarks,
         fy: currentFY,
-        createdAt: Date.now()
+        createdAt: Date.now(),
+        history: [
+          {
+            timestamp: new Date().toISOString(),
+            action: 'created',
+            changedBy: 'Master Admin',
+            details: 'Initial Debit Note creation'
+          }
+        ]
       }
       setDebitNotes((prev) => [...prev, newItem])
+      if (activeCompanyId) {
+        void saveEntityRemote(activeCompanyId, 'debitNotes', newItem)
+      }
       toast.success('Debit Note added')
     }
 
@@ -105,6 +132,9 @@ export default function SupplierDebitNotePage({ debitNotes, setDebitNotes, suppl
   const handleDelete = () => {
     if (isLocked || !itemToDelete) return
     setDebitNotes((prev) => prev.filter(p => p.id !== itemToDelete.id))
+    if (activeCompanyId) {
+      void deleteEntityRemote(activeCompanyId, 'debitNotes', itemToDelete.id)
+    }
     setDeleteDialogOpen(false)
     setItemToDelete(null)
     toast.success('Debit Note deleted')
@@ -275,32 +305,20 @@ export default function SupplierDebitNotePage({ debitNotes, setDebitNotes, suppl
                       </TableCell>
                       <TableCell className="max-w-[200px] truncate">{item.remarks || '-'}</TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
+                        <ThreeDotDropdown
+                          onEdit={() => {
                             setEditingItem(item)
                             setSelectedEntityInForm(item.supplierId)
                             setOpen(true)
                           }}
-                          disabled={isLocked || isAuto}
-                          title={isAuto ? "Auto-generated from Purchase Return. Edit from Purchase Return page." : "Edit Debit Note"}
-                        >
-                          <PencilSimple className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-destructive"
-                          onClick={() => {
+                          onDelete={() => {
                             setItemToDelete(item)
                             setDeleteDialogOpen(true)
                           }}
-                          disabled={isLocked || isAuto}
-                          title={isAuto ? "Auto-generated from Purchase Return. Delete from Purchase Return page." : "Delete Debit Note"}
-                        >
-                          <Trash className="h-4 w-4" />
-                        </Button>
+                          history={item.history}
+                          entityType="Debit Note"
+                          isLocked={isLocked || isAuto}
+                        />
                       </TableCell>
                     </TableRow>
                   )

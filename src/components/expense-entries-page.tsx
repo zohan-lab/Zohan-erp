@@ -36,6 +36,9 @@ import { toast } from 'sonner'
 import { formatCurrency, calculateExpenseTotals, applyCounterBalanceDelta } from '@/lib/calculations'
 import { getInvoiceQtyForUnit } from '@/lib/unit-conversion-service'
 
+import { saveEntityRemote, deleteEntityRemote } from '@/lib/firebase-storage'
+import { ThreeDotDropdown } from '@/components/ui/three-dot-dropdown'
+
 interface ExpenseEntriesPageProps {
   expenseEntries: ExpenseEntry[]
   setExpenseEntries: (updater: (prev: ExpenseEntry[]) => ExpenseEntry[]) => void
@@ -48,6 +51,7 @@ interface ExpenseEntriesPageProps {
   counters: Counter[]
   transactions: CashBankTransaction[]
   onUpdateCashBank: (counters: Counter[], transactions: CashBankTransaction[]) => void
+  activeCompanyId?: string
 }
 
 export default function ExpenseEntriesPage({
@@ -61,7 +65,8 @@ export default function ExpenseEntriesPage({
   isLocked = false,
   counters = [],
   transactions = [],
-  onUpdateCashBank
+  onUpdateCashBank,
+  activeCompanyId
 }: ExpenseEntriesPageProps) {
   // Form State for Expense Entry
   const [editingExpense, setEditingExpense] = useState<ExpenseEntry | null>(null)
@@ -187,10 +192,22 @@ export default function ExpenseEntriesPage({
         linkedInvoiceId: linkedInvoiceId || undefined,
         expenseWithGst,
         notes: notes.trim() || undefined,
-        fy: currentFY
+        fy: currentFY,
+        history: [
+          ...(editingExpense.history || []),
+          {
+            timestamp: new Date().toISOString(),
+            action: 'updated',
+            changedBy: 'Master Admin',
+            details: `Expense amount updated to ${amt}`
+          }
+        ]
       }
 
       setExpenseEntries((prev) => prev.map((item) => (item.id === editingExpense.id ? updatedEntry : item)))
+      if (activeCompanyId) {
+        void saveEntityRemote(activeCompanyId, 'expenseEntries', updatedEntry)
+      }
       onUpdateCashBank(nextCounters, [cashBankTx, ...nextTx])
       toast.success('Expense entry updated successfully')
     } else {
@@ -219,10 +236,21 @@ export default function ExpenseEntriesPage({
         linkedInvoiceId: linkedInvoiceId || undefined,
         expenseWithGst,
         notes: notes.trim() || undefined,
-        fy: currentFY
+        fy: currentFY,
+        history: [
+          {
+            timestamp: new Date().toISOString(),
+            action: 'created',
+            changedBy: 'Master Admin',
+            details: 'Initial Expense Entry creation'
+          }
+        ]
       }
 
       setExpenseEntries((prev) => [newEntry, ...prev])
+      if (activeCompanyId) {
+        void saveEntityRemote(activeCompanyId, 'expenseEntries', newEntry)
+      }
       onUpdateCashBank(nextCounters, [cashBankTx, ...transactions])
       toast.success('Expense entry created successfully')
     }
@@ -242,6 +270,9 @@ export default function ExpenseEntriesPage({
 
     const nextTx = transactions.filter((t) => t.id !== `tx-exp-${entry.id}`)
     setExpenseEntries((prev) => prev.filter((e) => e.id !== entry.id))
+    if (activeCompanyId) {
+      void deleteEntityRemote(activeCompanyId, 'expenseEntries', entry.id)
+    }
     onUpdateCashBank(nextCounters, nextTx)
     toast.success('Expense entry deleted and counter balance restored')
   }
@@ -705,10 +736,8 @@ export default function ExpenseEntriesPage({
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
+                        <ThreeDotDropdown
+                          onEdit={() => {
                             setEditingExpense(e)
                             setExpenseTypeId(e.expenseTypeId)
                             setExpenseDate(e.expenseDate)
@@ -720,20 +749,11 @@ export default function ExpenseEntriesPage({
                             setNotes(e.notes || '')
                             window.scrollTo({ top: 0, behavior: 'smooth' })
                           }}
-                          disabled={isLocked}
-                          className="h-7 w-7 p-0 text-slate-600 hover:bg-slate-100 rounded-lg"
-                        >
-                          <PencilSimple className="h-3.5 w-3.5" weight="bold" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDeleteExpense(e)}
-                          disabled={isLocked}
-                          className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg"
-                        >
-                          <Trash className="h-3.5 w-3.5" weight="bold" />
-                        </Button>
+                          onDelete={() => handleDeleteExpense(e)}
+                          history={e.history}
+                          entityType="Expense"
+                          isLocked={isLocked}
+                        />
                       </div>
                     </TableCell>
                   </TableRow>

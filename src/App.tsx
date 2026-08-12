@@ -2229,6 +2229,7 @@ function App() {
                 syncSetCashBankCounters(c)
                 syncSetCashBankTransactions(t)
               }}
+              activeCompanyId={metadata.activeCompanyId}
             />
           )
         case 'cd-profit-report':
@@ -2326,9 +2327,9 @@ function App() {
             />
           )
         case 'customer-credit-notes':
-          return <CustomerCreditNotePage creditNotes={safeCreditNotes} setCreditNotes={syncSetCreditNotes} customers={safeCustomers} currentFY={safeCurrentFY} isLocked={isViewReadOnly('customer-credit-notes')} />
+          return <CustomerCreditNotePage creditNotes={safeCreditNotes} setCreditNotes={syncSetCreditNotes} customers={safeCustomers} currentFY={safeCurrentFY} isLocked={isViewReadOnly('customer-credit-notes')} activeCompanyId={metadata.activeCompanyId} />
         case 'supplier-debit-notes':
-          return <SupplierDebitNotePage debitNotes={safeDebitNotes} setDebitNotes={syncSetDebitNotes} suppliers={safeSuppliers} currentFY={safeCurrentFY} isLocked={isViewReadOnly('supplier-debit-notes')} />
+          return <SupplierDebitNotePage debitNotes={safeDebitNotes} setDebitNotes={syncSetDebitNotes} suppliers={safeSuppliers} currentFY={safeCurrentFY} isLocked={isViewReadOnly('supplier-debit-notes')} activeCompanyId={metadata.activeCompanyId} />
         case 'sales-returns':
           return (
             <SalesReturnPage
@@ -2342,6 +2343,7 @@ function App() {
               setCreditNotes={syncSetCreditNotes}
               currentFY={safeCurrentFY}
               isLocked={isViewReadOnly('sales-returns')}
+              activeCompanyId={metadata.activeCompanyId}
             />
           )
         case 'purchase-returns':
@@ -2357,6 +2359,7 @@ function App() {
               setDebitNotes={syncSetDebitNotes}
               currentFY={safeCurrentFY}
               isLocked={isViewReadOnly('purchase-returns')}
+              activeCompanyId={metadata.activeCompanyId}
             />
           )
         case 'user-management':

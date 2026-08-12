@@ -17,6 +17,8 @@ import { Plus, CurrencyInr, Trash, Info, PencilSimple, FunnelSimple, Warning, Ca
 import { formatCurrency, getFYMonths, getFYFromDate } from '@/lib/calculations'
 import { startOfMonth, endOfMonth, isWithinInterval, parseISO, format } from 'date-fns'
 import { toast } from 'sonner'
+import { deleteCustomerPayment, saveCustomerPayment } from '@/lib/firebase-storage'
+import { ThreeDotDropdown } from '@/components/ui/three-dot-dropdown'
 import { cn } from '@/lib/utils'
 
 import { PeriodDateFilter, PeriodFilterState, defaultPeriodFilterState, isRecordInPeriod } from '@/components/period-date-filter'
@@ -111,9 +113,21 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
         amount: paymentAmount,
         notes,
         counterId: counterId,
-        counterName: selectedCounter.name
+        counterName: selectedCounter.name,
+        history: [
+          ...(editingPayment.history || []),
+          {
+            timestamp: new Date().toISOString(),
+            action: 'updated',
+            changedBy: 'Master Admin',
+            details: `Customer payment amount updated to ${paymentAmount}`
+          }
+        ]
       }
       setCustomerPayments((prev) => prev.map(p => p.id === editingPayment.id ? updatedPayment : p))
+      if (activeCompanyId) {
+        void saveCustomerPayment(activeCompanyId, updatedPayment)
+      }
       
       let newCounters = [...counters]
       let newTransactions = [...transactions]
@@ -164,9 +178,20 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
         notes,
         counterId: counterId,
         counterName: selectedCounter.name,
-        fy: getFYFromDate(paymentDate)
+        fy: getFYFromDate(paymentDate),
+        history: [
+          {
+            timestamp: new Date().toISOString(),
+            action: 'created',
+            changedBy: 'Master Admin',
+            details: 'Initial Customer Payment creation'
+          }
+        ]
       }
       setCustomerPayments((prev) => [...prev, payment])
+      if (activeCompanyId) {
+        void saveCustomerPayment(activeCompanyId, payment)
+      }
       
       const newCounters = counters.map(c => 
         c.id === counterId ? { ...c, currentBalance: c.currentBalance + paymentAmount } : c
@@ -529,26 +554,13 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
                             {payment.notes || '-'}
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleEdit(payment)}
-                                className="h-8 w-8 p-0 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
-                                title="Edit payment"
-                              >
-                                <PencilSimple size={16} weight="bold" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDeleteClick(payment)}
-                                className="h-8 w-8 p-0 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg"
-                                title="Delete payment"
-                              >
-                                <Trash size={16} weight="bold" />
-                              </Button>
-                            </div>
+                            <ThreeDotDropdown
+                              onEdit={() => handleEdit(payment)}
+                              onDelete={() => handleDeleteClick(payment)}
+                              history={payment.history}
+                              entityType="Customer Payment"
+                              isLocked={isLocked}
+                            />
                           </TableCell>
                         </TableRow>
                       ))
