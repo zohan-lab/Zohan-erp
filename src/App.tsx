@@ -544,16 +544,17 @@ function App() {
     collectionKey: string
   ) => {
     return (updater: React.SetStateAction<T[]>) => {
-      if (isTenantLoadingRef.current) {
-        console.warn(`Blocked update to ${collectionKey} because tenant loading is in progress.`);
-        return
-      }
-
       setStateAction((prev) => {
         const next = typeof updater === 'function' ? updater(prev) : updater
 
-        if (canUseRemoteStorage()) {
+        if (
+          canUseRemoteStorage() &&
+          tenantHydrated &&
+          !isTenantLoadingRef.current &&
+          hydratedCompanyIdRef.current === metadata.activeCompanyId
+        ) {
           const companyId = metadata.activeCompanyId
+          const deviceId = localStorage.getItem('app_device_id') || 'unknown'
 
           next.forEach((item) => {
             if (!item || !item.id) return
