@@ -61,10 +61,14 @@ function withTimeout<T>(promise: Promise<T>, ms = 20000): Promise<T> {
 
 function toAuthenticatedUser(uid: string, profile: FirestoreUserProfile): AuthenticatedUser {
   const isMaster = profile.role === 'master_admin' || isMasterAdminIdentifier(profile.email)
+  let displayName = profile.displayName || profile.email
+  if (isMaster && (!displayName || displayName === profile.email)) {
+    displayName = 'Master Admin'
+  }
   return {
     id: uid,
     username: profile.email,
-    displayName: profile.displayName || profile.email,
+    displayName,
     role: isMaster ? 'master_admin' : 'agent',
     permissions: profile.permissions || {},
     isActive: profile.isActive,
@@ -81,10 +85,15 @@ function firebaseUserToAuthenticatedUser(fbUser: FirebaseUser): AuthenticatedUse
     a => a.username.toLowerCase() === email || a.username.toLowerCase().split('@')[0] === email.split('@')[0]
   )
   if (localAccount) {
+    const isMaster = localAccount.role === 'master_admin' || isMasterAdminIdentifier(email)
+    let displayName = localAccount.displayName || fbUser.displayName || email
+    if (isMaster && (!displayName || displayName === email)) {
+      displayName = 'Master Admin'
+    }
     const user: AuthenticatedUser = {
       id: fbUser.uid || localAccount.id,
       username: email,
-      displayName: localAccount.displayName || fbUser.displayName || email,
+      displayName,
       role: localAccount.role,
       permissions: localAccount.permissions || {},
       isActive: localAccount.isActive,
@@ -96,10 +105,14 @@ function firebaseUserToAuthenticatedUser(fbUser: FirebaseUser): AuthenticatedUse
   }
 
   const isMaster = isMasterAdminIdentifier(email) || email === MASTER_ADMIN_EMAIL.toLowerCase()
+  let displayName = fbUser.displayName || email
+  if (isMaster && (!displayName || displayName === email)) {
+    displayName = 'Master Admin'
+  }
   const user: AuthenticatedUser = {
     id: fbUser.uid,
     username: email,
-    displayName: fbUser.displayName || email,
+    displayName,
     role: isMaster ? 'master_admin' : 'agent',
     permissions: {},
     isActive: true
@@ -189,9 +202,13 @@ export async function signInRemoteUser(
     let profile = await fetchFirestoreProfile(credential.user.uid)
     if (!profile && db) {
       const now = new Date().toISOString()
+      let displayName = credential.user.displayName || (isMasterAdminEmail ? 'Master Admin' : cleanEmail)
+      if (isMasterAdminEmail && (!displayName || displayName === cleanEmail)) {
+        displayName = 'Master Admin'
+      }
       const newProfile: FirestoreUserProfile = {
         email: cleanEmail,
-        displayName: credential.user.displayName || (isMasterAdminEmail ? 'Master Admin' : cleanEmail),
+        displayName,
         role: isMasterAdminEmail ? 'master_admin' : 'agent',
         permissions: {},
         isActive: true,
@@ -228,9 +245,13 @@ export async function signInRemoteUser(
           createUserWithEmailAndPassword(auth, cleanEmail, password)
         )
         const now = new Date().toISOString()
+        let displayName = cred.user.displayName || (isMasterAdminEmail ? 'Master Admin' : cleanEmail)
+        if (isMasterAdminEmail && (!displayName || displayName === cleanEmail)) {
+          displayName = 'Master Admin'
+        }
         const newProfile: FirestoreUserProfile = {
           email: cleanEmail,
-          displayName: cred.user.displayName || (isMasterAdminEmail ? 'Master Admin' : cleanEmail),
+          displayName,
           role: isMasterAdminEmail ? 'master_admin' : 'agent',
           permissions: {},
           isActive: true,
@@ -402,10 +423,15 @@ export async function createRemoteUserProfile(
 ): Promise<void> {
   if (!db) return
   const now = new Date().toISOString()
+  const isMaster = role === 'master_admin' || isMasterAdminIdentifier(email)
+  let finalDisplayName = displayName.trim()
+  if (isMaster && (!finalDisplayName || finalDisplayName === email.trim().toLowerCase())) {
+    finalDisplayName = 'Master Admin'
+  }
   await withTimeout(
     setDoc(doc(db, 'users', uid), {
       email: email.trim().toLowerCase(),
-      displayName: displayName.trim(),
+      displayName: finalDisplayName,
       role,
       permissions,
       isActive: true,

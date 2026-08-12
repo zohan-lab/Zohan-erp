@@ -171,22 +171,19 @@ export const MASTER_ADMIN_EMAIL = 'sksahil299399@gmail.com'
 export function isMasterAdminIdentifier(username: string | null | undefined): boolean {
   if (!username) return false
   const clean = username.trim().toLowerCase()
-  if (clean === MASTER_ADMIN_EMAIL.toLowerCase()) return true
-  const handle = clean.split('@')[0]
-  return (
-    clean === 'admin' ||
-    handle === 'admin' ||
-    clean.startsWith('admin@') ||
-    clean.includes('master')
-  )
+  return clean === MASTER_ADMIN_EMAIL.toLowerCase()
 }
 
 function toAuthenticatedUser(account: UserAccount): AuthenticatedUser {
   const isMaster = account.role === 'master_admin' || isMasterAdminIdentifier(account.username)
+  let displayName = account.displayName
+  if (isMaster && (!displayName || displayName === account.username)) {
+    displayName = 'Master Admin'
+  }
   return {
     id: account.id,
     username: account.username,
-    displayName: account.displayName,
+    displayName: displayName,
     role: isMaster ? 'master_admin' : 'agent',
     permissions: account.permissions,
     isActive: account.isActive,
@@ -211,7 +208,7 @@ export function getCurrentUser(): AuthenticatedUser | null {
   if (cachedUserStr) {
     try {
       cachedUser = JSON.parse(cachedUserStr) as AuthenticatedUser
-    } catch (e) {}
+    } catch (e) { }
   }
 
   if (userId) {
@@ -241,7 +238,10 @@ export function getCurrentUser(): AuthenticatedUser | null {
 /** Returns the current user's email (username) for edit history audit trails. */
 export function getChangedByLabel(): string {
   const user = getCurrentUser()
-  return user?.username || user?.displayName || 'Unknown User'
+  if (!user) return 'Unknown User'
+  const isMaster = user.role === 'master_admin' || isMasterAdminIdentifier(user.username)
+  if (isMaster) return 'Master Admin'
+  return user.displayName || user.username || 'Unknown User'
 }
 
 /** Returns the current user's role for edit history icon differentiation. */
