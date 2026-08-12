@@ -571,7 +571,12 @@ export default function InvoicesPage({
             timestamp: new Date().toISOString(),
             action: 'updated',
             changedBy: 'Master Admin',
-            details: `Invoice amount updated to ${finalInvoiceAmount}`
+            changes: [
+              ...(editingInvoice.invoiceAmount !== finalInvoiceAmount ? [{ field: 'Amount', from: String(editingInvoice.invoiceAmount), to: String(finalInvoiceAmount) }] : []),
+              ...(editingInvoice.invoiceNo !== invoiceNo ? [{ field: 'Invoice No', from: editingInvoice.invoiceNo, to: invoiceNo }] : []),
+              ...(editingInvoice.invoiceDate !== invoiceDate ? [{ field: 'Date', from: editingInvoice.invoiceDate, to: invoiceDate }] : []),
+              ...(editingInvoice.supplierId !== supplierId ? [{ field: 'Supplier', from: suppliers.find(s => s.id === editingInvoice.supplierId)?.name || '-', to: suppliers.find(s => s.id === supplierId)?.name || '-' }] : [])
+            ]
           }
         ]
       }
@@ -601,7 +606,12 @@ export default function InvoicesPage({
             timestamp: new Date().toISOString(),
             action: 'created',
             changedBy: 'Master Admin',
-            details: 'Initial Purchase Invoice creation'
+            changes: [
+              { field: 'Invoice No', from: '', to: invoiceNo },
+              { field: 'Supplier', from: '', to: suppliers.find(s => s.id === supplierId)?.name || '-' },
+              { field: 'Amount', from: '', to: String(finalInvoiceAmount) },
+              { field: 'Date', from: '', to: invoiceDate }
+            ]
           }
         ]
       }

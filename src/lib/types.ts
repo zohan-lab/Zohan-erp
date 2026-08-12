@@ -1,8 +1,15 @@
+export interface EditHistoryChange {
+  field: string
+  from: string
+  to: string
+}
+
 export interface EditHistoryLog {
   timestamp: string
   action: 'created' | 'updated' | string
   changedBy: string
   details?: string
+  changes?: EditHistoryChange[]
 }
 
 export interface Item {

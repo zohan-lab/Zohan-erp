@@ -118,7 +118,12 @@ export default function PaymentsPage({ payments, setPayments, setMTBookings, inv
             timestamp: new Date().toISOString(),
             action: 'updated',
             changedBy: 'Master Admin',
-            details: `Payment amount updated to ${amount}`
+            changes: [
+              ...(editingPayment.amount !== amount ? [{ field: 'Amount', from: String(editingPayment.amount), to: String(amount) }] : []),
+              ...(editingPayment.supplierId !== supplierId ? [{ field: 'Supplier', from: suppliers.find(s => s.id === editingPayment.supplierId)?.name || '-', to: suppliers.find(s => s.id === supplierId)?.name || '-' }] : []),
+              ...(editingPayment.paymentDate !== (formData.get('paymentDate') as string) ? [{ field: 'Date', from: editingPayment.paymentDate, to: formData.get('paymentDate') as string }] : []),
+              ...(editingPayment.counterName !== selectedCounter.name ? [{ field: 'Account', from: editingPayment.counterName || '-', to: selectedCounter.name }] : [])
+            ]
           }
         ]
       }
@@ -184,7 +189,12 @@ export default function PaymentsPage({ payments, setPayments, setMTBookings, inv
             timestamp: new Date().toISOString(),
             action: 'created',
             changedBy: 'Master Admin',
-            details: 'Initial Payment creation'
+            changes: [
+              { field: 'Supplier', from: '', to: suppliers.find(s => s.id === supplierId)?.name || '-' },
+              { field: 'Amount', from: '', to: String(amount) },
+              { field: 'Date', from: '', to: formData.get('paymentDate') as string },
+              { field: 'Account', from: '', to: selectedCounter.name }
+            ]
           }
         ]
       }

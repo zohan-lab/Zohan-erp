@@ -90,7 +90,12 @@ export default function SupplierDebitNotePage({ debitNotes, setDebitNotes, suppl
             timestamp: new Date().toISOString(),
             action: 'updated',
             changedBy: 'Master Admin',
-            details: `Debit note amount updated to ${amount}`
+            changes: [
+              ...(editingItem.amount !== amount ? [{ field: 'Amount', from: String(editingItem.amount), to: String(amount) }] : []),
+              ...(editingItem.supplierId !== selectedEntityInForm ? [{ field: 'Supplier', from: suppliers.find(s => s.id === editingItem.supplierId)?.name || '-', to: suppliers.find(s => s.id === selectedEntityInForm)?.name || '-' }] : []),
+              ...(editingItem.date !== date ? [{ field: 'Date', from: editingItem.date, to: date }] : []),
+              ...((editingItem.remarks || '') !== (remarks || '') ? [{ field: 'Remarks', from: editingItem.remarks || '-', to: remarks || '-' }] : [])
+            ]
           }
         ]
       }
@@ -113,7 +118,12 @@ export default function SupplierDebitNotePage({ debitNotes, setDebitNotes, suppl
             timestamp: new Date().toISOString(),
             action: 'created',
             changedBy: 'Master Admin',
-            details: 'Initial Debit Note creation'
+            changes: [
+              { field: 'Supplier', from: '', to: suppliers.find(s => s.id === selectedEntityInForm)?.name || '-' },
+              { field: 'Amount', from: '', to: String(amount) },
+              { field: 'Date', from: '', to: date },
+              ...(remarks ? [{ field: 'Remarks', from: '', to: remarks }] : [])
+            ]
           }
         ]
       }

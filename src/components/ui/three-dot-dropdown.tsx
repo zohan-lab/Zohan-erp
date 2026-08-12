@@ -1,14 +1,21 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { DotsThreeVertical, PencilSimple, Trash, Clock, User } from '@phosphor-icons/react'
+import { DotsThreeVertical, PencilSimple, Trash, Clock, User, ArrowRight } from '@phosphor-icons/react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+
+export interface EditHistoryChange {
+  field: string
+  from: string
+  to: string
+}
 
 export interface EditHistoryLog {
   timestamp: string
   action: 'created' | 'updated' | string
   changedBy: string
   details?: string
+  changes?: EditHistoryChange[]
 }
 
 interface ThreeDotDropdownProps {
@@ -156,7 +163,7 @@ export function ThreeDotDropdown({
 
       {/* History Dialog */}
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
-        <DialogContent className="sm:max-w-[480px] rounded-2xl p-6 bg-white shadow-xl max-h-[90vh] overflow-y-auto" style={{ zIndex: 9999 }}>
+        <DialogContent className="sm:max-w-[520px] rounded-2xl p-6 bg-white shadow-xl max-h-[90vh] overflow-y-auto" style={{ zIndex: 9999 }}>
           <DialogHeader className="flex flex-row items-center justify-between border-b pb-4 border-slate-100">
             <DialogTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <Clock size={20} className="text-blue-600" />
@@ -166,36 +173,72 @@ export function ThreeDotDropdown({
 
           <div className="mt-4 space-y-4">
             {history && history.length > 0 ? (
-              <div className="relative border-l border-slate-200 ml-3.5 pl-5 space-y-5">
-                {history.map((log, idx) => (
-                  <div key={idx} className="relative">
-                    {/* Circle Indicator */}
-                    <div className="absolute -left-[27.5px] top-1.5 h-3.5 w-3.5 rounded-full border-2 border-white bg-blue-600 flex items-center justify-center shadow-sm" />
+              <div className="relative border-l-2 border-slate-200 ml-3.5 pl-5 space-y-6">
+                {history.map((log, idx) => {
+                  const isCreated = log.action === 'created'
+                  return (
+                    <div key={idx} className="relative">
+                      {/* Circle Indicator */}
+                      <div className={`absolute -left-[28px] top-1 h-4 w-4 rounded-full border-2 border-white shadow-sm flex items-center justify-center ${isCreated ? 'bg-emerald-500' : 'bg-blue-600'}`} />
 
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between text-xs text-slate-400">
-                        <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded capitalize">
-                          {log.action}
-                        </span>
-                        <span>
-                          {new Date(log.timestamp).toLocaleString('en-IN', {
-                            dateStyle: 'medium',
-                            timeStyle: 'short'
-                          })}
-                        </span>
+                      <div className="space-y-2">
+                        {/* Header: action badge + timestamp */}
+                        <div className="flex items-center justify-between text-xs text-slate-400">
+                          <span className={`font-semibold px-2 py-0.5 rounded capitalize ${isCreated ? 'text-emerald-700 bg-emerald-50 border border-emerald-200' : 'text-blue-700 bg-blue-50 border border-blue-200'}`}>
+                            {log.action}
+                          </span>
+                          <span className="font-medium">
+                            {new Date(log.timestamp).toLocaleString('en-IN', {
+                              dateStyle: 'medium',
+                              timeStyle: 'short'
+                            })}
+                          </span>
+                        </div>
+
+                        {/* Changed by */}
+                        <div className="flex items-center gap-1.5 text-sm text-slate-700 font-medium">
+                          <User size={14} className="text-slate-400" />
+                          <span>{log.changedBy}</span>
+                        </div>
+
+                        {/* From → To Changes Table */}
+                        {log.changes && log.changes.length > 0 && (
+                          <div className="rounded-lg border border-slate-100 overflow-hidden mt-1.5">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="bg-slate-50/80">
+                                  <th className="text-left px-3 py-1.5 font-semibold text-slate-500 uppercase tracking-wider">Field</th>
+                                  {!isCreated && (
+                                    <th className="text-left px-3 py-1.5 font-semibold text-slate-500 uppercase tracking-wider">From</th>
+                                  )}
+                                  <th className="text-left px-3 py-1.5 font-semibold text-slate-500 uppercase tracking-wider">{isCreated ? 'Value' : 'To'}</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {log.changes.map((change, ci) => (
+                                  <tr key={ci} className="border-t border-slate-50">
+                                    <td className="px-3 py-1.5 font-medium text-slate-600">{change.field}</td>
+                                    {!isCreated && (
+                                      <td className="px-3 py-1.5 text-red-500 line-through">{change.from || '-'}</td>
+                                    )}
+                                    <td className="px-3 py-1.5 text-emerald-600 font-medium">{change.to}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+
+                        {/* Legacy details string fallback */}
+                        {log.details && (!log.changes || log.changes.length === 0) && (
+                          <p className="text-xs text-slate-500 bg-slate-50/50 p-2 rounded-lg border border-slate-100 mt-1.5">
+                            {log.details}
+                          </p>
+                        )}
                       </div>
-                      <div className="flex items-center gap-1.5 text-sm text-slate-700 font-medium mt-1">
-                        <User size={14} className="text-slate-400" />
-                        <span>{log.changedBy}</span>
-                      </div>
-                      {log.details && (
-                        <p className="text-xs text-slate-500 bg-slate-50/50 p-2 rounded-lg border border-slate-100 mt-1.5">
-                          {log.details}
-                        </p>
-                      )}
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             ) : (
               <div className="text-center py-8 text-slate-400 flex flex-col items-center gap-2">

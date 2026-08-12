@@ -350,7 +350,11 @@ export default function PurchaseReturnPage({
               timestamp: new Date().toISOString(),
               action: 'updated',
               changedBy: 'Master Admin',
-              details: `Purchase return amount updated to ${calculatedTotalAmount}`
+              changes: [
+                ...(editingItem.amount !== calculatedTotalAmount ? [{ field: 'Amount', from: String(editingItem.amount), to: String(calculatedTotalAmount) }] : []),
+                ...(editingItem.supplierId !== selectedSupplierId ? [{ field: 'Supplier', from: suppliers.find(s => s.id === editingItem.supplierId)?.name || '-', to: suppliers.find(s => s.id === selectedSupplierId)?.name || '-' }] : []),
+                ...(editingItem.returnDate !== returnDate ? [{ field: 'Date', from: editingItem.returnDate, to: returnDate }] : [])
+              ]
             }
           ]
         : [
@@ -358,7 +362,12 @@ export default function PurchaseReturnPage({
               timestamp: new Date().toISOString(),
               action: 'created',
               changedBy: 'Master Admin',
-              details: 'Initial Purchase Return creation'
+              changes: [
+                { field: 'Return No', from: '', to: finalReturnNo },
+                { field: 'Supplier', from: '', to: suppliers.find(s => s.id === selectedSupplierId)?.name || '-' },
+                { field: 'Amount', from: '', to: String(calculatedTotalAmount) },
+                { field: 'Date', from: '', to: returnDate }
+              ]
             }
           ]
     }
@@ -384,7 +393,9 @@ export default function PurchaseReturnPage({
               timestamp: new Date().toISOString(),
               action: 'updated',
               changedBy: 'Master Admin',
-              details: `Auto-generated Debit Note updated to ${calculatedTotalAmount}`
+              changes: [
+                ...(editingItem.amount !== calculatedTotalAmount ? [{ field: 'Amount', from: String(editingItem.amount), to: String(calculatedTotalAmount) }] : [])
+              ]
             }
           ]
         : [
@@ -392,7 +403,7 @@ export default function PurchaseReturnPage({
               timestamp: new Date().toISOString(),
               action: 'created',
               changedBy: 'Master Admin',
-              details: 'Initial auto-generation from Purchase Return'
+              details: 'Auto-generated from Purchase Return'
             }
           ]
     }

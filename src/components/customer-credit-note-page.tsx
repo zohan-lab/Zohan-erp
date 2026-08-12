@@ -91,7 +91,12 @@ export default function CustomerCreditNotePage({ creditNotes, setCreditNotes, cu
             timestamp: new Date().toISOString(),
             action: 'updated',
             changedBy: 'Master Admin',
-            details: `Credit note amount updated to ${amount}`
+            changes: [
+              ...(editingItem.amount !== amount ? [{ field: 'Amount', from: String(editingItem.amount), to: String(amount) }] : []),
+              ...(editingItem.customerId !== selectedEntityInForm ? [{ field: 'Customer', from: customers.find(c => c.id === editingItem.customerId)?.name || '-', to: customers.find(c => c.id === selectedEntityInForm)?.name || '-' }] : []),
+              ...(editingItem.date !== date ? [{ field: 'Date', from: editingItem.date, to: date }] : []),
+              ...((editingItem.remarks || '') !== (remarks || '') ? [{ field: 'Remarks', from: editingItem.remarks || '-', to: remarks || '-' }] : [])
+            ]
           }
         ]
       }
@@ -114,7 +119,12 @@ export default function CustomerCreditNotePage({ creditNotes, setCreditNotes, cu
             timestamp: new Date().toISOString(),
             action: 'created',
             changedBy: 'Master Admin',
-            details: 'Initial Credit Note creation'
+            changes: [
+              { field: 'Customer', from: '', to: customers.find(c => c.id === selectedEntityInForm)?.name || '-' },
+              { field: 'Amount', from: '', to: String(amount) },
+              { field: 'Date', from: '', to: date },
+              ...(remarks ? [{ field: 'Remarks', from: '', to: remarks }] : [])
+            ]
           }
         ]
       }

@@ -517,7 +517,11 @@ export default function SalesInvoicesPage({
             timestamp: new Date().toISOString(),
             action: 'updated',
             changedBy: 'Master Admin',
-            details: `Invoice amount updated to ${finalInvoiceAmount}`
+            changes: [
+              ...(editingInvoice.invoiceAmount !== finalInvoiceAmount ? [{ field: 'Amount', from: String(editingInvoice.invoiceAmount), to: String(finalInvoiceAmount) }] : []),
+              ...(editingInvoice.invoiceNo !== invoiceNo ? [{ field: 'Invoice No', from: editingInvoice.invoiceNo, to: invoiceNo }] : []),
+              ...(editingInvoice.customerId !== customerId ? [{ field: 'Customer', from: customers.find(c => c.id === editingInvoice.customerId)?.name || '-', to: customers.find(c => c.id === customerId)?.name || '-' }] : [])
+            ]
           }
         ]
       }
@@ -545,7 +549,12 @@ export default function SalesInvoicesPage({
             timestamp: new Date().toISOString(),
             action: 'created',
             changedBy: 'Master Admin',
-            details: 'Initial Sales Invoice creation'
+            changes: [
+              { field: 'Invoice No', from: '', to: invoiceNo },
+              { field: 'Customer', from: '', to: customers.find(c => c.id === customerId)?.name || '-' },
+              { field: 'Amount', from: '', to: String(finalInvoiceAmount) },
+              { field: 'Date', from: '', to: formData.get('invoiceDate') as string }
+            ]
           }
         ]
       }

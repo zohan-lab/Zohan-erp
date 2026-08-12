@@ -199,7 +199,13 @@ export default function ExpenseEntriesPage({
             timestamp: new Date().toISOString(),
             action: 'updated',
             changedBy: 'Master Admin',
-            details: `Expense amount updated to ${amt}`
+            changes: [
+              ...(editingExpense.amount !== amt ? [{ field: 'Amount', from: String(editingExpense.amount), to: String(amt) }] : []),
+              ...(editingExpense.expenseTypeId !== expenseTypeId ? [{ field: 'Type', from: expenseTypes.find(t => t.id === editingExpense.expenseTypeId)?.name || '-', to: typeObj?.name || '-' }] : []),
+              ...(editingExpense.expenseDate !== expenseDate ? [{ field: 'Date', from: editingExpense.expenseDate, to: expenseDate }] : []),
+              ...(editingExpense.counterId !== selectedCounterId ? [{ field: 'Account', from: counters.find(c => c.id === editingExpense.counterId)?.name || '-', to: selectedCounter?.name || '-' }] : []),
+              ...((editingExpense.notes || '') !== (notes.trim() || '') ? [{ field: 'Notes', from: editingExpense.notes || '-', to: notes.trim() || '-' }] : [])
+            ]
           }
         ]
       }
@@ -242,7 +248,12 @@ export default function ExpenseEntriesPage({
             timestamp: new Date().toISOString(),
             action: 'created',
             changedBy: 'Master Admin',
-            details: 'Initial Expense Entry creation'
+            changes: [
+              { field: 'Type', from: '', to: typeObj?.name || '-' },
+              { field: 'Amount', from: '', to: String(amt) },
+              { field: 'Date', from: '', to: expenseDate },
+              { field: 'Account', from: '', to: selectedCounter?.name || '-' }
+            ]
           }
         ]
       }

@@ -347,7 +347,11 @@ export default function SalesReturnPage({
               timestamp: new Date().toISOString(),
               action: 'updated',
               changedBy: 'Master Admin',
-              details: `Sales return amount updated to ${calculatedTotalAmount}`
+              changes: [
+                ...(editingItem.amount !== calculatedTotalAmount ? [{ field: 'Amount', from: String(editingItem.amount), to: String(calculatedTotalAmount) }] : []),
+                ...(editingItem.customerId !== selectedCustomerId ? [{ field: 'Customer', from: customers.find(c => c.id === editingItem.customerId)?.name || '-', to: customers.find(c => c.id === selectedCustomerId)?.name || '-' }] : []),
+                ...(editingItem.returnDate !== returnDate ? [{ field: 'Date', from: editingItem.returnDate, to: returnDate }] : [])
+              ]
             }
           ]
         : [
@@ -355,7 +359,12 @@ export default function SalesReturnPage({
               timestamp: new Date().toISOString(),
               action: 'created',
               changedBy: 'Master Admin',
-              details: 'Initial Sales Return creation'
+              changes: [
+                { field: 'Return No', from: '', to: finalReturnNo },
+                { field: 'Customer', from: '', to: customers.find(c => c.id === selectedCustomerId)?.name || '-' },
+                { field: 'Amount', from: '', to: String(calculatedTotalAmount) },
+                { field: 'Date', from: '', to: returnDate }
+              ]
             }
           ]
     }
@@ -381,7 +390,9 @@ export default function SalesReturnPage({
               timestamp: new Date().toISOString(),
               action: 'updated',
               changedBy: 'Master Admin',
-              details: `Auto-generated Credit Note updated to ${calculatedTotalAmount}`
+              changes: [
+                ...(editingItem.amount !== calculatedTotalAmount ? [{ field: 'Amount', from: String(editingItem.amount), to: String(calculatedTotalAmount) }] : [])
+              ]
             }
           ]
         : [
@@ -389,7 +400,7 @@ export default function SalesReturnPage({
               timestamp: new Date().toISOString(),
               action: 'created',
               changedBy: 'Master Admin',
-              details: 'Initial auto-generation from Sales Return'
+              details: 'Auto-generated from Sales Return'
             }
           ]
     }

@@ -120,7 +120,13 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
             timestamp: new Date().toISOString(),
             action: 'updated',
             changedBy: 'Master Admin',
-            details: `Customer payment amount updated to ${paymentAmount}`
+            changes: [
+              ...(editingPayment.amount !== paymentAmount ? [{ field: 'Amount', from: String(editingPayment.amount), to: String(paymentAmount) }] : []),
+              ...(editingPayment.customerId !== customerId ? [{ field: 'Customer', from: getCustomerName(editingPayment.customerId), to: customerName }] : []),
+              ...(editingPayment.paymentDate !== paymentDate ? [{ field: 'Date', from: editingPayment.paymentDate, to: paymentDate }] : []),
+              ...(editingPayment.counterName !== selectedCounter.name ? [{ field: 'Account', from: editingPayment.counterName || '-', to: selectedCounter.name }] : []),
+              ...((editingPayment.notes || '') !== (notes || '') ? [{ field: 'Notes', from: editingPayment.notes || '-', to: notes || '-' }] : [])
+            ]
           }
         ]
       }
@@ -184,7 +190,12 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
             timestamp: new Date().toISOString(),
             action: 'created',
             changedBy: 'Master Admin',
-            details: 'Initial Customer Payment creation'
+            changes: [
+              { field: 'Customer', from: '', to: customerName },
+              { field: 'Amount', from: '', to: String(paymentAmount) },
+              { field: 'Date', from: '', to: paymentDate },
+              { field: 'Account', from: '', to: selectedCounter.name }
+            ]
           }
         ]
       }
