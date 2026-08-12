@@ -558,6 +558,16 @@ function App() {
   const setActiveCompany = (companyName: string) => {
     const business = metadata.businesses.find(b => b.name === companyName)
     if (business && business.id !== metadata.activeCompanyId) {
+      switchSessionIdRef.current++
+      setTenantHydrated(false)
+      hydratedCompanyIdRef.current = null
+      isTenantLoadingRef.current = true
+
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = null
+      }
+
       setSuppliers([])
       setCustomers([])
       setItems([])
@@ -639,7 +649,11 @@ function App() {
   const [isHoveringsidebar, setIsHoveringsidebar] = useState(false)
   const sidebarRef = useRef<HTMLElement>(null)
   const remoteRevisionRef = useRef<Record<string, number | null>>({})
-  const lastSavedDataRef = useRef<string>('')
+  const lastSavedDataRef = useRef<Record<string, string>>({})
+  const switchSessionIdRef = useRef<number>(0)
+  const hydratedCompanyIdRef = useRef<string | null>(null)
+  const isTenantLoadingRef = useRef<boolean>(false)
+  const saveTimerRef = useRef<any>(null)
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false)
   const [addBusinessDialogOpen, setAddBusinessDialogOpen] = useState(false)
   const [editBusinessDialogOpen, setEditBusinessDialogOpen] = useState(false)
@@ -916,11 +930,22 @@ function App() {
   useEffect(() => {
     if (useServerAuth && !canSyncRemoteTenant) {
       setTenantHydrated(false)
+      hydratedCompanyIdRef.current = null
+      isTenantLoadingRef.current = false
       return
     }
 
     let cancelled = false
+    const currentFetchId = ++switchSessionIdRef.current
+    isTenantLoadingRef.current = true
     setTenantHydrated(false)
+    hydratedCompanyIdRef.current = null
+
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = null
+    }
+
     setSuppliers([])
     setCustomers([])
     setItems([])
@@ -936,6 +961,10 @@ function App() {
     setDiscountLedgerEntries([])
     setCashBankCounters([])
     setCashBankTransactions([])
+    setCreditNotes([])
+    setDebitNotes([])
+    setSalesReturns([])
+    setPurchaseReturns([])
 
     const partitionKey = tenantKey
     const companyId = metadata.activeCompanyId
@@ -943,7 +972,7 @@ function App() {
     const storedData = isLocalCacheDisabled ? null : localStorage.getItem(partitionKey)
 
     const applyTenantData = (parsedData: Partial<TenantData>) => {
-      if (cancelled) return
+      if (cancelled || currentFetchId !== switchSessionIdRef.current) return
       const normalizedData: TenantData = {
         suppliers: parsedData.suppliers || [],
         customers: parsedData.customers || [],
@@ -966,7 +995,7 @@ function App() {
         purchaseReturns: parsedData.purchaseReturns || [],
         userAccounts: parsedData.userAccounts || getUserAccounts() || []
       }
-      lastSavedDataRef.current = JSON.stringify(normalizedData)
+      lastSavedDataRef.current[partitionKey] = JSON.stringify(normalizedData)
       setSuppliers(normalizedData.suppliers)
       setCustomers(normalizedData.customers)
       setItems(normalizedData.items)
@@ -1015,27 +1044,31 @@ function App() {
             console.log(`Skipping remote load for ${partitionKey} because it was recently restored locally. Data will be pushed to remote.`)
             delete restoredKeys[partitionKey]
             localStorage.setItem('restored_keys', JSON.stringify(restoredKeys))
-            // Force expectedRevision to null so it overwrites remote without conflict
             remoteRevisionRef.current[partitionKey] = null
-            // Clear lastSavedDataRef so the sync hook does not short-circuit
-            lastSavedDataRef.current = ''
+            lastSavedDataRef.current[partitionKey] = ''
           } else {
             const remoteSnapshot = await loadRemoteTenantData(companyId, partitionKey)
+            if (currentFetchId !== switchSessionIdRef.current) return
             if (remoteSnapshot && !cancelled) {
               remoteRevisionRef.current[partitionKey] = remoteSnapshot.revision
               writeTenantCache(companyId, partitionKey, remoteSnapshot.payload, remoteSnapshot.revision)
               applyTenantData(remoteSnapshot.payload)
               appendAuditLog('remote_tenant_loaded', undefined, partitionKey)
             } else if (remoteSnapshot === null && !cancelled) {
-              // Remote document was deleted in Firebase; clear stale local storage cache so old data is not restored
-              localStorage.removeItem(partitionKey)
-              applyTenantData({})
+              if (!storedData && !cachedSnapshot?.payload) {
+                applyTenantData({})
+              }
             }
           }
         }
-        if (!cancelled) setTenantHydrated(true)
+        if (!cancelled && currentFetchId === switchSessionIdRef.current) {
+          hydratedCompanyIdRef.current = companyId
+          isTenantLoadingRef.current = false
+          setTenantHydrated(true)
+        }
       } catch (error) {
-        if (cancelled) return
+        if (cancelled || currentFetchId !== switchSessionIdRef.current) return
+        isTenantLoadingRef.current = false
         const message = error instanceof RemoteStorageUnavailableError
           ? error.message
           : 'Unable to load saved company data from Firebase.'
@@ -1045,8 +1078,10 @@ function App() {
             remoteRevisionRef.current[partitionKey] = cachedSnapshot.revision
             applyTenantData(cachedSnapshot.payload)
           }
+          hydratedCompanyIdRef.current = companyId
           setTenantHydrated(true)
         } else {
+          hydratedCompanyIdRef.current = null
           setTenantHydrated(false)
         }
       }
@@ -1060,10 +1095,14 @@ function App() {
   }, [metadata.activeCompanyId, activeFY, tenantKey, useServerAuth, canSyncRemoteTenant])
 
   useEffect(() => {
-    if (!tenantHydrated) return
+    // Mandatory Guard: No auto-save until hydrated and active UI company matches loaded company
+    if (!tenantHydrated || hydratedCompanyIdRef.current !== metadata.activeCompanyId || isTenantLoadingRef.current) return
     if (useServerAuth && !canSyncRemoteTenant) return
 
     const partitionKey = tenantKey
+    const activeCompanyIdAtTrigger = metadata.activeCompanyId
+    const triggerGenerationId = switchSessionIdRef.current
+
     const tenantData: TenantData = {
       suppliers,
       customers,
@@ -1087,9 +1126,10 @@ function App() {
       userAccounts
     }
 
-    if (lastSavedDataRef.current) {
+    const lastSavedJson = lastSavedDataRef.current[partitionKey]
+    if (lastSavedJson) {
       try {
-        const last = JSON.parse(lastSavedDataRef.current)
+        const last = JSON.parse(lastSavedJson)
         if (areObjectsSemanticallyEqual(tenantData, last)) {
           return
         }
@@ -1103,26 +1143,38 @@ function App() {
     console.log('💾 Scheduling remote save. itemsCount:', items.length, 'expectedRevision:', remoteRevisionRef.current[partitionKey])
 
     writeTenantCache(
-      metadata.activeCompanyId,
+      activeCompanyIdAtTrigger,
       partitionKey,
       tenantData,
       remoteRevisionRef.current[partitionKey] ?? null
     )
     if (canUseRemoteStorage()) {
-      const timerId = setTimeout(() => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current)
+      }
+      saveTimerRef.current = setTimeout(() => {
         const saveRemote = async () => {
+          if (
+            triggerGenerationId !== switchSessionIdRef.current ||
+            activeCompanyIdAtTrigger !== metadata.activeCompanyId ||
+            hydratedCompanyIdRef.current !== activeCompanyIdAtTrigger
+          ) {
+            console.log('🛑 Save cancelled due to tenant switch race condition guard.')
+            return
+          }
+
           console.log('💾 Running saveRemote to Firestore. itemsCount:', items.length, 'expectedRevision:', remoteRevisionRef.current[partitionKey])
           const snapshot = await saveRemoteTenantData(
-            metadata.activeCompanyId,
+            activeCompanyIdAtTrigger,
             partitionKey,
             tenantData,
             remoteRevisionRef.current[partitionKey] ?? null
           )
-          if (snapshot) {
+          if (snapshot && triggerGenerationId === switchSessionIdRef.current) {
             console.log('💾 saveRemote SUCCESS. New revision:', snapshot.revision, 'New itemsCount:', snapshot.payload.items?.length || 0)
             remoteRevisionRef.current[partitionKey] = snapshot.revision
-            lastSavedDataRef.current = JSON.stringify(tenantData)
-            writeTenantCache(metadata.activeCompanyId, partitionKey, snapshot.payload, snapshot.revision)
+            lastSavedDataRef.current[partitionKey] = JSON.stringify(tenantData)
+            writeTenantCache(activeCompanyIdAtTrigger, partitionKey, snapshot.payload, snapshot.revision)
           }
         }
 
@@ -1131,8 +1183,8 @@ function App() {
             console.error('❌ saveRemote FAILED:', error)
             if (error instanceof RemoteSnapshotConflictError) {
               toast.error('Remote data changed. Reloading latest company data.')
-              const latest = await loadRemoteTenantData(metadata.activeCompanyId, partitionKey)
-              if (latest) {
+              const latest = await loadRemoteTenantData(activeCompanyIdAtTrigger, partitionKey)
+              if (latest && triggerGenerationId === switchSessionIdRef.current) {
                 console.log('💾 Reloaded snapshot after conflict. Revision:', latest.revision, 'itemsCount:', latest.payload.items?.length || 0)
                 remoteRevisionRef.current[partitionKey] = latest.revision
                 const normalizedData: TenantData = {
@@ -1156,8 +1208,8 @@ function App() {
                   salesReturns: latest.payload.salesReturns || [],
                   purchaseReturns: latest.payload.purchaseReturns || []
                 }
-                lastSavedDataRef.current = JSON.stringify(normalizedData)
-                writeTenantCache(metadata.activeCompanyId, partitionKey, normalizedData, latest.revision)
+                lastSavedDataRef.current[partitionKey] = JSON.stringify(normalizedData)
+                writeTenantCache(activeCompanyIdAtTrigger, partitionKey, normalizedData, latest.revision)
                 setSuppliers(normalizedData.suppliers)
                 setCustomers(normalizedData.customers)
                 setItems(normalizedData.items)
@@ -1180,7 +1232,12 @@ function App() {
           })
       }, 1500)
 
-      return () => clearTimeout(timerId)
+      return () => {
+        if (saveTimerRef.current) {
+          clearTimeout(saveTimerRef.current)
+          saveTimerRef.current = null
+        }
+      }
     }
     appendAuditLog('tenant_data_saved', {
       suppliers: suppliers.length,
@@ -1215,9 +1272,18 @@ function App() {
   ])
 
   useEffect(() => {
-    if (!tenantHydrated || !canUseRemoteStorage()) return
+    if (!tenantHydrated || hydratedCompanyIdRef.current !== metadata.activeCompanyId || !canUseRemoteStorage()) return
     if (useServerAuth && !canSyncRemoteTenant) return
+
+    const activeCompanyIdAtSub = metadata.activeCompanyId
+    const triggerGenerationId = switchSessionIdRef.current
+
     return subscribeTenantData(metadata.activeCompanyId, tenantKey, (remoteSnapshot) => {
+      if (triggerGenerationId !== switchSessionIdRef.current || activeCompanyIdAtSub !== metadata.activeCompanyId) {
+        console.log('🛑 Realtime update ignored due to tenant switch.')
+        return
+      }
+
       console.log('📡 Realtime subscription received update:', {
         revision: remoteSnapshot.revision,
         deviceId: remoteSnapshot.device_id,
@@ -1246,7 +1312,7 @@ function App() {
         salesReturns: remoteSnapshot.payload.salesReturns || [],
         purchaseReturns: remoteSnapshot.payload.purchaseReturns || []
       }
-      lastSavedDataRef.current = JSON.stringify(normalizedData)
+      lastSavedDataRef.current[tenantKey] = JSON.stringify(normalizedData)
       writeTenantCache(metadata.activeCompanyId, tenantKey, normalizedData, remoteSnapshot.revision)
       setSuppliers(normalizedData.suppliers)
       setCustomers(normalizedData.customers)
