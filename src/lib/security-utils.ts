@@ -155,7 +155,10 @@ export function saveUserAccounts(accounts: UserAccount[], overwrite = false): vo
   localStorage.setItem(APP_USERS_KEY, JSON.stringify(merged))
 }
 
+let gActiveUser: AuthenticatedUser | null = null
+
 export function persistActiveUserSession(user: AuthenticatedUser): void {
+  gActiveUser = user
   try {
     sessionStorage.setItem(APP_AUTH_ACTIVE_USER_KEY, JSON.stringify(user))
     localStorage.setItem(APP_AUTH_ACTIVE_USER_KEY, JSON.stringify(user))
@@ -210,6 +213,10 @@ export function hasMasterAdmin(): boolean {
 }
 
 export function getCurrentUser(): AuthenticatedUser | null {
+  if (gActiveUser && gActiveUser.isActive !== false) {
+    return gActiveUser
+  }
+
   const cachedUserStr =
     sessionStorage.getItem(APP_AUTH_ACTIVE_USER_KEY) ||
     localStorage.getItem(APP_AUTH_ACTIVE_USER_KEY)
@@ -222,8 +229,11 @@ export function getCurrentUser(): AuthenticatedUser | null {
           (a) => a.id === cachedUser.id || a.username.toLowerCase() === cachedUser.username.toLowerCase()
         )
         if (freshAccount && freshAccount.isActive) {
-          return toAuthenticatedUser(freshAccount)
+          const authUser = toAuthenticatedUser(freshAccount)
+          gActiveUser = authUser
+          return authUser
         }
+        gActiveUser = cachedUser
         return cachedUser
       }
     } catch (e) {
@@ -236,6 +246,7 @@ export function getCurrentUser(): AuthenticatedUser | null {
     const account = getUserAccounts().find((item) => item.id === userId && item.isActive)
     if (account) {
       const authUser = toAuthenticatedUser(account)
+      gActiveUser = authUser
       persistActiveUserSession(authUser)
       return authUser
     }
@@ -252,8 +263,12 @@ export function getChangedByLabel(): string {
   if (!user) return 'Unknown User'
   const isMaster = user.role === 'master_admin' || isMasterAdminIdentifier(user.username)
   
-  if (user.displayName && user.displayName.trim() && user.displayName.trim().toLowerCase() !== user.username.trim().toLowerCase()) {
-    return user.displayName.trim()
+  if (user.displayName && user.displayName.trim()) {
+    const cleanName = user.displayName.trim()
+    const cleanUser = user.username ? user.username.trim().toLowerCase() : ''
+    if (cleanName.toLowerCase() !== cleanUser && cleanName.toLowerCase() !== cleanUser.split('@')[0]) {
+      return cleanName
+    }
   }
 
   if (isMaster) return 'Master Admin'
@@ -520,10 +535,15 @@ export async function verifyAppPasscode(passcode: string): Promise<boolean> {
 }
 
 export function lockAppSession(): void {
-  sessionStorage.removeItem(APP_AUTH_SESSION_KEY)
-  sessionStorage.removeItem(APP_AUTH_USER_ID_KEY)
-  sessionStorage.removeItem(APP_AUTH_ACTIVE_USER_KEY)
-  localStorage.removeItem(APP_AUTH_ACTIVE_USER_KEY)
+  gActiveUser = null
+  try {
+    sessionStorage.removeItem(APP_AUTH_SESSION_KEY)
+    sessionStorage.removeItem(APP_AUTH_USER_ID_KEY)
+    sessionStorage.removeItem(APP_AUTH_ACTIVE_USER_KEY)
+    localStorage.removeItem(APP_AUTH_ACTIVE_USER_KEY)
+  } catch (e) {
+    console.error('Failed to clear session storage:', e)
+  }
   appendAuditLog('app_locked')
 }
 
