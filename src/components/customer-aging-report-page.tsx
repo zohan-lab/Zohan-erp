@@ -4,6 +4,7 @@ import {
   SalesInvoice,
   CustomerPayment,
   CustomerCreditNote,
+  CustomerDebitNote,
   SalesReturn
 } from '@/lib/types'
 import {
@@ -59,6 +60,7 @@ interface CustomerAgingReportPageProps {
   salesInvoices: SalesInvoice[]
   customerPayments: CustomerPayment[]
   creditNotes?: CustomerCreditNote[]
+  customerDebitNotes?: CustomerDebitNote[]
   salesReturns?: SalesReturn[]
   currentFY: string
   businessName?: string
@@ -73,6 +75,7 @@ export default function CustomerAgingReportPage({
   salesInvoices = [],
   customerPayments = [],
   creditNotes = [],
+  customerDebitNotes = [],
   salesReturns = [],
   currentFY,
   businessName = 'SK TRADERS'
@@ -101,9 +104,11 @@ export default function CustomerAgingReportPage({
       filteredSalesInvoices,
       customerPayments,
       creditNotes,
-      salesReturns
+      salesReturns,
+      new Date(),
+      customerDebitNotes
     )
-  }, [customers, filteredSalesInvoices, customerPayments, creditNotes, salesReturns])
+  }, [customers, filteredSalesInvoices, customerPayments, creditNotes, salesReturns, customerDebitNotes])
 
   // 3. Search & Tab Filtered Customers
   const processedCustomers = useMemo(() => {

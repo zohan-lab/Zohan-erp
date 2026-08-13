@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Supplier, PurchaseInvoice, Payment, LedgerEntry, SupplierDebitNote, PurchaseReturn } from '@/lib/types'
+import { Supplier, PurchaseInvoice, Payment, LedgerEntry, SupplierDebitNote, SupplierCreditNote, PurchaseReturn } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -15,12 +15,22 @@ interface SupplierLedgerPageProps {
   invoices: PurchaseInvoice[]
   payments: Payment[]
   debitNotes: SupplierDebitNote[]
+  supplierCreditNotes?: SupplierCreditNote[]
   purchaseReturns: PurchaseReturn[]
   currentFY: string
   businessName?: string
 }
 
-export default function SupplierLedgerPage({ suppliers, invoices, payments, debitNotes, purchaseReturns, currentFY, businessName }: SupplierLedgerPageProps) {
+export default function SupplierLedgerPage({
+  suppliers,
+  invoices,
+  payments,
+  debitNotes,
+  supplierCreditNotes = [],
+  purchaseReturns,
+  currentFY,
+  businessName
+}: SupplierLedgerPageProps) {
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>('')
   const [periodFilter, setPeriodFilter] = useState<PeriodFilterState>(defaultPeriodFilterState)
 
@@ -82,6 +92,20 @@ export default function SupplierLedgerPage({ suppliers, invoices, payments, debi
       })
     })
 
+    supplierCreditNotes.forEach(cn => {
+      if (cn.supplierId !== selectedSupplierId) return
+      rawTransactions.push({
+        date: cn.date,
+        description: 'Credit Note',
+        debit: 0,
+        credit: cn.amount,
+        type: 'invoice',
+        refId: cn.id,
+        timestamp: cn.createdAt || new Date(cn.date).getTime(),
+        isBeforePeriod: isRecordBeforePeriod(cn.date, periodFilter, currentFY)
+      })
+    })
+
     purchaseReturns.forEach(pr => {
       if (pr.supplierId !== selectedSupplierId) return
       rawTransactions.push({
@@ -104,7 +128,7 @@ export default function SupplierLedgerPage({ suppliers, invoices, payments, debi
       startISO: startISO || undefined,
       transactions: filteredTx
     })
-  }, [selectedSupplierId, invoices, payments, debitNotes, purchaseReturns, currentFY, suppliers, periodFilter])
+  }, [selectedSupplierId, invoices, payments, debitNotes, supplierCreditNotes, purchaseReturns, currentFY, suppliers, periodFilter])
 
   const selectedSupplier = suppliers.find(s => s.id === selectedSupplierId)
 

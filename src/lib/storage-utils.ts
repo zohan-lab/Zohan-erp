@@ -33,6 +33,8 @@ export interface TenantData {
   cashBankTransactions: any[]
   creditNotes: any[]
   debitNotes: any[]
+  customerDebitNotes?: any[]
+  supplierCreditNotes?: any[]
   salesReturns: any[]
   purchaseReturns: any[]
   userAccounts?: any[]
@@ -56,6 +58,8 @@ export const TENANT_COLLECTION_KEYS: Array<keyof TenantData> = [
   'cashBankTransactions',
   'creditNotes',
   'debitNotes',
+  'customerDebitNotes',
+  'supplierCreditNotes',
   'salesReturns',
   'purchaseReturns',
   'userAccounts'
@@ -146,6 +150,8 @@ export function getTenantData(companyId: string, _fy?: string): TenantData {
       cashBankTransactions: [],
       creditNotes: [],
       debitNotes: [],
+      customerDebitNotes: [],
+      supplierCreditNotes: [],
       salesReturns: [],
       purchaseReturns: [],
       userAccounts: []
@@ -174,6 +180,8 @@ export function getTenantData(companyId: string, _fy?: string): TenantData {
   parsedData.cashBankTransactions = parsedData.cashBankTransactions || []
   parsedData.creditNotes = parsedData.creditNotes || []
   parsedData.debitNotes = parsedData.debitNotes || []
+  parsedData.customerDebitNotes = parsedData.customerDebitNotes || []
+  parsedData.supplierCreditNotes = parsedData.supplierCreditNotes || []
   parsedData.salesReturns = parsedData.salesReturns || []
   parsedData.purchaseReturns = parsedData.purchaseReturns || []
   

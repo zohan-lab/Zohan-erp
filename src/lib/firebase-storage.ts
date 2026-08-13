@@ -405,6 +405,14 @@ export async function deleteDebitNote(companyId: string, noteId: string): Promis
   await deleteEntityRemote(companyId, 'debitNotes', noteId)
 }
 
+export async function deleteCustomerDebitNote(companyId: string, noteId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'customerDebitNotes', noteId)
+}
+
+export async function deleteSupplierCreditNote(companyId: string, noteId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'supplierCreditNotes', noteId)
+}
+
 export async function deleteSalesReturn(companyId: string, returnId: string): Promise<void> {
   await deleteEntityRemote(companyId, 'salesReturns', returnId)
 }

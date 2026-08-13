@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Customer, SalesInvoice, CustomerPayment, LedgerEntry, CustomerCreditNote, SalesReturn } from '@/lib/types'
+import { Customer, SalesInvoice, CustomerPayment, LedgerEntry, CustomerCreditNote, CustomerDebitNote, SalesReturn } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -15,12 +15,22 @@ interface CustomerLedgerPageProps {
   salesInvoices: SalesInvoice[]
   customerPayments: CustomerPayment[]
   creditNotes: CustomerCreditNote[]
+  customerDebitNotes?: CustomerDebitNote[]
   salesReturns: SalesReturn[]
   currentFY: string
   businessName?: string
 }
 
-export default function CustomerLedgerPage({ customers, salesInvoices, customerPayments, creditNotes, salesReturns, currentFY, businessName = 'SK TRADERS' }: CustomerLedgerPageProps) {
+export default function CustomerLedgerPage({
+  customers,
+  salesInvoices,
+  customerPayments,
+  creditNotes,
+  customerDebitNotes = [],
+  salesReturns,
+  currentFY,
+  businessName = 'SK TRADERS'
+}: CustomerLedgerPageProps) {
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('')
   const [periodFilter, setPeriodFilter] = useState<PeriodFilterState>(defaultPeriodFilterState)
 
@@ -82,6 +92,20 @@ export default function CustomerLedgerPage({ customers, salesInvoices, customerP
       })
     })
 
+    customerDebitNotes.forEach(dn => {
+      if (dn.customerId !== selectedCustomerId) return
+      rawTransactions.push({
+        date: dn.date,
+        description: 'Debit Note',
+        debit: dn.amount,
+        credit: 0,
+        type: 'invoice',
+        refId: dn.id,
+        timestamp: dn.createdAt || new Date(dn.date).getTime(),
+        isBeforePeriod: isRecordBeforePeriod(dn.date, periodFilter, currentFY)
+      })
+    })
+
     salesReturns.forEach(sr => {
       if (sr.customerId !== selectedCustomerId) return
       rawTransactions.push({
@@ -104,7 +128,7 @@ export default function CustomerLedgerPage({ customers, salesInvoices, customerP
       startISO: startISO || undefined,
       transactions: filteredTx
     })
-  }, [selectedCustomerId, salesInvoices, customerPayments, creditNotes, salesReturns, currentFY, customers, periodFilter])
+  }, [selectedCustomerId, salesInvoices, customerPayments, creditNotes, customerDebitNotes, salesReturns, currentFY, customers, periodFilter])
 
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId)
 

@@ -200,7 +200,9 @@ import {
   SalesInvoice,
   CustomerPayment,
   CustomerCreditNote,
+  CustomerDebitNote,
   SupplierDebitNote,
+  SupplierCreditNote,
   SalesReturn,
   PurchaseReturn,
   ExpenseType,
@@ -239,7 +241,9 @@ import CashBankBookReport from '@/components/cash-bank-book-report'
 import CashBankManagement from '@/components/cash-bank-management'
 import UserManagementPage, { PermissionOption } from '@/components/user-management-page'
 import CustomerCreditNotePage from '@/components/customer-credit-note-page'
+import CustomerDebitNotePage from '@/components/customer-debit-note-page'
 import SupplierDebitNotePage from '@/components/supplier-debit-note-page'
+import SupplierCreditNotePage from '@/components/supplier-credit-note-page'
 import SalesReturnPage from '@/components/sales-return-page'
 import PurchaseReturnPage from '@/components/purchase-return-page'
 import { loadBusinessesFromCloud, saveBusinessToCloud, deleteBusinessFromCloud } from '@/lib/business-sync'
@@ -260,6 +264,8 @@ const tenantDataCollectionKeys: Array<keyof TenantData> = [
   'discountLedgerEntries',
   'creditNotes',
   'debitNotes',
+  'customerDebitNotes',
+  'supplierCreditNotes',
   'salesReturns',
   'purchaseReturns',
   'userAccounts'
@@ -392,6 +398,7 @@ const navGroups: NavGroup[] = [
       { id: 'sales-invoices', label: 'Sales Invoice', icon: Receipt },
       { id: 'customer-payments', label: 'Payment In', icon: CreditCard },
       { id: 'customer-credit-notes', label: 'Credit Note', icon: FileText },
+      { id: 'customer-debit-notes', label: 'Debit Note', icon: FileText },
       { id: 'sales-returns', label: 'Sales Return', icon: Receipt },
       { id: 'customer-ledger', label: 'Customer Ledger', icon: FileText },
       { id: 'customers', label: 'Customer', icon: UsersThree },
@@ -403,6 +410,7 @@ const navGroups: NavGroup[] = [
       { id: 'invoices', label: 'Purchased Invoice', icon: Receipt },
       { id: 'payments', label: 'Payment Out', icon: CreditCard },
       { id: 'supplier-debit-notes', label: 'Debit Note', icon: FileText },
+      { id: 'supplier-credit-notes', label: 'Credit Note', icon: FileText },
       { id: 'purchase-returns', label: 'Purchased Return', icon: Receipt },
       { id: 'supplier-ledger', label: 'Supplier Ledger', icon: FileText },
       { id: 'suppliers', label: 'Supplier', icon: Users },
@@ -496,7 +504,9 @@ const viewNames: Record<string, string> = {
   'cash-bank-ledger': 'Cash & Bank Ledger',
   'user-management': 'Agent Access',
   'customer-credit-notes': 'Credit Note',
+  'customer-debit-notes': 'Debit Note',
   'supplier-debit-notes': 'Debit Note',
+  'supplier-credit-notes': 'Credit Note',
   'sales-returns': 'Sales Return',
   'purchase-returns': 'Purchase Return',
 }
@@ -533,6 +543,8 @@ function App() {
   const [cashBankTransactions, setCashBankTransactions] = useState<any[]>([])
   const [creditNotes, setCreditNotes] = useState<CustomerCreditNote[]>([])
   const [debitNotes, setDebitNotes] = useState<SupplierDebitNote[]>([])
+  const [customerDebitNotes, setCustomerDebitNotes] = useState<CustomerDebitNote[]>([])
+  const [supplierCreditNotes, setSupplierCreditNotes] = useState<SupplierCreditNote[]>([])
   const [salesReturns, setSalesReturns] = useState<SalesReturn[]>([])
   const [purchaseReturns, setPurchaseReturns] = useState<PurchaseReturn[]>([])
   const [selectedInvoiceDetailsNo, setSelectedInvoiceDetailsNo] = useState<string>('')
@@ -584,6 +596,8 @@ function App() {
           cashBankTransactions: collectionKey === 'cashBankTransactions' ? next : cashBankTransactions,
           creditNotes: collectionKey === 'creditNotes' ? next : creditNotes,
           debitNotes: collectionKey === 'debitNotes' ? next : debitNotes,
+          customerDebitNotes: collectionKey === 'customerDebitNotes' ? next : customerDebitNotes,
+          supplierCreditNotes: collectionKey === 'supplierCreditNotes' ? next : supplierCreditNotes,
           salesReturns: collectionKey === 'salesReturns' ? next : salesReturns,
           purchaseReturns: collectionKey === 'purchaseReturns' ? next : purchaseReturns,
           userAccounts
@@ -612,6 +626,8 @@ function App() {
   const syncSetCashBankTransactions = syncSetState(setCashBankTransactions, 'cashBankTransactions')
   const syncSetCreditNotes = syncSetState(setCreditNotes, 'creditNotes')
   const syncSetDebitNotes = syncSetState(setDebitNotes, 'debitNotes')
+  const syncSetCustomerDebitNotes = syncSetState(setCustomerDebitNotes, 'customerDebitNotes')
+  const syncSetSupplierCreditNotes = syncSetState(setSupplierCreditNotes, 'supplierCreditNotes')
   const syncSetSalesReturns = syncSetState(setSalesReturns, 'salesReturns')
   const syncSetPurchaseReturns = syncSetState(setPurchaseReturns, 'purchaseReturns')
 
@@ -665,6 +681,8 @@ function App() {
       setCashBankTransactions([])
       setCreditNotes([])
       setDebitNotes([])
+      setCustomerDebitNotes([])
+      setSupplierCreditNotes([])
       setSalesReturns([])
       setPurchaseReturns([])
       const updatedMeta: AppMetadata = {
@@ -695,6 +713,8 @@ function App() {
       setCashBankTransactions([])
       setCreditNotes([])
       setDebitNotes([])
+      setCustomerDebitNotes([])
+      setSupplierCreditNotes([])
       setSalesReturns([])
       setPurchaseReturns([])
       const updatedMeta: AppMetadata = { ...metadata, activeFY: fy }
@@ -761,6 +781,8 @@ function App() {
   const safeExpenseEntries = expenseEntries || []
   const safeCreditNotes = creditNotes || []
   const safeDebitNotes = debitNotes || []
+  const safeCustomerDebitNotes = customerDebitNotes || []
+  const safeSupplierCreditNotes = supplierCreditNotes || []
   const safeSalesReturns = salesReturns || []
   const safePurchaseReturns = purchaseReturns || []
   const safeFixedSchemes = fixedSchemes || []
@@ -1044,6 +1066,8 @@ function App() {
     setCashBankTransactions([])
     setCreditNotes([])
     setDebitNotes([])
+    setCustomerDebitNotes([])
+    setSupplierCreditNotes([])
     setSalesReturns([])
     setPurchaseReturns([])
 
@@ -1072,6 +1096,8 @@ function App() {
         cashBankTransactions: parsedData.cashBankTransactions || [],
         creditNotes: parsedData.creditNotes || [],
         debitNotes: parsedData.debitNotes || [],
+        customerDebitNotes: parsedData.customerDebitNotes || [],
+        supplierCreditNotes: parsedData.supplierCreditNotes || [],
         salesReturns: parsedData.salesReturns || [],
         purchaseReturns: parsedData.purchaseReturns || [],
         userAccounts: parsedData.userAccounts || getUserAccounts() || []
@@ -1094,6 +1120,8 @@ function App() {
       setCashBankTransactions(normalizedData.cashBankTransactions)
       setCreditNotes(normalizedData.creditNotes)
       setDebitNotes(normalizedData.debitNotes)
+      setCustomerDebitNotes(normalizedData.customerDebitNotes || [])
+      setSupplierCreditNotes(normalizedData.supplierCreditNotes || [])
       setSalesReturns(normalizedData.salesReturns)
       setPurchaseReturns(normalizedData.purchaseReturns)
       if (normalizedData.userAccounts && normalizedData.userAccounts.length > 0) {
@@ -1208,6 +1236,8 @@ function App() {
         cashBankTransactions: setCashBankTransactions,
         creditNotes: setCreditNotes,
         debitNotes: setDebitNotes,
+        customerDebitNotes: setCustomerDebitNotes,
+        supplierCreditNotes: setSupplierCreditNotes,
         salesReturns: setSalesReturns,
         purchaseReturns: setPurchaseReturns,
         userAccounts: setUserAccounts
@@ -1398,6 +1428,8 @@ function App() {
         cashBankTransactions: [],
         creditNotes: [],
         debitNotes: [],
+        customerDebitNotes: [],
+        supplierCreditNotes: [],
         salesReturns: [],
         purchaseReturns: []
       }
@@ -1948,7 +1980,9 @@ function App() {
       case 'cash-bank-voucher':
       case 'cash-bank-ledger':
       case 'customer-credit-notes':
+      case 'customer-debit-notes':
       case 'supplier-debit-notes':
+      case 'supplier-credit-notes':
       case 'sales-returns':
       case 'purchase-returns':
         if (!canAccessView(action)) {
@@ -2191,6 +2225,7 @@ function App() {
               invoices={safeInvoices}
               payments={safePayments}
               debitNotes={safeDebitNotes}
+              supplierCreditNotes={safeSupplierCreditNotes}
               purchaseReturns={safePurchaseReturns}
               currentFY={safeCurrentFY}
               businessName={safeBusinessName}
@@ -2203,6 +2238,7 @@ function App() {
               salesInvoices={safeSalesInvoices}
               customerPayments={safeCustomerPayments}
               creditNotes={safeCreditNotes}
+              customerDebitNotes={safeCustomerDebitNotes}
               salesReturns={safeSalesReturns}
               currentFY={safeCurrentFY}
             />
@@ -2251,6 +2287,7 @@ function App() {
               salesInvoices={safeSalesInvoices}
               customerPayments={safeCustomerPayments}
               creditNotes={safeCreditNotes}
+              customerDebitNotes={safeCustomerDebitNotes}
               salesReturns={safeSalesReturns}
               currentFY={safeCurrentFY}
               businessName={safeBusinessName}
@@ -2324,8 +2361,12 @@ function App() {
           )
         case 'customer-credit-notes':
           return <CustomerCreditNotePage creditNotes={safeCreditNotes} setCreditNotes={syncSetCreditNotes} customers={safeCustomers} currentFY={safeCurrentFY} isLocked={isViewReadOnly('customer-credit-notes')} activeCompanyId={metadata.activeCompanyId} />
+        case 'customer-debit-notes':
+          return <CustomerDebitNotePage customerDebitNotes={safeCustomerDebitNotes} setCustomerDebitNotes={syncSetCustomerDebitNotes} customers={safeCustomers} currentFY={safeCurrentFY} isLocked={isViewReadOnly('customer-debit-notes')} activeCompanyId={metadata.activeCompanyId} />
         case 'supplier-debit-notes':
           return <SupplierDebitNotePage debitNotes={safeDebitNotes} setDebitNotes={syncSetDebitNotes} suppliers={safeSuppliers} currentFY={safeCurrentFY} isLocked={isViewReadOnly('supplier-debit-notes')} activeCompanyId={metadata.activeCompanyId} />
+        case 'supplier-credit-notes':
+          return <SupplierCreditNotePage supplierCreditNotes={safeSupplierCreditNotes} setSupplierCreditNotes={syncSetSupplierCreditNotes} suppliers={safeSuppliers} currentFY={safeCurrentFY} isLocked={isViewReadOnly('supplier-credit-notes')} activeCompanyId={metadata.activeCompanyId} />
         case 'sales-returns':
           return (
             <SalesReturnPage
