@@ -112,7 +112,6 @@ export default function DiscountWalletPage({
   const [transferDate, setTransferDate] = useState(new Date().toISOString().split('T')[0])
   const [transferRef, setTransferRef] = useState('')
   const [transferRemarks, setTransferRemarks] = useState('')
-  const [transferNoteType, setTransferNoteType] = useState<'debit_note' | 'credit_note'>('debit_note')
 
   // Persistent CD Ledger Transfers
   const [transfers, setTransfers] = useState<CDLedgerTransfer[]>(() => {
@@ -220,7 +219,7 @@ export default function DiscountWalletPage({
       date: transferDate || new Date().toISOString().split('T')[0],
       reference: refStr,
       remarks: noteRemarks,
-      noteType: transferNoteType,
+      noteType: 'debit_note',
       debitNoteId: newDebitNote.id,
       createdAt: new Date().toISOString(),
       createdBy: getChangedByLabel(),
@@ -2384,19 +2383,6 @@ export default function DiscountWalletPage({
                 value={transferDate}
                 onChange={(e) => setTransferDate(e.target.value)}
               />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Action / Note Type</Label>
-              <Select value={transferNoteType} onValueChange={(val: any) => setTransferNoteType(val)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="debit_note">Supplier Debit Note (Adjust Payable)</SelectItem>
-                  <SelectItem value="credit_note">Credit Note Adjustment</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
 
             <div className="space-y-1.5">
