@@ -210,16 +210,28 @@ export function hasMasterAdmin(): boolean {
 }
 
 export function getCurrentUser(): AuthenticatedUser | null {
-  const userId = sessionStorage.getItem(APP_AUTH_USER_ID_KEY)
-  const cachedUserStr = sessionStorage.getItem(APP_AUTH_ACTIVE_USER_KEY) || localStorage.getItem(APP_AUTH_ACTIVE_USER_KEY)
+  const cachedUserStr =
+    sessionStorage.getItem(APP_AUTH_ACTIVE_USER_KEY) ||
+    localStorage.getItem(APP_AUTH_ACTIVE_USER_KEY)
 
-  let cachedUser: AuthenticatedUser | null = null
   if (cachedUserStr) {
     try {
-      cachedUser = JSON.parse(cachedUserStr) as AuthenticatedUser
-    } catch (e) { }
+      const cachedUser = JSON.parse(cachedUserStr) as AuthenticatedUser
+      if (cachedUser && cachedUser.id && cachedUser.username && cachedUser.isActive !== false) {
+        const freshAccount = getUserAccounts().find(
+          (a) => a.id === cachedUser.id || a.username.toLowerCase() === cachedUser.username.toLowerCase()
+        )
+        if (freshAccount && freshAccount.isActive) {
+          return toAuthenticatedUser(freshAccount)
+        }
+        return cachedUser
+      }
+    } catch (e) {
+      console.warn('Failed to parse active user session:', e)
+    }
   }
 
+  const userId = sessionStorage.getItem(APP_AUTH_USER_ID_KEY)
   if (userId) {
     const account = getUserAccounts().find((item) => item.id === userId && item.isActive)
     if (account) {
@@ -227,18 +239,6 @@ export function getCurrentUser(): AuthenticatedUser | null {
       persistActiveUserSession(authUser)
       return authUser
     }
-  }
-
-  if (cachedUser && cachedUser.isActive) {
-    const freshAccount = getUserAccounts().find(
-      a => a.id === cachedUser!.id || a.username.toLowerCase() === cachedUser!.username.toLowerCase()
-    )
-    if (freshAccount && freshAccount.isActive) {
-      const authUser = toAuthenticatedUser(freshAccount)
-      persistActiveUserSession(authUser)
-      return authUser
-    }
-    return cachedUser
   }
 
   return null
