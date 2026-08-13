@@ -1280,6 +1280,10 @@ function App() {
           return
         }
 
+        // CRITICAL: Commit user to gActiveUser synchronously in security-utils
+        // BEFORE React re-renders. This guarantees getChangedByLabel() resolves
+        // correctly on any immediate edit made after login without a page reload.
+        persistActiveUserSession(user)
         setCurrentUser(user)
         setIsAuthenticated(true)
         setAuthPasscode('')

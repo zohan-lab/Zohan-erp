@@ -236,9 +236,17 @@ export async function signInRemoteUser(
         await signOut(auth)
         throw new Error('Your account is inactive. Contact the admin.')
       }
-      return toAuthenticatedUser(credential.user.uid, profile)
+      const user = toAuthenticatedUser(credential.user.uid, profile)
+      // CRITICAL: Synchronously commit user to gActiveUser via persistActiveUserSession
+      // so getChangedByLabel() resolves correctly on immediate edits without a page reload.
+      persistActiveUserSession(user)
+      return user
     }
-    return firebaseUserToAuthenticatedUser(credential.user)
+    const fallbackUser = firebaseUserToAuthenticatedUser(credential.user)
+    if (fallbackUser) {
+      persistActiveUserSession(fallbackUser)
+    }
+    return fallbackUser
   } catch (error: unknown) {
     if (error instanceof RemoteAuthServiceUnavailableError) throw error
     const code = (error as { code?: string }).code
