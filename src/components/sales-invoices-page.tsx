@@ -1,4 +1,4 @@
-import { getChangedByLabel } from '@/lib/security-utils'
+import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
 import { useState, useMemo } from 'react'
 import { PeriodDateFilter, PeriodFilterState, defaultPeriodFilterState, isRecordInPeriod } from '@/components/period-date-filter'
 import { SalesInvoice, Customer, Item, InvoiceItem, CustomerPayment, PurchaseInvoice, PurchaseReturn, SalesReturn } from '@/lib/types'
@@ -517,7 +517,7 @@ export default function SalesInvoicesPage({
           {
             timestamp: new Date().toISOString(),
             action: 'updated',
-            changedBy: getChangedByLabel(),
+            changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
             changes: [
               ...(editingInvoice.invoiceAmount !== finalInvoiceAmount ? [{ field: 'Amount', from: String(editingInvoice.invoiceAmount), to: String(finalInvoiceAmount) }] : []),
               ...(editingInvoice.invoiceNo !== invoiceNo ? [{ field: 'Invoice No', from: editingInvoice.invoiceNo, to: invoiceNo }] : []),
@@ -549,7 +549,7 @@ export default function SalesInvoicesPage({
           {
             timestamp: new Date().toISOString(),
             action: 'created',
-            changedBy: getChangedByLabel(),
+            changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
             changes: [
               { field: 'Invoice No', from: '', to: invoiceNo },
               { field: 'Customer', from: '', to: customers.find(c => c.id === customerId)?.name || '-' },

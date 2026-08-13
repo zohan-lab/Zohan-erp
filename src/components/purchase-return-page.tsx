@@ -1,4 +1,4 @@
-import { getChangedByLabel } from '@/lib/security-utils'
+import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
 import { useState, useMemo } from 'react'
 import { PurchaseReturn, Supplier, Item, InvoiceItem, SupplierDebitNote } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -350,7 +350,7 @@ export default function PurchaseReturnPage({
             {
               timestamp: new Date().toISOString(),
               action: 'updated',
-              changedBy: getChangedByLabel(),
+              changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
               changes: [
                 ...(editingItem.amount !== calculatedTotalAmount ? [{ field: 'Amount', from: String(editingItem.amount), to: String(calculatedTotalAmount) }] : []),
                 ...(editingItem.supplierId !== selectedSupplierId ? [{ field: 'Supplier', from: suppliers.find(s => s.id === editingItem.supplierId)?.name || '-', to: suppliers.find(s => s.id === selectedSupplierId)?.name || '-' }] : []),
@@ -362,7 +362,7 @@ export default function PurchaseReturnPage({
             {
               timestamp: new Date().toISOString(),
               action: 'created',
-              changedBy: getChangedByLabel(),
+              changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
               changes: [
                 { field: 'Return No', from: '', to: finalReturnNo },
                 { field: 'Supplier', from: '', to: suppliers.find(s => s.id === selectedSupplierId)?.name || '-' },
@@ -393,7 +393,7 @@ export default function PurchaseReturnPage({
             {
               timestamp: new Date().toISOString(),
               action: 'updated',
-              changedBy: getChangedByLabel(),
+              changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
               changes: [
                 ...(editingItem.amount !== calculatedTotalAmount ? [{ field: 'Amount', from: String(editingItem.amount), to: String(calculatedTotalAmount) }] : [])
               ]
@@ -403,7 +403,7 @@ export default function PurchaseReturnPage({
             {
               timestamp: new Date().toISOString(),
               action: 'created',
-              changedBy: getChangedByLabel(),
+              changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
               details: 'Auto-generated from Purchase Return'
             }
           ]

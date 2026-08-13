@@ -171,6 +171,9 @@ export const MASTER_ADMIN_EMAIL = 'sksahil299399@gmail.com'
 export function isMasterAdminIdentifier(username: string | null | undefined): boolean {
   if (!username) return false
   const clean = username.trim().toLowerCase()
+  // Strict: only the exact master admin email is a privileged identifier.
+  // The legacy clean.includes('master') wildcard has been removed — it would
+  // mis-elevate any address containing the word "master" (postmaster@, masterbatch@…).
   return clean === MASTER_ADMIN_EMAIL.toLowerCase()
 }
 
@@ -184,6 +187,7 @@ function toAuthenticatedUser(account: UserAccount): AuthenticatedUser {
     id: account.id,
     username: account.username,
     displayName: displayName,
+
     role: isMaster ? 'master_admin' : 'agent',
     permissions: account.permissions,
     isActive: account.isActive,
@@ -235,12 +239,16 @@ export function getCurrentUser(): AuthenticatedUser | null {
   return null
 }
 
-/** Returns the current user's email (username) for edit history audit trails. */
+/** Returns a human-readable label for edit history audit trails.
+ *  Priority: displayName → username → 'Unknown User'.
+ *  Master Admin is always returned as 'Master Admin' — the raw email is never surfaced. */
 export function getChangedByLabel(): string {
   const user = getCurrentUser()
   if (!user) return 'Unknown User'
   const isMaster = user.role === 'master_admin' || isMasterAdminIdentifier(user.username)
   if (isMaster) return 'Master Admin'
+  // Agents: prefer the human-readable displayName, fall back to username (which may be an email).
+
   return user.displayName || user.username || 'Unknown User'
 }
 

@@ -1,3 +1,4 @@
+import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
 import { useState, useEffect } from 'react'
 import { Supplier, PaymentCDRule, InvoiceCloseCDRule } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -152,7 +153,7 @@ export default function SupplierCDRulesPage({ suppliers, setSuppliers, isLocked 
       invoiceCloseCDRules: selectedSupplier.invoiceCloseCDRules || [],
       advanceCDPercentage: advNum > 0 ? advNum : undefined,
       approvalStatus: 'Approved' as const,
-      changedBy: 'Master Admin',
+      changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
       changedAt: new Date().toISOString(),
       reason: payChangeReason || 'Updated Payment CD Rules'
     }
@@ -180,7 +181,7 @@ export default function SupplierCDRulesPage({ suppliers, setSuppliers, isLocked 
             effectiveFrom: payEffectiveDate
           },
           effectiveDate: payEffectiveDate,
-          changedBy: 'Master Admin',
+          changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
           changedAt: new Date().toISOString(),
           reason: payChangeReason || 'Updated Payment CD Rules',
           approvalStatus: 'Approved'
@@ -232,7 +233,7 @@ export default function SupplierCDRulesPage({ suppliers, setSuppliers, isLocked 
       invoiceCloseCDRules: draftCloseRules,
       advanceCDPercentage: selectedSupplier.advanceCDPercentage,
       approvalStatus: 'Approved' as const,
-      changedBy: 'Master Admin',
+      changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
       changedAt: new Date().toISOString(),
       reason: closeChangeReason || 'Updated Invoice Closed CD Rules'
     }
@@ -259,7 +260,7 @@ export default function SupplierCDRulesPage({ suppliers, setSuppliers, isLocked 
             effectiveFrom: closeEffectiveDate
           },
           effectiveDate: closeEffectiveDate,
-          changedBy: 'Master Admin',
+          changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
           changedAt: new Date().toISOString(),
           reason: closeChangeReason || 'Updated Invoice Closed CD Rules',
           approvalStatus: 'Approved'
@@ -293,7 +294,7 @@ export default function SupplierCDRulesPage({ suppliers, setSuppliers, isLocked 
       invoiceCloseCDRules: selectedSupplier.invoiceCloseCDRules || [],
       advanceCDPercentage: selectedSupplier.advanceCDPercentage,
       approvalStatus: 'Approved' as const,
-      changedBy: 'Master Admin',
+      changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
       changedAt: new Date().toISOString(),
       reason: targetChangeReason || 'Updated Annual Target'
     }

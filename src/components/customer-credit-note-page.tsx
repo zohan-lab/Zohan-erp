@@ -1,4 +1,4 @@
-import { getChangedByLabel } from '@/lib/security-utils'
+import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
 import { useState, useMemo } from 'react'
 import { CustomerCreditNote, Customer } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -91,7 +91,7 @@ export default function CustomerCreditNotePage({ creditNotes, setCreditNotes, cu
           {
             timestamp: new Date().toISOString(),
             action: 'updated',
-            changedBy: getChangedByLabel(),
+            changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
             changes: [
               ...(editingItem.amount !== amount ? [{ field: 'Amount', from: String(editingItem.amount), to: String(amount) }] : []),
               ...(editingItem.customerId !== selectedEntityInForm ? [{ field: 'Customer', from: customers.find(c => c.id === editingItem.customerId)?.name || '-', to: customers.find(c => c.id === selectedEntityInForm)?.name || '-' }] : []),
@@ -119,7 +119,7 @@ export default function CustomerCreditNotePage({ creditNotes, setCreditNotes, cu
           {
             timestamp: new Date().toISOString(),
             action: 'created',
-            changedBy: getChangedByLabel(),
+            changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
             changes: [
               { field: 'Customer', from: '', to: customers.find(c => c.id === selectedEntityInForm)?.name || '-' },
               { field: 'Amount', from: '', to: String(amount) },

@@ -1,4 +1,4 @@
-import { getChangedByLabel } from '@/lib/security-utils'
+import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
 import { useState, useMemo } from 'react'
 import { FixedScheme, Item, MTBooking, Payment, PurchaseInvoice, Supplier } from '@/lib/types'
 import { Counter, CashBankTransaction } from '@/lib/cash-bank-types'
@@ -118,7 +118,7 @@ export default function PaymentsPage({ payments, setPayments, setMTBookings, inv
           {
             timestamp: new Date().toISOString(),
             action: 'updated',
-            changedBy: getChangedByLabel(),
+            changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
             changes: [
               ...(editingPayment.amount !== amount ? [{ field: 'Amount', from: String(editingPayment.amount), to: String(amount) }] : []),
               ...(editingPayment.supplierId !== supplierId ? [{ field: 'Supplier', from: suppliers.find(s => s.id === editingPayment.supplierId)?.name || '-', to: suppliers.find(s => s.id === supplierId)?.name || '-' }] : []),
@@ -189,7 +189,7 @@ export default function PaymentsPage({ payments, setPayments, setMTBookings, inv
           {
             timestamp: new Date().toISOString(),
             action: 'created',
-            changedBy: getChangedByLabel(),
+            changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
             changes: [
               { field: 'Supplier', from: '', to: suppliers.find(s => s.id === supplierId)?.name || '-' },
               { field: 'Amount', from: '', to: String(amount) },

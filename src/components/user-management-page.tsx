@@ -176,9 +176,18 @@ export default function UserManagementPage({
     }
 
     if (!editingId && !username.trim()) {
-      toast.error('Username is required')
+      toast.error('Agent email is required')
       return
     }
+
+    // Strict email validation — block any write (local + Firebase) if the email is malformed.
+    // This eliminates the legacy path that synthesized fake @sktraders.local addresses.
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!editingId && !emailRegex.test(username.trim())) {
+      toast.error('Please enter a valid email address (e.g. agent@yourcompany.com)')
+      return
+    }
+
     if (!editingId && passcode.trim().length < 6) {
       toast.error('Use at least 6 characters for the agent passcode')
       return
@@ -237,7 +246,7 @@ export default function UserManagementPage({
         if (isServerMode && onCreateRemoteAgent) {
           try {
             await onCreateRemoteAgent({
-              email: username.includes('@') ? username : `${username}@sktraders.local`,
+              email: username.trim().toLowerCase(),
               displayName,
               passcode,
               permissions,
@@ -317,12 +326,13 @@ export default function UserManagementPage({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="agent-username">Username</Label>
+                <Label htmlFor="agent-username">Agent Email</Label>
                 <Input
                   id="agent-username"
+                  type="email"
                   value={username}
                   onChange={(event) => setUsername(event.target.value)}
-                  placeholder="e.g. sales01"
+                  placeholder="e.g. agent@yourcompany.com"
                   disabled={Boolean(editingId)}
                   autoCapitalize="none"
                 />

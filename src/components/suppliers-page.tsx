@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { getChangedByLabel } from '@/lib/security-utils'
 import { Supplier, PurchaseInvoice, Payment, PaymentCDRule, InvoiceCloseCDRule, SupplierCDRuleVersion, CDRuleChangeLog, AnnualTarget } from '@/lib/types'
 import { getAvailableUnits } from '@/lib/custom-data-store'
 import { Button } from '@/components/ui/button'
@@ -48,7 +49,6 @@ interface SuppliersPageProps {
   invoices?: PurchaseInvoice[]
   payments?: Payment[]
   isLocked?: boolean
-  changedBy?: string
   activeFY?: string
   activeCompanyId?: string
 }
@@ -59,7 +59,6 @@ export default function SuppliersPage({
   invoices = [], 
   payments = [], 
   isLocked = false, 
-  changedBy = 'Master Admin',
   activeFY,
   activeCompanyId
 }: SuppliersPageProps) {
@@ -367,12 +366,13 @@ export default function SuppliersPage({
       paymentCDRules: editingSupplier.paymentCDRules || [],
       invoiceCloseCDRules: editingSupplier.invoiceCloseCDRules || [],
       advanceCDPercentage: editingSupplier.advanceCDPercentage || 0,
-      changedBy: changedBy || 'Master Admin',
+      changedBy: getChangedByLabel(),
       changedAt: new Date().toISOString(),
       reason: 'Initial setup baseline',
       approvalStatus: 'Approved' as const
     }]
-  }, [editingSupplier, effectiveFromDate, changedBy])
+  }, [editingSupplier, effectiveFromDate])
+
 
   // ==================== VIEW 1: SUPPLIERS REGISTER LIST (SCREENSHOT 1) ====================
   if (viewMode === 'list') {

@@ -2017,7 +2017,6 @@ function App() {
               invoices={safeInvoices}
               payments={safePayments}
               isLocked={isViewReadOnly('suppliers')}
-              changedBy={currentUser?.displayName || currentUser?.username || 'Master Admin'}
               activeCompanyId={metadata.activeCompanyId}
             />
           )

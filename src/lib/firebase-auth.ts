@@ -69,6 +69,7 @@ function toAuthenticatedUser(uid: string, profile: FirestoreUserProfile): Authen
     id: uid,
     username: profile.email,
     displayName,
+
     role: isMaster ? 'master_admin' : 'agent',
     permissions: profile.permissions || {},
     isActive: profile.isActive,
@@ -94,6 +95,7 @@ function firebaseUserToAuthenticatedUser(fbUser: FirebaseUser): AuthenticatedUse
       id: fbUser.uid || localAccount.id,
       username: email,
       displayName,
+
       role: localAccount.role,
       permissions: localAccount.permissions || {},
       isActive: localAccount.isActive,
@@ -113,6 +115,7 @@ function firebaseUserToAuthenticatedUser(fbUser: FirebaseUser): AuthenticatedUse
     id: fbUser.uid,
     username: email,
     displayName,
+
     role: isMaster ? 'master_admin' : 'agent',
     permissions: {},
     isActive: true
@@ -366,6 +369,13 @@ export async function createRemoteAgentAccount(input: {
   if (!canUseFirebaseAuth() || !db) return
 
   const cleanEmail = input.email.trim().toLowerCase()
+
+  // Backend validation guard: reject before touching Firebase Auth.
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+    throw new Error(`Invalid email address: "${input.email}". Please provide a valid email for the agent account.`)
+  }
+
   const secondaryApp = initializeApp(firebaseConfig as any, `Secondary-${Date.now()}`)
   const secondaryAuth = getAuth(secondaryApp)
 
@@ -390,19 +400,12 @@ export async function createRemoteAgentAccount(input: {
     )
   } catch (error: any) {
     if (error?.code === 'auth/email-already-in-use') {
-      // If user already exists in Firebase Auth, attempt login or Firestore document overwrite
-      const snap = await getDocs(collection(db, 'users'))
-      const match = snap.docs.find(d => (d.data() as FirestoreUserProfile).email === cleanEmail)
-      if (match) {
-        await updateDoc(doc(db, 'users', match.id), {
-          displayName: input.displayName.trim() || cleanEmail,
-          permissions: input.permissions || {},
-          allowedCounters: input.allowedCounters || [],
-          allowedBusinesses: input.allowedBusinesses || [],
-          updatedAt: new Date().toISOString()
-        })
-        return
-      }
+      // Explicit error instead of silent profile overwrite — prevents clobbering
+      // another agent's permissions without any user confirmation.
+      throw new Error(
+        `An agent account with email "${cleanEmail}" already exists. ` +
+        `Edit the existing agent's permissions instead of creating a new one.`
+      )
     }
     throw error
   } finally {

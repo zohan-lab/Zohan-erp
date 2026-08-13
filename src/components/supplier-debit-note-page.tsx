@@ -1,4 +1,4 @@
-import { getChangedByLabel } from '@/lib/security-utils'
+import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
 import { useState, useMemo } from 'react'
 import { SupplierDebitNote, Supplier } from '@/lib/types'
 import { Button } from '@/components/ui/button'
@@ -90,7 +90,7 @@ export default function SupplierDebitNotePage({ debitNotes, setDebitNotes, suppl
           {
             timestamp: new Date().toISOString(),
             action: 'updated',
-            changedBy: getChangedByLabel(),
+            changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
             changes: [
               ...(editingItem.amount !== amount ? [{ field: 'Amount', from: String(editingItem.amount), to: String(amount) }] : []),
               ...(editingItem.supplierId !== selectedEntityInForm ? [{ field: 'Supplier', from: suppliers.find(s => s.id === editingItem.supplierId)?.name || '-', to: suppliers.find(s => s.id === selectedEntityInForm)?.name || '-' }] : []),
@@ -118,7 +118,7 @@ export default function SupplierDebitNotePage({ debitNotes, setDebitNotes, suppl
           {
             timestamp: new Date().toISOString(),
             action: 'created',
-            changedBy: getChangedByLabel(),
+            changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
             changes: [
               { field: 'Supplier', from: '', to: suppliers.find(s => s.id === selectedEntityInForm)?.name || '-' },
               { field: 'Amount', from: '', to: String(amount) },

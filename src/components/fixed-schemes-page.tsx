@@ -1,3 +1,4 @@
+import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
 import { useState, useMemo, useEffect } from 'react'
 import { FixedScheme, Supplier } from '@/lib/types'
 import { getAvailableUnits } from '@/lib/custom-data-store'
@@ -98,7 +99,7 @@ export default function FixedSchemesPage({ fixedSchemes, setFixedSchemes, suppli
       version: nextVersion,
       parentSchemeId: editingScheme?.parentSchemeId || editingScheme?.id,
       previousSchemeId: editingScheme?.id,
-      changedBy: 'Master Admin',
+      changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
       changedAt,
       changeReason,
       approvalStatus: 'Approved'

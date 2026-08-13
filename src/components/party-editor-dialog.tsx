@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { getChangedByLabel } from '@/lib/security-utils'
 import { Customer, Supplier, PaymentCDRule, InvoiceCloseCDRule, SupplierCDRuleVersion, CDRuleChangeLog } from '@/lib/types'
 import { getAvailableUnits } from '@/lib/custom-data-store'
 import { Button } from '@/components/ui/button'
@@ -18,7 +19,6 @@ interface PartyEditorDialogProps {
   type: PartyType
   party?: Party | null
   existingParties?: Party[]
-  changedBy?: string
   onSave: (party: Party) => void
 }
 
@@ -105,7 +105,6 @@ export function PartyEditorDialog({
   type,
   party,
   existingParties = [],
-  changedBy = 'Master Admin',
   onSave
 }: PartyEditorDialogProps) {
   const [availableUnits, setAvailableUnits] = useState(() => getAvailableUnits())

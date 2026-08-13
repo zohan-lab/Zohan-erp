@@ -14,6 +14,8 @@ export interface EditHistoryLog {
   timestamp: string
   action: 'created' | 'updated' | string
   changedBy: string
+  /** Role of the actor captured at edit time. Preferred over string-sniffing for badge logic. */
+  changedByRole?: string
   details?: string
   changes?: EditHistoryChange[]
 }
@@ -197,8 +199,16 @@ export function ThreeDotDropdown({
 
                         {/* Changed by */}
                         {(() => {
-                          const email = log.changedBy || ''
-                          const isMaster = email.toLowerCase().includes('master') || email.toLowerCase().includes('admin') || log.changedBy === 'Master Admin'
+                          const label = log.changedBy || ''
+                          // Authoritative check: use the persisted role field if present (new logs).
+                          // Fall back to string-sniff only for legacy entries that predate the schema.
+                          const isMaster =
+                            log.changedByRole === 'master_admin' ||
+                            (!log.changedByRole && (
+                              label === 'Master Admin' ||
+                              label.toLowerCase().includes('master') ||
+                              label.toLowerCase().includes('admin')
+                            ))
                           return (
                             <div className="flex items-center gap-1.5 text-sm font-medium">
                               {isMaster ? (

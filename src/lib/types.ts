@@ -8,6 +8,10 @@ export interface EditHistoryLog {
   timestamp: string
   action: 'created' | 'updated' | string
   changedBy: string
+  /** Role of the actor at the time of the edit. Used by the audit trail renderer
+   *  to reliably display the correct badge without guessing from the name string.
+   *  Optional for backward compatibility with legacy log entries. */
+  changedByRole?: string
   details?: string
   changes?: EditHistoryChange[]
 }
@@ -106,6 +110,7 @@ export interface CDRuleChangeLog {
   }
   effectiveDate: string
   changedBy: string
+  changedByRole?: string
   changedAt: string
   reason: string
   approvalStatus: RuleApprovalStatus
@@ -124,6 +129,7 @@ export interface FixedScheme {
   parentSchemeId?: string
   previousSchemeId?: string
   changedBy?: string
+  changedByRole?: string
   changedAt?: string
   changeReason?: string
   approvalStatus?: RuleApprovalStatus
