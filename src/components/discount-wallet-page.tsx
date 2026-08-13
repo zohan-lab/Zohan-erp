@@ -1359,74 +1359,7 @@ export default function DiscountWalletPage({
         </Card>
       )}
 
-      {ruleVersionComparison.length > 0 && (
-        <Card className="border-primary/20">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <CardTitle className="text-lg">Rule Version Comparison</CardTitle>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Cashback remains linked to the CD rule version used when it was calculated.
-                </p>
-              </div>
-              <Badge variant="secondary" className="font-mono">
-                Overall wallet: {formatCurrency(ruleVersionComparison.reduce((sum, item) => sum + item.expectedAmount, 0))}
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-              {ruleVersionComparison.slice(0, 6).map((item) => (
-                <div key={item.key} className={`rounded-lg border p-4 ${item.isOld ? 'bg-muted/30' : 'bg-primary/5 border-primary/20'}`}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        {item.isOld ? 'Old CD rule' : 'New CD rule'} · {item.versionLabel}
-                      </div>
-                      <div className="mt-1 text-base font-semibold">{item.ruleName}{item.rateLabel ? `: ${item.rateLabel}` : ''}</div>
-                      <div className="text-xs text-muted-foreground">{item.supplierName}</div>
-                    </div>
-                    <Badge variant={item.isOld ? 'outline' : 'default'}>{item.isOld ? 'Historical' : 'Current'}</Badge>
-                  </div>
-                  <div className="mt-2 text-xs text-muted-foreground">{item.effectiveLabel}</div>
-                  
-                  {(item.paymentCDSummary || item.invoiceCloseCDSummary) && (
-                    <div className="mt-2.5 space-y-1.5 bg-slate-50/90 border border-slate-200/70 rounded-md p-2 text-xs">
-                      {item.paymentCDSummary && (
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                          <span className="font-semibold text-slate-700">Payment CD:</span>
-                          <span className="font-mono text-blue-700 font-bold bg-blue-50 px-2 py-0.5 rounded border border-blue-100/60">
-                            {item.paymentCDSummary}
-                          </span>
-                        </div>
-                      )}
-                      {item.invoiceCloseCDSummary && (
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                          <span className="font-semibold text-slate-700">Invoice Close CD:</span>
-                          <span className="font-mono text-purple-700 font-bold bg-purple-50 px-2 py-0.5 rounded border border-purple-100/60">
-                            {item.invoiceCloseCDSummary}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
 
-                  <div className="mt-4 grid grid-cols-2 gap-3">
-                    <div>
-                      <div className="text-xs text-muted-foreground">Total cashback</div>
-                      <div className="font-mono text-lg font-semibold">{formatCurrency(item.expectedAmount)}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-muted-foreground">Received</div>
-                      <div className="font-mono text-lg font-semibold text-success">{formatCurrency(item.receivedAmount)}</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       <div className="grid grid-cols-3 gap-4">
         <Card>
