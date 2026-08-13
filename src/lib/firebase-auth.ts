@@ -241,44 +241,9 @@ export async function signInRemoteUser(
     if (error instanceof RemoteAuthServiceUnavailableError) throw error
     const code = (error as { code?: string }).code
 
-    // If account does not exist in Firebase Auth yet, auto-create/bootstrap on first login!
-    if (code === 'auth/user-not-found' || code === 'auth/invalid-credential') {
-      try {
-        const cred = await withTimeout(
-          createUserWithEmailAndPassword(auth, cleanEmail, password)
-        )
-        const now = new Date().toISOString()
-        let displayName = cred.user.displayName || (isMasterAdminEmail ? 'Master Admin' : cleanEmail)
-        if (isMasterAdminEmail && (!displayName || displayName === cleanEmail)) {
-          displayName = 'Master Admin'
-        }
-        const newProfile: FirestoreUserProfile = {
-          email: cleanEmail,
-          displayName,
-          role: isMasterAdminEmail ? 'master_admin' : 'agent',
-          permissions: {},
-          isActive: true,
-          companyId: null,
-          allowedCounters: [],
-          allowedBusinesses: [],
-          createdAt: now,
-          updatedAt: now
-        }
-        if (db) {
-          await setDoc(doc(db, 'users', cred.user.uid), newProfile)
-        }
-        return toAuthenticatedUser(cred.user.uid, newProfile)
-      } catch (createErr: unknown) {
-        const createCode = (createErr as { code?: string })?.code
-        if (createCode === 'auth/email-already-in-use') {
-          throw new Error('Incorrect email or password.')
-        }
-        if (createCode === 'auth/weak-password') {
-          throw new Error('Password should be at least 6 characters.')
-        }
-      }
-    }
-
+    // SECURITY: Never create a Firebase Auth account during a sign-in attempt.
+    // auth/user-not-found and auth/invalid-credential are intentionally treated
+    // identically to prevent account enumeration and self-registration attacks.
     const msg =
       code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found'
         ? 'Incorrect email or password.'

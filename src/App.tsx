@@ -163,7 +163,6 @@ import {
   safeJsonParse,
   saveUserAccounts,
   UserAccount,
-  verifyAppPasscode,
   verifyUserLogin,
   verifyUserLoginDetailed
 } from '@/lib/security-utils'
@@ -1246,22 +1245,21 @@ function App() {
 
       try {
         setAuthBusy(true)
-        let email = authUsername.trim().toLowerCase()
+        const email = authUsername.trim().toLowerCase()
+
+        // SECURITY: Require a real email address in server mode.
+        // Reject bare usernames outright — never synthesize a fake domain.
         if (!email.includes('@')) {
-          email = `${email}@sktraders.local`
+          setAuthError('Please enter a valid email address (e.g. you@example.com).')
+          return
         }
 
         let user: AuthenticatedUser | null = null
 
-        // 1. Check local agent accounts first
+        // 1. Check local agent accounts first (handles hybrid local+remote setups)
         const localRes = await verifyUserLoginDetailed(authUsername, authPasscode)
         if (localRes.user) {
           user = localRes.user
-        } else if (email !== authUsername.trim().toLowerCase()) {
-          const localResEmail = await verifyUserLoginDetailed(email, authPasscode)
-          if (localResEmail.user) {
-            user = localResEmail.user
-          }
         }
 
         // 2. If not found locally, try remote server sign-in
@@ -1323,17 +1321,10 @@ function App() {
         toast.success('Master admin created')
       } else {
         const loginRes = await verifyUserLoginDetailed(authUsername, authPasscode)
-        let user = loginRes.user || null
+        const user = loginRes.user || null
 
-        if (!user && getUserAccounts().length === 0 && authUsername.trim().toLowerCase() === 'admin') {
-          const legacyValid = await verifyAppPasscode(authPasscode)
-          if (legacyValid) {
-            user = await createMasterAdmin('admin', 'Master Admin', authPasscode)
-            setUserAccounts(getUserAccounts())
-            toast.success('Old passcode upgraded to master admin')
-          }
-        }
-
+        // SECURITY: No legacy bypass. If verifyUserLoginDetailed returns no user,
+        // the passcode is wrong or the account doesn't exist — show the error directly.
         if (!user) {
           setAuthError(loginRes.error || 'Incorrect username or passcode.')
           return
