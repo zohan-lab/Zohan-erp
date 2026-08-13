@@ -2364,6 +2364,11 @@ function App() {
               counters={allBusinessCounters}
               businesses={metadata.businesses}
               securityMode={useServerAuth ? 'server' : 'local'}
+              currentUser={currentUser}
+              onAdminProfileUpdate={(updatedUser) => {
+                setCurrentUser(updatedUser)
+                setUserAccounts(getUserAccounts())
+              }}
               onCreateRemoteAgent={useServerAuth ? async (input) => {
                 await createRemoteAgentAccount({
                   email: input.email,

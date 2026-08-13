@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ShieldCheck, UserPlus, Trash, PencilSimple, Prohibit } from '@phosphor-icons/react'
+import { ShieldCheck, UserPlus, Trash, PencilSimple, Prohibit, Crown, UserCircle } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -9,14 +9,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import {
+  AuthenticatedUser,
   createAgentAccount,
   deleteAgentAccount,
   getUserAccounts,
   PermissionLevel,
   PermissionMap,
   updateAgentAccount,
+  updateMasterAdminProfile,
   UserAccount
 } from '@/lib/security-utils'
+import { updateRemoteMasterAdminProfile } from '@/lib/firebase-auth'
 import { cn } from '@/lib/utils'
 
 export interface PermissionOption {
@@ -32,6 +35,8 @@ interface UserManagementPageProps {
   securityMode?: 'local' | 'server'
   counters: any[]
   businesses?: { id: string; name: string }[]
+  currentUser?: AuthenticatedUser | null
+  onAdminProfileUpdate?: (updatedUser: AuthenticatedUser) => void
   onSaveAgent?: (input: {
     id: string
     displayName: string
@@ -67,6 +72,8 @@ export default function UserManagementPage({
   businesses = [],
   onAccountsChange,
   securityMode = 'local',
+  currentUser,
+  onAdminProfileUpdate,
   onSaveAgent,
   onCreateRemoteAgent
 }: UserManagementPageProps) {
@@ -75,6 +82,14 @@ export default function UserManagementPage({
     () => accounts.filter((account) => account.role === 'agent'),
     [accounts]
   )
+  const masterAdminAccount = useMemo(
+    () => accounts.find((acc) => acc.role === 'master_admin') || (currentUser?.role === 'master_admin' ? currentUser : null),
+    [accounts, currentUser]
+  )
+  const [adminDisplayName, setAdminDisplayName] = useState(() => currentUser?.displayName || masterAdminAccount?.displayName || 'Master Admin')
+  const [adminPasscode, setAdminPasscode] = useState('')
+  const [isAdminSaving, setIsAdminSaving] = useState(false)
+
   const [editingId, setEditingId] = useState<string | null>(null)
   const [displayName, setDisplayName] = useState('')
   const [username, setUsername] = useState('')
@@ -83,6 +98,43 @@ export default function UserManagementPage({
   const [permissions, setPermissions] = useState<PermissionMap>(() => emptyPermissions(permissionOptions))
   const [allowedCounters, setAllowedCounters] = useState<string[]>([])
   const [allowedBusinesses, setAllowedBusinesses] = useState<string[]>([])
+
+  const handleSaveAdminProfile = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!adminDisplayName.trim()) {
+      toast.error('Admin display name cannot be empty')
+      return
+    }
+    setIsAdminSaving(true)
+    try {
+      let updatedUser: AuthenticatedUser
+      if (isServerMode && currentUser) {
+        await updateRemoteMasterAdminProfile({
+          id: currentUser.id,
+          displayName: adminDisplayName
+        })
+        updatedUser = await updateMasterAdminProfile({
+          displayName: adminDisplayName,
+          passcode: adminPasscode.trim() || undefined
+        })
+      } else {
+        updatedUser = await updateMasterAdminProfile({
+          displayName: adminDisplayName,
+          passcode: adminPasscode.trim() || undefined
+        })
+      }
+      setAdminPasscode('')
+      if (onAdminProfileUpdate) {
+        onAdminProfileUpdate(updatedUser)
+      }
+      onAccountsChange(getUserAccounts())
+      toast.success(`Admin profile updated! Active name: "${updatedUser.displayName}"`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update admin profile')
+    } finally {
+      setIsAdminSaving(false)
+    }
+  }
 
   const groupedOptions = useMemo(() => {
     return permissionOptions.reduce<Record<string, PermissionOption[]>>((acc, option) => {
@@ -285,6 +337,55 @@ export default function UserManagementPage({
 
   return (
     <div className="space-y-6">
+      {/* Master Admin Profile Card */}
+      <Card className="neo-card border-amber-200/60 bg-gradient-to-r from-amber-50/40 via-white to-amber-50/20 shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-amber-900 text-lg">
+            <Crown className="h-5 w-5 text-amber-500" weight="fill" />
+            Master Admin Profile Settings
+          </CardTitle>
+          <CardDescription>
+            Configure your custom display name (e.g. Sahil Khan). This name will be rendered alongside your Crown icon (👑) in all audit logs and edit history dialogs.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSaveAdminProfile} className="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <div className="flex-1 space-y-1.5">
+              <Label htmlFor="admin-display-name" className="text-xs font-semibold text-slate-700">
+                Admin Display Name
+              </Label>
+              <Input
+                id="admin-display-name"
+                value={adminDisplayName}
+                onChange={(e) => setAdminDisplayName(e.target.value)}
+                placeholder="e.g. Sahil Khan"
+                className="bg-white/90 border-slate-200 focus:border-amber-500"
+              />
+            </div>
+            <div className="flex-1 space-y-1.5">
+              <Label htmlFor="admin-passcode" className="text-xs font-semibold text-slate-700">
+                New Passcode (optional)
+              </Label>
+              <Input
+                id="admin-passcode"
+                type="password"
+                value={adminPasscode}
+                onChange={(e) => setAdminPasscode(e.target.value)}
+                placeholder="Leave blank to keep current passcode"
+                className="bg-white/90 border-slate-200 focus:border-amber-500"
+              />
+            </div>
+            <Button
+              type="submit"
+              disabled={isAdminSaving}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-md shadow-amber-600/20 transition-all cursor-pointer"
+            >
+              {isAdminSaving ? 'Saving...' : 'Save Profile'}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
       <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Agent Access</h2>

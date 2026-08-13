@@ -61,9 +61,11 @@ function withTimeout<T>(promise: Promise<T>, ms = 20000): Promise<T> {
 
 function toAuthenticatedUser(uid: string, profile: FirestoreUserProfile): AuthenticatedUser {
   const isMaster = profile.role === 'master_admin' || isMasterAdminIdentifier(profile.email)
-  let displayName = profile.displayName || profile.email
+  let displayName = profile.displayName ? profile.displayName.trim() : ''
   if (isMaster && (!displayName || displayName === profile.email)) {
     displayName = 'Master Admin'
+  } else if (!displayName) {
+    displayName = profile.email
   }
   return {
     id: uid,
@@ -87,7 +89,7 @@ function firebaseUserToAuthenticatedUser(fbUser: FirebaseUser): AuthenticatedUse
   )
   if (localAccount) {
     const isMaster = localAccount.role === 'master_admin' || isMasterAdminIdentifier(email)
-    let displayName = localAccount.displayName || fbUser.displayName || email
+    let displayName = localAccount.displayName ? localAccount.displayName.trim() : (fbUser.displayName || email)
     if (isMaster && (!displayName || displayName === email)) {
       displayName = 'Master Admin'
     }
@@ -96,7 +98,7 @@ function firebaseUserToAuthenticatedUser(fbUser: FirebaseUser): AuthenticatedUse
       username: email,
       displayName,
 
-      role: localAccount.role,
+      role: isMaster ? 'master_admin' : localAccount.role,
       permissions: localAccount.permissions || {},
       isActive: localAccount.isActive,
       allowedCounters: localAccount.allowedCounters || [],
@@ -107,7 +109,7 @@ function firebaseUserToAuthenticatedUser(fbUser: FirebaseUser): AuthenticatedUse
   }
 
   const isMaster = isMasterAdminIdentifier(email) || email === MASTER_ADMIN_EMAIL.toLowerCase()
-  let displayName = fbUser.displayName || email
+  let displayName = fbUser.displayName ? fbUser.displayName.trim() : email
   if (isMaster && (!displayName || displayName === email)) {
     displayName = 'Master Admin'
   }
@@ -255,15 +257,31 @@ export async function signInRemoteUser(
 }
 
 /**
- * Sign out from Firebase Auth.
+ * Sign out from Firebase Auth and purge local session state.
  */
 export async function signOutRemoteUser(): Promise<void> {
+  const { lockAppSession } = await import('./security-utils')
+  lockAppSession()
   if (!auth) return
   try {
     await signOut(auth)
   } catch (error) {
     console.warn('Firebase sign-out failed:', error)
   }
+}
+
+export async function updateRemoteMasterAdminProfile(input: {
+  id: string
+  displayName: string
+}): Promise<void> {
+  if (!canUseFirebaseAuth() || !db) return
+
+  await withTimeout(
+    updateDoc(doc(db, 'users', input.id), {
+      displayName: input.displayName.trim(),
+      updatedAt: new Date().toISOString()
+    })
+  )
 }
 
 /**

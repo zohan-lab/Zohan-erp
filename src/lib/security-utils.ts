@@ -179,9 +179,11 @@ export function isMasterAdminIdentifier(username: string | null | undefined): bo
 
 function toAuthenticatedUser(account: UserAccount): AuthenticatedUser {
   const isMaster = account.role === 'master_admin' || isMasterAdminIdentifier(account.username)
-  let displayName = account.displayName
+  let displayName = account.displayName ? account.displayName.trim() : ''
   if (isMaster && (!displayName || displayName === account.username)) {
     displayName = 'Master Admin'
+  } else if (!displayName) {
+    displayName = account.username
   }
   return {
     id: account.id,
@@ -240,14 +242,18 @@ export function getCurrentUser(): AuthenticatedUser | null {
 }
 
 /** Returns a human-readable label for edit history audit trails.
- *  Priority: displayName → username → 'Unknown User'.
- *  Master Admin is always returned as 'Master Admin' — the raw email is never surfaced. */
+ *  Priority: custom displayName → 'Master Admin' (if master) → username → 'Unknown User'.
+ *  Ensures active authenticated session is dynamically evaluated with zero stale state. */
 export function getChangedByLabel(): string {
   const user = getCurrentUser()
   if (!user) return 'Unknown User'
   const isMaster = user.role === 'master_admin' || isMasterAdminIdentifier(user.username)
+  
+  if (user.displayName && user.displayName.trim() && user.displayName.trim().toLowerCase() !== user.username.trim().toLowerCase()) {
+    return user.displayName.trim()
+  }
+
   if (isMaster) return 'Master Admin'
-  // Agents: prefer the human-readable displayName, fall back to username (which may be an email).
 
   return user.displayName || user.username || 'Unknown User'
 }
@@ -255,7 +261,46 @@ export function getChangedByLabel(): string {
 /** Returns the current user's role for edit history icon differentiation. */
 export function getChangedByRole(): UserRole | 'unknown' {
   const user = getCurrentUser()
-  return user?.role || 'unknown'
+  if (!user) return 'unknown'
+  const isMaster = user.role === 'master_admin' || isMasterAdminIdentifier(user.username)
+  return isMaster ? 'master_admin' : user.role || 'unknown'
+}
+
+export async function updateMasterAdminProfile(input: {
+  displayName: string
+  passcode?: string
+}): Promise<AuthenticatedUser> {
+  const accounts = getUserAccounts()
+  const target = accounts.find((account) => account.role === 'master_admin')
+  if (!target) throw new Error('Master Admin account not found')
+
+  const trimmedDisplayName = input.displayName.trim() || 'Master Admin'
+
+  let salt = target.salt
+  let passcodeHash = target.passcodeHash
+  if (input.passcode?.trim()) {
+    salt = createSalt()
+    passcodeHash = await hashPasscode(input.passcode, salt)
+  }
+
+  const updatedAccounts = accounts.map((account) => {
+    if (account.role !== 'master_admin') return account
+    return {
+      ...account,
+      displayName: trimmedDisplayName,
+      salt,
+      passcodeHash,
+      updatedAt: new Date().toISOString()
+    }
+  })
+
+  saveUserAccounts(updatedAccounts, true)
+
+  const updatedAccount = updatedAccounts.find((account) => account.role === 'master_admin')!
+  const authUser = toAuthenticatedUser(updatedAccount)
+  persistActiveUserSession(authUser)
+  appendAuditLog('master_admin_profile_updated', { displayName: authUser.displayName })
+  return authUser
 }
 
 export async function createMasterAdmin(username: string, displayName: string, passcode: string): Promise<AuthenticatedUser> {
