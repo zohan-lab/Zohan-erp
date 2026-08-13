@@ -160,17 +160,6 @@ export function calculateInventoryReport(
     let saleAltUnitCount = 0
     let salePrimaryUnitCount = 0
 
-    const purchaseBatches: { date: Date; quantityPrimary: number; rate: number; amount: number }[] = []
-
-    if (masterOpeningBase > 0 && masterOpeningValue > 0) {
-      purchaseBatches.push({
-        date: new Date('1900-01-01'),
-        quantityPrimary: masterOpeningBase,
-        rate: masterOpeningValue / masterOpeningBase,
-        amount: masterOpeningValue
-      })
-    }
-
     purchaseInvoices.forEach(invoice => {
       if (invoice.items && Array.isArray(invoice.items)) {
         invoice.items.forEach(invItem => {
@@ -188,13 +177,6 @@ export function calculateInventoryReport(
 
               if (altUnit && usedUnit.toUpperCase() === altUnit.toUpperCase()) purchaseAltUnitCount++
               else purchasePrimaryUnitCount++
-
-              purchaseBatches.push({
-                date: new Date(invoice.invoiceDate),
-                quantityPrimary: primaryQty,
-                rate: primaryQty > 0 ? (invItem.amount || 0) / primaryQty : 0,
-                amount: invItem.amount || 0
-              })
             }
           }
         })
@@ -261,61 +243,78 @@ export function calculateInventoryReport(
       }
     })
 
-    // Opening Stock on From Date (Period Start Date)
+    // ─────────────────────────────────────────────────────────────────────────
+    // OPENING STOCK VALUATION (as of period start date)
+    // ─────────────────────────────────────────────────────────────────────────
+    // openingBase = master opening + all prior purchases - all prior sales
     const openingBase = masterOpeningBase + priorPurchaseBase - priorSalesBase
-    const openingAlt = masterOpeningAlt + priorPurchaseAlt - priorSalesAlt
-    const openingStockVal = Math.max(0, masterOpeningValue + priorPurchaseAmount - priorSalesAmount)
+    const openingAlt  = masterOpeningAlt  + priorPurchaseAlt  - priorSalesAlt
 
+    // Compute the weighted-average cost rate accumulated up to the period start.
+    // This ensures the opening stock is always valued at the true historical WACM
+    // rate rather than a flat purchase-price estimate.
+    const priorTotalBase   = masterOpeningBase + priorPurchaseBase          // total qty acquired before period
+    const priorTotalAmount = masterOpeningValue + priorPurchaseAmount        // total cost before period
+    const openingWACRate   = priorTotalBase > 0 ? priorTotalAmount / priorTotalBase : 0
+
+    // Opening stock value = physical opening qty × historical WACM rate.
+    // We clamp to 0 so we never show a negative opening value.
+    const openingStockVal = Math.max(0, openingBase * openingWACRate)
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PERIOD-LEVEL QUANTITIES
+    // ─────────────────────────────────────────────────────────────────────────
     const balanceBase = (openingBase + totalPurchaseBase) - totalSalesBase
-    const balanceAlt = (openingAlt + totalPurchaseAlt) - totalSalesAlt
+    const balanceAlt  = (openingAlt  + totalPurchaseAlt)  - totalSalesAlt
 
     const preferAltPurchase = Boolean(altUnit && purchaseAltUnitCount > 0 && purchaseAltUnitCount >= purchasePrimaryUnitCount)
-    const preferAltSale = Boolean(altUnit && saleAltUnitCount > 0 && saleAltUnitCount >= salePrimaryUnitCount)
-    const preferAltOverall = Boolean(altUnit)
+    const preferAltSale     = Boolean(altUnit && saleAltUnitCount     > 0 && saleAltUnitCount     >= salePrimaryUnitCount)
 
     const mainUnit = primaryUnit
-    const secUnit = altUnit
+    const secUnit  = altUnit
 
-    const openingStockMT = openingBase
-    const totalPurchaseMT = totalPurchaseBase
-    const totalSalesMT = totalSalesBase
-    const balanceMT = balanceBase
+    const openingStockMT   = openingBase
+    const totalPurchaseMT  = totalPurchaseBase
+    const totalSalesMT     = totalSalesBase
+    const balanceMT        = balanceBase
 
-    const secOpeningStock = openingAlt
+    const secOpeningStock  = openingAlt
     const secTotalPurchase = totalPurchaseAlt
-    const secTotalSales = totalSalesAlt
-    const secBalance = balanceAlt
+    const secTotalSales    = totalSalesAlt
+    const secBalance       = balanceAlt
 
-    const totalAvailableBase = openingBase + totalPurchaseBase
-    const totalAvailableAmount = masterOpeningValue + totalPurchaseAmount
-    const avgPurchaseRateBase = totalAvailableBase > 0 ? totalAvailableAmount / totalAvailableBase : 0
+    // ─────────────────────────────────────────────────────────────────────────
+    // WEIGHTED AVERAGE COST METHOD (WACM)
+    // ─────────────────────────────────────────────────────────────────────────
+    // Total stock available during the period = opening + period purchases.
+    // Total cost of that stock = opening stock value (at WACM) + period purchase cost.
+    //
+    // CRITICAL: We use openingStockVal (period-adjusted, WACM-valued) — NOT
+    // masterOpeningValue — so that the rate is always correct regardless of which
+    // date range is selected (including periods with zero purchases).
+    const totalAvailableBase   = openingBase + totalPurchaseBase
+    const totalAvailableAmount = openingStockVal + totalPurchaseAmount
+
+    // avgPurchaseRate = total available cost / total available qty.
+    // When purchases for the period = 0, this naturally carries forward the
+    // historical WACM rate via the opening stock value, preventing rate collapse.
+    const avgPurchaseRateBase = totalAvailableBase > 0 ? totalAvailableAmount / totalAvailableBase : openingWACRate
+
     const avgSalesRateBase = totalSalesBase > 0 ? totalSalesAmount / totalSalesBase : 0
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // CLOSING STOCK VALUATION (Weighted Average Cost Method — standardised)
+    // ─────────────────────────────────────────────────────────────────────────
+    // Using WACM for closing stock ensures consistency:
+    //   closing stock value = balance qty × period WACM rate
+    //
+    // We deliberately avoid the FIFO batch approach that was previously used,
+    // because that approach omitted prior-period purchase batches (it only held
+    // master opening + current-period batches), leading to incorrect FIFO
+    // results and causing the avgPurchaseRate and currentStockValue to diverge.
     let currentStockValue = 0
-    if (balanceBase > 0 && purchaseBatches.length > 0) {
-      purchaseBatches.sort((a, b) => a.date.getTime() - b.date.getTime())
-      let remainingSales = totalSalesBase
-      let calculatedBalance = 0
-
-      for (const batch of purchaseBatches) {
-        if (remainingSales >= batch.quantityPrimary) {
-          remainingSales -= batch.quantityPrimary
-        } else if (remainingSales > 0) {
-          const remainingQty = batch.quantityPrimary - remainingSales
-          currentStockValue += remainingQty * batch.rate
-          calculatedBalance += remainingQty
-          remainingSales = 0
-        } else {
-          currentStockValue += batch.quantityPrimary * batch.rate
-          calculatedBalance += batch.quantityPrimary
-        }
-      }
-
-      if (calculatedBalance !== balanceBase && Math.abs(calculatedBalance - balanceBase) > 0.01) {
-        currentStockValue = balanceBase * avgPurchaseRateBase
-      }
-    } else if (balanceBase <= 0) {
-      currentStockValue = 0
+    if (balanceBase > 0) {
+      currentStockValue = balanceBase * avgPurchaseRateBase
     }
 
     inventory.push({
@@ -332,7 +331,7 @@ export function calculateInventoryReport(
       totalSalesMT,
       totalSalesAmount,
       balanceMT,
-      avgPurchaseRate: avgPurchaseRateBase,
+      avgPurchaseRate: isNaN(avgPurchaseRateBase) || !isFinite(avgPurchaseRateBase) ? 0 : avgPurchaseRateBase,
       avgSalesRate: avgSalesRateBase,
       currentStockValue: isNaN(currentStockValue) || !isFinite(currentStockValue) ? 0 : Math.max(0, currentStockValue),
       secondaryUnit: secUnit,
