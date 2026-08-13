@@ -1,8 +1,8 @@
-import { useState, useMemo } from 'react'
-import { ReceivedDiscount, Supplier, PurchaseInvoice, Payment, DiscountCategory, FixedScheme, PendingDiscount, ExpectedAnnualDiscount, PendingAnnualDiscount, MTBooking, Item } from '@/lib/types'
+import { useState, useMemo, useEffect } from 'react'
+import { ReceivedDiscount, Supplier, PurchaseInvoice, Payment, DiscountCategory, FixedScheme, PendingDiscount, ExpectedAnnualDiscount, PendingAnnualDiscount, MTBooking, Item, SupplierDebitNote } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -10,9 +10,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
+import { saveEntityRemote, deleteEntityRemote } from '@/lib/firebase-storage'
 
-
-import { Plus, TrendUp, Trash, FunnelSimple, FilePdf, CaretRight, Pencil } from '@phosphor-icons/react'
+import { Plus, TrendUp, Trash, FunnelSimple, FilePdf, CaretRight, Pencil, Wallet, Clock, ArrowRight } from '@phosphor-icons/react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -31,11 +33,27 @@ import {
 } from '@/lib/calculations'
 import { exportPendingStatementPDF } from '@/lib/pdf-export'
 
+export interface CDLedgerTransfer {
+  id: string
+  supplierId: string
+  amount: number
+  date: string
+  reference?: string
+  remarks?: string
+  noteType: 'debit_note' | 'credit_note'
+  debitNoteId?: string
+  createdAt: string
+  createdBy?: string
+  createdByRole?: string
+}
+
 interface DiscountWalletPageProps {
   suppliers: Supplier[]
   invoices: PurchaseInvoice[]
   payments: Payment[]
   receivedDiscounts: ReceivedDiscount[]
+  debitNotes?: SupplierDebitNote[]
+  setDebitNotes?: (updater: (prev: SupplierDebitNote[]) => SupplierDebitNote[]) => void
   onAddReceivedDiscount?: (discount: ReceivedDiscount) => void
   onUpdateReceivedDiscount?: (discount: ReceivedDiscount) => void
   onDeleteReceivedDiscount?: (id: string) => void
@@ -47,6 +65,7 @@ interface DiscountWalletPageProps {
   currentFY: string
   businessName?: string
   isLocked?: boolean
+  activeCompanyId?: string
 }
 
 export default function DiscountWalletPage({
@@ -54,6 +73,8 @@ export default function DiscountWalletPage({
   invoices,
   payments,
   receivedDiscounts,
+  debitNotes = [],
+  setDebitNotes,
   onAddReceivedDiscount,
   onUpdateReceivedDiscount,
   onDeleteReceivedDiscount,
@@ -64,10 +85,11 @@ export default function DiscountWalletPage({
   items = [],
   currentFY,
   businessName,
-  isLocked = false
+  isLocked = false,
+  activeCompanyId
 }: DiscountWalletPageProps) {
   const [activeTab, setActiveTab] = useState<'pending' | 'received'>('pending')
-  const [selectedSupplier, setSelectedSupplier] = useState<string>('all')
+  const [selectedSupplier, setSelectedSupplier] = useState<string>(() => suppliers[0]?.id || '')
   const [discountTypeFilter, setDiscountTypeFilter] = useState<'all' | 'wallet' | 'cd'>('all')
   const [receivedTypeFilter, setReceivedTypeFilter] = useState<Set<'annual' | 'wallet'>>(() => 
     new Set(['annual', 'wallet'])
@@ -82,6 +104,152 @@ export default function DiscountWalletPage({
   const [expandedPayments, setExpandedPayments] = useState<Set<string>>(new Set())
   const [open, setOpen] = useState(false)
   const [dialogType, setDialogType] = useState<'wallet' | 'annual'>('wallet')
+
+  // Transfer to Ledger modal states
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false)
+  const [transferHistoryOpen, setTransferHistoryOpen] = useState(false)
+  const [transferAmount, setTransferAmount] = useState('')
+  const [transferDate, setTransferDate] = useState(new Date().toISOString().split('T')[0])
+  const [transferRef, setTransferRef] = useState('')
+  const [transferRemarks, setTransferRemarks] = useState('')
+  const [transferNoteType, setTransferNoteType] = useState<'debit_note' | 'credit_note'>('debit_note')
+
+  // Persistent CD Ledger Transfers
+  const [transfers, setTransfers] = useState<CDLedgerTransfer[]>(() => {
+    try {
+      const key = `app_cd_ledger_transfers_${activeCompanyId || 'default'}`
+      const stored = localStorage.getItem(key)
+      return stored ? JSON.parse(stored) : []
+    } catch {
+      return []
+    }
+  })
+
+  const updateTransfers = (updater: (prev: CDLedgerTransfer[]) => CDLedgerTransfer[]) => {
+    setTransfers(prev => {
+      const next = updater(prev)
+      try {
+        const key = `app_cd_ledger_transfers_${activeCompanyId || 'default'}`
+        localStorage.setItem(key, JSON.stringify(next))
+      } catch (e) {
+        console.error('Failed to save CD ledger transfers:', e)
+      }
+      return next
+    })
+  }
+
+  // Ensure selectedSupplier defaults to first supplier if unset or invalid
+  useEffect(() => {
+    if ((selectedSupplier === 'all' || !selectedSupplier) && suppliers.length > 0) {
+      setSelectedSupplier(suppliers[0].id)
+    }
+  }, [suppliers, selectedSupplier])
+
+  // Current supplier object & Claimable Pool metrics
+  const currentSupplierObj = useMemo(() => 
+    suppliers.find(s => s.id === selectedSupplier), 
+    [suppliers, selectedSupplier]
+  )
+
+  const supplierReceivedDiscounts = useMemo(() => {
+    if (!selectedSupplier) return []
+    return receivedDiscounts.filter(rd => rd.supplierId === selectedSupplier)
+  }, [receivedDiscounts, selectedSupplier])
+
+  const totalReceivedAmountForSupplier = useMemo(() => {
+    return supplierReceivedDiscounts.reduce((sum, rd) => sum + (rd.amount || 0), 0)
+  }, [supplierReceivedDiscounts])
+
+  const supplierTransfers = useMemo(() => {
+    if (!selectedSupplier) return []
+    return transfers.filter(t => t.supplierId === selectedSupplier)
+  }, [transfers, selectedSupplier])
+
+  const totalTransferredAmountForSupplier = useMemo(() => {
+    return supplierTransfers.reduce((sum, t) => sum + (t.amount || 0), 0)
+  }, [supplierTransfers])
+
+  const claimablePoolBalance = useMemo(() => {
+    return Math.max(0, totalReceivedAmountForSupplier - totalTransferredAmountForSupplier)
+  }, [totalReceivedAmountForSupplier, totalTransferredAmountForSupplier])
+
+  const handleExecuteTransfer = () => {
+    const amt = parseFloat(transferAmount)
+    if (isNaN(amt) || amt <= 0) {
+      toast.error('Enter a valid transfer amount greater than 0.')
+      return
+    }
+    if (amt > claimablePoolBalance + 0.01) {
+      toast.error(`Transfer amount cannot exceed available pool balance (${formatCurrency(claimablePoolBalance)}).`)
+      return
+    }
+    if (!selectedSupplier) {
+      toast.error('Select a supplier first.')
+      return
+    }
+
+    const now = Date.now()
+    const refStr = transferRef.trim() || `CD-CLAIM-${now.toString().slice(-6)}`
+    const noteRemarks = transferRemarks.trim() || `Claimable CD incentive pool transferred to supplier ledger`
+
+    const newDebitNote: SupplierDebitNote = {
+      id: `dn-cd-${now}`,
+      supplierId: selectedSupplier,
+      date: transferDate || new Date().toISOString().split('T')[0],
+      amount: amt,
+      invoiceRef: refStr,
+      remarks: noteRemarks,
+      fy: currentFY,
+      createdAt: now,
+      isAutoGenerated: true,
+      sourceType: 'manual',
+      sourceId: `cd-transfer-${now}`
+    }
+
+    if (setDebitNotes) {
+      setDebitNotes(prev => [newDebitNote, ...prev])
+    }
+    if (activeCompanyId) {
+      void saveEntityRemote(activeCompanyId, 'debitNotes', newDebitNote)
+    }
+
+    const newTransfer: CDLedgerTransfer = {
+      id: `transfer-${now}`,
+      supplierId: selectedSupplier,
+      amount: amt,
+      date: transferDate || new Date().toISOString().split('T')[0],
+      reference: refStr,
+      remarks: noteRemarks,
+      noteType: transferNoteType,
+      debitNoteId: newDebitNote.id,
+      createdAt: new Date().toISOString(),
+      createdBy: getChangedByLabel(),
+      createdByRole: getChangedByRole()
+    }
+
+    updateTransfers(prev => [newTransfer, ...prev])
+    toast.success(`₹${amt.toLocaleString('en-IN')} transferred to ${currentSupplierObj?.name || 'supplier'}'s ledger as Debit Note.`)
+    
+    setTransferAmount('')
+    setTransferRef('')
+    setTransferRemarks('')
+    setTransferDialogOpen(false)
+  }
+
+  const handleDeleteTransfer = (transfer: CDLedgerTransfer) => {
+    if (isLocked) {
+      toast.error('System is locked.')
+      return
+    }
+    updateTransfers(prev => prev.filter(t => t.id !== transfer.id))
+    if (transfer.debitNoteId && setDebitNotes) {
+      setDebitNotes(prev => prev.filter(dn => dn.id !== transfer.debitNoteId))
+      if (activeCompanyId) {
+        void deleteEntityRemote(activeCompanyId, 'debitNotes', transfer.debitNoteId)
+      }
+    }
+    toast.success('Transfer entry reverted and removed from ledger.')
+  }
 
   // Date range filter state — defaults to current FY date range
   const defaultFYRange = getFYDateRange(currentFY)
@@ -1191,22 +1359,21 @@ export default function DiscountWalletPage({
       </div>
 
       <Card className="border-accent/20">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <FunnelSimple size={20} />
-            Filters
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+            <FunnelSimple size={18} className="text-primary" />
+            Discount Wallet Filters
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="flex-1">
-              <Label className="text-xs mb-2 block">Supplier</Label>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <Label className="text-xs mb-1.5 block font-medium">Supplier *</Label>
               <Select value={selectedSupplier} onValueChange={setSelectedSupplier}>
-                <SelectTrigger>
-                  <SelectValue />
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select a supplier" />
                 </SelectTrigger>
                 <SelectContent>
-
                   {suppliers.map(supplier => (
                     <SelectItem key={supplier.id} value={supplier.id}>
                       {supplier.name}
@@ -1215,8 +1382,79 @@ export default function DiscountWalletPage({
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex-1">
-              <Label className="text-xs mb-2 block">From Date</Label>
+
+            <div>
+              <Label className="text-xs mb-1.5 block font-medium">Discount Types</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-10 w-full justify-between font-normal">
+                    <div className="flex items-center gap-2 truncate">
+                      <FunnelSimple size={15} className="text-muted-foreground shrink-0" />
+                      <span className="truncate text-xs">
+                        {selectedCategories.size === 4
+                          ? 'All Discount Types'
+                          : selectedCategories.size === 0
+                          ? 'No Types Selected'
+                          : `${selectedCategories.size} Types Selected`}
+                      </span>
+                    </div>
+                    <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0 h-5">
+                      {selectedCategories.size}/4
+                    </Badge>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-64 p-3" align="start">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between pb-2 border-b">
+                      <span className="text-xs font-semibold">Filter Discount Types</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-[11px] px-1.5 text-primary"
+                        onClick={() => {
+                          if (selectedCategories.size === 4) {
+                            setSelectedCategories(new Set())
+                          } else {
+                            setSelectedCategories(new Set(['paymentCD', 'invoiceCloseCD', 'fixedScheme', 'annual']))
+                          }
+                        }}
+                      >
+                        {selectedCategories.size === 4 ? 'Clear All' : 'Select All'}
+                      </Button>
+                    </div>
+                    <div className="space-y-2.5 pt-1">
+                      {[
+                        { id: 'paymentCD', label: 'Payment CD' },
+                        { id: 'invoiceCloseCD', label: 'Invoice Close CD' },
+                        { id: 'fixedScheme', label: 'Fixed Scheme' },
+                        { id: 'annual', label: 'Annual Target' },
+                      ].map((type) => (
+                        <div key={type.id} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`popover-filter-${type.id}`}
+                            checked={selectedCategories.has(type.id)}
+                            onCheckedChange={(checked) => {
+                              setSelectedCategories((prev) => {
+                                const next = new Set(prev)
+                                if (checked) next.add(type.id)
+                                else next.delete(type.id)
+                                return next
+                              })
+                            }}
+                          />
+                          <Label htmlFor={`popover-filter-${type.id}`} className="text-xs cursor-pointer flex-1">
+                            {type.label}
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div>
+              <Label className="text-xs mb-1.5 block font-medium">From Date</Label>
               <Input
                 type="date"
                 value={fromDate}
@@ -1224,8 +1462,9 @@ export default function DiscountWalletPage({
                 className="w-full"
               />
             </div>
-            <div className="flex-1">
-              <Label className="text-xs mb-2 block">To Date</Label>
+
+            <div>
+              <Label className="text-xs mb-1.5 block font-medium">To Date</Label>
               <Input
                 type="date"
                 value={toDate}
@@ -1234,127 +1473,92 @@ export default function DiscountWalletPage({
               />
             </div>
           </div>
-
-          
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <Label className="text-xs">Discount Types</Label>
-              <div className="text-xs text-muted-foreground font-mono">
-                {(selectedCategories.has('paymentCD') ? 1 : 0) +
-                 (selectedCategories.has('invoiceCloseCD') ? 1 : 0) +
-                 (selectedCategories.has('fixedScheme') ? 1 : 0) +
-                 (selectedCategories.has('annual') ? 1 : 0)} of 4 selected
-              </div>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="filter-paymentCD"
-                  checked={selectedCategories.has('paymentCD')}
-                  onCheckedChange={(checked) => {
-                    setSelectedCategories(prev => {
-                      const newSet = new Set(prev)
-                      if (checked) {
-                        newSet.add('paymentCD')
-                      } else {
-                        newSet.delete('paymentCD')
-                      }
-                      return newSet
-                    })
-                  }}
-                />
-                <label
-                  htmlFor="filter-paymentCD"
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                >
-                  Payment CD
-                </label>
-              </div>
-              
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="filter-invoiceCloseCD"
-                  checked={selectedCategories.has('invoiceCloseCD')}
-                  onCheckedChange={(checked) => {
-                    setSelectedCategories(prev => {
-                      const newSet = new Set(prev)
-                      if (checked) {
-                        newSet.add('invoiceCloseCD')
-                      } else {
-                        newSet.delete('invoiceCloseCD')
-                      }
-                      return newSet
-                    })
-                  }}
-                />
-                <label
-                  htmlFor="filter-invoiceCloseCD"
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                >
-                  Invoice Close CD
-                </label>
-              </div>
-              
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="filter-fixedScheme"
-                  checked={selectedCategories.has('fixedScheme')}
-                  onCheckedChange={(checked) => {
-                    setSelectedCategories(prev => {
-                      const newSet = new Set(prev)
-                      if (checked) {
-                        newSet.add('fixedScheme')
-                      } else {
-                        newSet.delete('fixedScheme')
-                      }
-                      return newSet
-                    })
-                  }}
-                />
-                <label
-                  htmlFor="filter-fixedScheme"
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                >
-                  Fixed Scheme
-                </label>
-              </div>
-              
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="filter-annual"
-                  checked={selectedCategories.has('annual')}
-                  onCheckedChange={(checked) => {
-                    setSelectedCategories(prev => {
-                      const newSet = new Set(prev)
-                      if (checked) {
-                        newSet.add('annual')
-                      } else {
-                        newSet.delete('annual')
-                      }
-                      return newSet
-                    })
-                  }}
-                />
-                <label
-                  htmlFor="filter-annual"
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                >
-                  Annual Target
-                </label>
-              </div>
-            </div>
-          </div>
         </CardContent>
       </Card>
 
-      {(fromDate || toDate) && (
-        <Card className="border-primary/20 bg-primary/5">
+      {/* Claimable Discount Pool Card */}
+      {!selectedSupplier ? (
+        <Card className="border-dashed p-8 text-center bg-muted/20">
           <CardContent className="pt-6">
-            <div className="text-sm text-muted-foreground mb-1">Total Expected CD (Date Range)</div>
-            <div className="text-3xl font-mono font-bold text-primary">{formatCurrency(totalExpected)}</div>
-            <p className="text-xs text-muted-foreground mt-1">
-              {fromDate || '...'} to {toDate || '...'} — Calculated LIVE from earned discounts
+            <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-3">
+              <FunnelSimple size={24} />
+            </div>
+            <h3 className="text-lg font-semibold mb-1">No Supplier Selected</h3>
+            <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+              Please select a supplier from the filter dropdown above to view claimable discount balances and wallet data.
             </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="border-primary/30 bg-gradient-to-r from-primary/10 via-primary/5 to-background shadow-sm">
+          <CardContent className="p-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="p-1.5 rounded-md bg-primary/10 text-primary">
+                    <Wallet size={22} weight="bold" />
+                  </div>
+                  <CardTitle className="text-lg font-bold text-foreground">Claimable Discount Pool</CardTitle>
+                  <Badge variant="outline" className="text-xs font-normal border-primary/30 text-primary bg-primary/5">
+                    {currentSupplierObj?.name || 'Supplier'}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Accumulated unadjusted incentive pool available for direct ledger transfer
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="h-9 gap-1.5 font-medium shadow-sm"
+                  onClick={() => {
+                    setTransferAmount(claimablePoolBalance > 0 ? String(claimablePoolBalance) : '')
+                    setTransferDialogOpen(true)
+                  }}
+                  disabled={claimablePoolBalance <= 0 || isLocked}
+                >
+                  <Wallet size={16} weight="bold" />
+                  Transfer to Ledger
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 gap-1.5 font-medium"
+                  onClick={() => setTransferHistoryOpen(true)}
+                >
+                  <Clock size={16} />
+                  View History ({supplierTransfers.length})
+                </Button>
+              </div>
+            </div>
+
+            <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-primary/10">
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">Available Claimable Pool</div>
+                <div className="text-2xl font-mono font-bold text-primary">
+                  {formatCurrency(claimablePoolBalance)}
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">Unadjusted incentives ready for ledger</div>
+              </div>
+
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">Total Incentives Received</div>
+                <div className="text-xl font-mono font-semibold text-emerald-600">
+                  {formatCurrency(totalReceivedAmountForSupplier)}
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">Accumulated received discounts</div>
+              </div>
+
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">Total Transferred to Ledger</div>
+                <div className="text-xl font-mono font-semibold text-blue-600">
+                  {formatCurrency(totalTransferredAmountForSupplier)}
+                </div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">Issued via Debit Notes</div>
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}
@@ -2129,6 +2333,177 @@ export default function DiscountWalletPage({
           </Card>
         )}
       </div>
+
+      {/* Transfer to Ledger Dialog */}
+      <Dialog open={transferDialogOpen} onOpenChange={setTransferDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+              <Wallet className="h-5 w-5 text-primary" />
+              Transfer CD Pool to Ledger
+            </DialogTitle>
+            <DialogDescription>
+              Issue a Debit Note to adjust the claimable discount balance directly into {currentSupplierObj?.name || 'the supplier'}'s ledger.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="rounded-lg bg-primary/5 border border-primary/20 p-3">
+              <div className="text-xs text-muted-foreground">Available Claimable Pool Balance</div>
+              <div className="text-xl font-mono font-bold text-primary">
+                {formatCurrency(claimablePoolBalance)}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold">Transfer Amount (₹) *</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-5 text-[11px] px-1.5 text-primary font-mono"
+                  onClick={() => setTransferAmount(String(claimablePoolBalance))}
+                >
+                  Transfer Full ({formatCurrency(claimablePoolBalance)})
+                </Button>
+              </div>
+              <Input
+                type="number"
+                step="0.01"
+                placeholder="Enter amount to transfer"
+                value={transferAmount}
+                onChange={(e) => setTransferAmount(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Transfer Date *</Label>
+              <Input
+                type="date"
+                value={transferDate}
+                onChange={(e) => setTransferDate(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Action / Note Type</Label>
+              <Select value={transferNoteType} onValueChange={(val: any) => setTransferNoteType(val)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="debit_note">Supplier Debit Note (Adjust Payable)</SelectItem>
+                  <SelectItem value="credit_note">Credit Note Adjustment</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Reference / Ref No.</Label>
+              <Input
+                placeholder="e.g. CD-CLAIM-2026-001"
+                value={transferRef}
+                onChange={(e) => setTransferRef(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Remarks / Notes</Label>
+              <Textarea
+                rows={2}
+                placeholder="Transfer notes or details"
+                value={transferRemarks}
+                onChange={(e) => setTransferRemarks(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTransferDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleExecuteTransfer}>
+              Confirm Transfer
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Transfer History Dialog */}
+      <Dialog open={transferHistoryOpen} onOpenChange={setTransferHistoryOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+              <Clock className="h-5 w-5 text-primary" />
+              CD Pool Ledger Transfer History
+            </DialogTitle>
+            <DialogDescription>
+              Audit log of all claimable discount pool amounts transferred to {currentSupplierObj?.name || 'supplier'}'s ledger.
+            </DialogDescription>
+          </DialogHeader>
+
+          {supplierTransfers.length === 0 ? (
+            <div className="py-8 text-center text-muted-foreground text-sm border rounded-lg border-dashed">
+              No ledger transfers recorded for this supplier yet.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead className="text-right">Transferred Amount</TableHead>
+                  <TableHead>Note Type / Ref</TableHead>
+                  <TableHead>Remarks</TableHead>
+                  <TableHead>Transferred By</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {supplierTransfers.map((t) => (
+                  <TableRow key={t.id}>
+                    <TableCell className="font-mono text-xs">{t.date}</TableCell>
+                    <TableCell className="text-right font-mono font-bold text-primary">
+                      {formatCurrency(t.amount)}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col">
+                        <Badge variant="outline" className="w-fit text-[10px] uppercase">
+                          {t.noteType === 'debit_note' ? 'Debit Note' : 'Credit Note'}
+                        </Badge>
+                        <span className="text-xs font-mono text-muted-foreground mt-0.5">{t.reference}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-xs max-w-[200px] truncate">{t.remarks || '-'}</TableCell>
+                    <TableCell className="text-xs">
+                      {t.createdBy || 'System'}
+                      {t.createdByRole === 'master_admin' && <Badge variant="secondary" className="ml-1 text-[9px] px-1 py-0">Master</Badge>}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 w-7 p-0 text-destructive hover:bg-destructive/10"
+                        onClick={() => handleDeleteTransfer(t)}
+                        title="Revert Transfer Entry"
+                        disabled={isLocked}
+                      >
+                        <Trash size={14} />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTransferHistoryOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

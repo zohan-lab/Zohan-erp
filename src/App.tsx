@@ -2163,6 +2163,8 @@ function App() {
               invoices={safeInvoices}
               payments={safePayments}
               receivedDiscounts={safeReceivedDiscounts}
+              debitNotes={safeDebitNotes}
+              setDebitNotes={syncSetDebitNotes}
               items={safeItems}
               setReceivedDiscounts={syncSetReceivedDiscounts}
               fixedSchemes={safeFixedSchemes}
@@ -2170,6 +2172,7 @@ function App() {
               currentFY={safeCurrentFY}
               businessName={safeBusinessName}
               isLocked={isViewReadOnly('wallet')}
+              activeCompanyId={metadata.activeCompanyId}
             />
           )
         case 'annual':
