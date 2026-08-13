@@ -166,19 +166,22 @@ export function persistActiveUserSession(user: AuthenticatedUser): void {
   }
 }
 
-export const MASTER_ADMIN_EMAIL = 'sksahil299399@gmail.com'
-
 export function isMasterAdminIdentifier(username: string | null | undefined): boolean {
   if (!username) return false
   const clean = username.trim().toLowerCase()
-  // Strict: only the exact master admin email is a privileged identifier.
-  // The legacy clean.includes('master') wildcard has been removed — it would
-  // mis-elevate any address containing the word "master" (postmaster@, masterbatch@…).
-  return clean === MASTER_ADMIN_EMAIL.toLowerCase()
+  const cleanUser = clean.split('@')[0]
+  const accounts = getUserAccounts()
+  return accounts.some(
+    (acc) =>
+      acc.role === 'master_admin' &&
+      acc.isActive &&
+      (acc.username.toLowerCase() === clean ||
+       acc.username.toLowerCase().split('@')[0] === cleanUser)
+  )
 }
 
 function toAuthenticatedUser(account: UserAccount): AuthenticatedUser {
-  const isMaster = account.role === 'master_admin' || isMasterAdminIdentifier(account.username)
+  const isMaster = account.role === 'master_admin'
   let displayName = account.displayName ? account.displayName.trim() : ''
   if (isMaster && (!displayName || displayName === account.username)) {
     displayName = 'Master Admin'

@@ -774,8 +774,7 @@ function App() {
   const safeCurrentFY = activeFY
   const isMasterAdmin = useMemo(() => {
     if (!currentUser) return false
-    if (currentUser.role === 'master_admin') return true
-    return isMasterAdminIdentifier(currentUser.username)
+    return currentUser.role === 'master_admin'
   }, [currentUser])
   const availableNavGroups = useMemo(() => {
     if (isMasterAdmin) return [...navGroups, adminNavGroup]

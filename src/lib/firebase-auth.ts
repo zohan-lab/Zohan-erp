@@ -17,7 +17,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore'
 import { firebaseConfig, auth, db, isFirebaseAuthEnabled, isFirebaseConfigured } from './firebase-client'
-import { AuthenticatedUser, PermissionMap, UserAccount, isMasterAdminIdentifier, MASTER_ADMIN_EMAIL, getCurrentUser, getUserAccounts, persistActiveUserSession } from './security-utils'
+import { AuthenticatedUser, PermissionMap, UserAccount, isMasterAdminIdentifier, getCurrentUser, getUserAccounts, persistActiveUserSession } from './security-utils'
 
 // ─── Error Classes ────────────────────────────────────────────────────────────
 
@@ -108,7 +108,7 @@ function firebaseUserToAuthenticatedUser(fbUser: FirebaseUser): AuthenticatedUse
     return user
   }
 
-  const isMaster = isMasterAdminIdentifier(email) || email === MASTER_ADMIN_EMAIL.toLowerCase()
+  const isMaster = isMasterAdminIdentifier(email)
   let displayName = fbUser.displayName ? fbUser.displayName.trim() : email
   if (isMaster && (!displayName || displayName === email)) {
     displayName = 'Master Admin'
@@ -198,7 +198,7 @@ export async function signInRemoteUser(
   if (!canUseFirebaseAuth() || !auth) return null
 
   const cleanEmail = email.trim().toLowerCase()
-  const isMasterAdminEmail = cleanEmail === MASTER_ADMIN_EMAIL.toLowerCase() || isMasterAdminIdentifier(cleanEmail)
+  const isMasterAdminEmail = isMasterAdminIdentifier(cleanEmail)
 
   try {
     const credential = await withTimeout(
