@@ -234,26 +234,26 @@ export default function SupplierLedgerPage({
                     </CardContent>
                   </Card>
 
-                  <Card className="bg-emerald-50/70 border-emerald-200">
-                    <CardContent className="pt-5 pb-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-1">Period Purchases</p>
-                          <p className="text-xl font-bold text-emerald-950">{formatCurrency(summary.totalCredit)}</p>
-                        </div>
-                        <TrendDown size={28} weight="duotone" className="text-emerald-600" />
-                      </div>
-                    </CardContent>
-                  </Card>
-
                   <Card className="bg-blue-50/70 border-blue-200">
                     <CardContent className="pt-5 pb-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wider mb-1">Period Paid</p>
+                          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wider mb-1">Total Debit</p>
                           <p className="text-xl font-bold text-blue-950">{formatCurrency(summary.totalDebit)}</p>
                         </div>
                         <TrendUp size={28} weight="duotone" className="text-blue-600" />
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="bg-emerald-50/70 border-emerald-200">
+                    <CardContent className="pt-5 pb-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-1">Total Credit</p>
+                          <p className="text-xl font-bold text-emerald-950">{formatCurrency(summary.totalCredit)}</p>
+                        </div>
+                        <TrendDown size={28} weight="duotone" className="text-emerald-600" />
                       </div>
                     </CardContent>
                   </Card>

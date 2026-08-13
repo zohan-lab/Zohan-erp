@@ -860,12 +860,12 @@ export function exportSupplierLedgerPDF(
   doc.text('SUMMARY', 16, yPos + 5)
   
   doc.setFontSize(10)
-  doc.text('Total Payments:', 16, yPos + 11)
+  doc.text('Total Debit:', 16, yPos + 11)
   doc.setFont('helvetica', 'normal')
   doc.text(`Rs ${options.totalDebit.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`, 16, yPos + 15)
   
   doc.setFont('helvetica', 'bold')
-  doc.text('Total Purchases:', 80, yPos + 11)
+  doc.text('Total Credit:', 80, yPos + 11)
   doc.setFont('helvetica', 'normal')
   doc.text(`Rs ${options.totalCredit.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`, 80, yPos + 15)
   
@@ -1452,12 +1452,12 @@ export function exportCustomerLedgerPDF(
   doc.text('SUMMARY', 16, yPos + 5)
   
   doc.setFontSize(10)
-  doc.text('Total Sales (Debit):', 16, yPos + 11)
+  doc.text('Total Debit:', 16, yPos + 11)
   doc.setFont('helvetica', 'normal')
   doc.text(`Rs ${options.totalDebit.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`, 16, yPos + 15)
   
   doc.setFont('helvetica', 'bold')
-  doc.text('Total Receipts (Credit):', 80, yPos + 11)
+  doc.text('Total Credit:', 80, yPos + 11)
   doc.setFont('helvetica', 'normal')
   doc.text(`Rs ${options.totalCredit.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`, 80, yPos + 15)
   
