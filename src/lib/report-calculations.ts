@@ -538,7 +538,9 @@ export function getCustomerBalanceDetails(
   const custPayments = customerPayments.filter(p => p.customerId === customer.id)
   const totalInvoiced = custInvoices.reduce((s, inv) => s + (inv.invoiceAmount || 0), 0)
   const totalPaid = custPayments.reduce((s, p) => s + (p.amount || 0), 0)
-  const netBalance = (customer.openingBalance || 0) + totalInvoiced - totalPaid
+  const opBal = customer.openingBalance || 0
+  const signedOpening = customer.balanceType === 'Credit' ? -opBal : opBal
+  const netBalance = signedOpening + totalInvoiced - totalPaid
   const receivableBalance = netBalance > 0 ? netBalance : 0
 
   return { totalInvoiced, totalPaid, netBalance, receivableBalance }
@@ -584,7 +586,8 @@ export function getSupplierPendingPayments(
   const currentSupplierPayments = supplierPayments.filter(p => p.supplierId === supplier.id)
   const totalInvoicedYTD = getSupplierYTDInvoiced(supplier.id, currentSupplierInvoices, activeFY)
   const totalPaid = currentSupplierPayments.reduce((sum, p) => sum + (p.amount || 0), 0)
-  const bal = supplier.openingBalance || 0
+  const rawBal = supplier.openingBalance || 0
+  const bal = supplier.balanceType === 'Debit' ? -rawBal : rawBal
 
   return Math.max(0, (totalInvoicedYTD + bal) - totalPaid)
 }

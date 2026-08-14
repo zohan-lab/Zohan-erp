@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Plus, Trash, UserPlus } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 
@@ -132,6 +133,7 @@ export function PartyEditorDialog({
   const [gstin, setGstin] = useState('')
   const [openingBalance, setOpeningBalance] = useState('')
   const [openingBalanceDate, setOpeningBalanceDate] = useState(getFYStart())
+  const [balanceType, setBalanceType] = useState<'Credit' | 'Debit'>('Credit')
   const [advanceCD, setAdvanceCD] = useState('')
   const [targetMT, setTargetMT] = useState('')
   const [targetRate, setTargetRate] = useState('')
@@ -158,6 +160,7 @@ export function PartyEditorDialog({
     setGstin(party?.gstin || '')
     setOpeningBalance(party?.openingBalance?.toString() || '')
     setOpeningBalanceDate(party?.openingBalanceDate || getFYStart())
+    setBalanceType(party?.balanceType || (type === 'supplier' ? 'Credit' : 'Debit'))
     setAdvanceCD(isSupplier(type, party) ? party.advanceCDPercentage?.toString() || '' : '')
     setTargetMT(isSupplier(type, party) ? party.annualTarget?.targetMT?.toString() || '' : '')
     setTargetRate(isSupplier(type, party) ? party.annualTarget?.ratePerMT?.toString() || '' : '')
@@ -243,6 +246,7 @@ export function PartyEditorDialog({
         gstin: trimOrUndefined(gstin.toUpperCase()),
         openingBalance: openingBalanceValue !== 0 ? openingBalanceValue : undefined,
         openingBalanceDate: openingBalanceValue !== 0 ? openingBalanceDate : undefined,
+        balanceType,
         advanceCDPercentage: normalizedAdvanceCD,
         annualTarget: targetMTValue > 0 || targetRateValue > 0 ? {
           targetMT: targetMTValue,
@@ -272,7 +276,8 @@ export function PartyEditorDialog({
         shippingCity: trimOrUndefined(cleanShippingCity),
         gstin: trimOrUndefined(gstin.toUpperCase()),
         openingBalance: openingBalanceValue !== 0 ? openingBalanceValue : undefined,
-        openingBalanceDate: openingBalanceValue !== 0 ? openingBalanceDate : undefined
+        openingBalanceDate: openingBalanceValue !== 0 ? openingBalanceDate : undefined,
+        balanceType
       } satisfies Customer)
     }
 
@@ -440,8 +445,30 @@ export function PartyEditorDialog({
                 />
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="sharedPartyBalanceType">Balance Type</Label>
+                <Select value={balanceType} onValueChange={(val: 'Credit' | 'Debit') => setBalanceType(val)}>
+                  <SelectTrigger id="sharedPartyBalanceType" className="h-10 text-xs bg-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent style={{ zIndex: 9999 }}>
+                    {type === 'supplier' ? (
+                      <>
+                        <SelectItem value="Credit">Credit (Payable)</SelectItem>
+                        <SelectItem value="Debit">Debit (Advance)</SelectItem>
+                      </>
+                    ) : (
+                      <>
+                        <SelectItem value="Debit">Debit (Receivable)</SelectItem>
+                        <SelectItem value="Credit">Credit (Advance)</SelectItem>
+                      </>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
               {(parseFloat(openingBalance) || 0) !== 0 && (
-                <div className="space-y-2 animate-in fade-in duration-200">
+                <div className="space-y-2 sm:col-span-2 animate-in fade-in duration-200">
                   <Label htmlFor="sharedPartyOpeningBalanceDate">As-On Date <span className="text-destructive">*</span></Label>
                   <Input
                     id="sharedPartyOpeningBalanceDate"

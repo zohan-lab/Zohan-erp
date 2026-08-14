@@ -1727,9 +1727,13 @@ export function calculateLedger({
 
   const finalEntries: LedgerEntry[] = []
 
+  const isValidStartISO = Boolean(startISO && !isNaN(new Date(startISO).getTime()))
+  const displayDate = isValidStartISO ? (startISO as string) : ''
+  const displayDesc = isValidStartISO ? `Opening Balance (as of ${startISO})` : 'Opening Balance'
+
   finalEntries.push({
-    date: startISO || 'Opening',
-    description: `Opening Balance (as of ${startISO || 'Start'})`,
+    date: displayDate,
+    description: displayDesc,
     debit: isCustomer ? (openingBal > 0 ? openingBal : 0) : (openingBal < 0 ? Math.abs(openingBal) : 0),
     credit: isCustomer ? (openingBal < 0 ? Math.abs(openingBal) : 0) : (openingBal > 0 ? openingBal : 0),
     balance: openingBal,

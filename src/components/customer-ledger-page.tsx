@@ -47,7 +47,10 @@ export default function CustomerLedgerPage({
     const { startISO } = getPeriodDateBounds(periodFilter, currentFY)
     const openingBalDate = selectedCustomer?.openingBalanceDate
     const shouldIncludeOpening = !openingBalDate || !startISO || openingBalDate <= startISO
-    const initialMasterOpening = shouldIncludeOpening ? (selectedCustomer?.openingBalance || 0) : 0
+    const rawOpening = selectedCustomer?.openingBalance || 0
+    const isCredit = selectedCustomer?.balanceType === 'Credit'
+    const signedOpening = isCredit ? -rawOpening : rawOpening
+    const initialMasterOpening = shouldIncludeOpening ? signedOpening : 0
 
     const rawTransactions: RawLedgerTransaction[] = []
 
@@ -306,7 +309,13 @@ export default function CustomerLedgerPage({
                           <>
                             {ledgerEntries.map((entry, index) => (
                               <TableRow key={`${entry.refId}-${index}`}>
-                                <TableCell>{new Date(entry.date).toLocaleDateString('en-IN')}</TableCell>
+                                <TableCell>
+                                  {entry.date && !isNaN(new Date(entry.date).getTime())
+                                    ? new Date(entry.date.includes('T') ? entry.date : entry.date + 'T00:00:00').toLocaleDateString('en-IN')
+                                    : (selectedCustomer?.openingBalanceDate
+                                        ? new Date(selectedCustomer.openingBalanceDate + 'T00:00:00').toLocaleDateString('en-IN')
+                                        : 'Opening')}
+                                </TableCell>
                                 <TableCell className="font-medium">{entry.description}</TableCell>
                                 <TableCell className="font-mono text-sm">{entry.invoiceNo || '-'}</TableCell>
                                 <TableCell className="text-right font-mono text-success">

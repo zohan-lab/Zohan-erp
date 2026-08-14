@@ -178,6 +178,9 @@ export default function CustomersPage({
             continue
           }
 
+          const rawBalType = (parts[6] || '').trim()
+          const balanceType: 'Credit' | 'Debit' = rawBalType.toLowerCase().includes('credit') || rawBalType.toLowerCase().includes('advance') ? 'Credit' : 'Debit'
+
           const customer: Customer = {
             id: `customer-${Date.now()}-${i}`,
             name: name,
@@ -185,7 +188,8 @@ export default function CustomersPage({
             email: email || undefined,
             address: address || undefined,
             openingBalance: openingBalance !== 0 ? openingBalance : undefined,
-            openingBalanceDate
+            openingBalanceDate,
+            balanceType
           }
 
           newCustomers.push(customer)

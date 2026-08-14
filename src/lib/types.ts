@@ -163,6 +163,7 @@ export interface Customer {
   openingBalance?: number
   /** ISO date string (YYYY-MM-DD) for when opening balance was recorded */
   openingBalanceDate?: string
+  balanceType?: 'Credit' | 'Debit'
 }
 
 export interface InvoiceItem {
