@@ -12,6 +12,8 @@ export interface Counter {
   type: CounterType
   openingBalance: number
   currentBalance: number
+  /** ISO date string (YYYY-MM-DD) recording when the opening balance was set (e.g. start of FY) */
+  openingBalanceDate?: string
   /** Only for 'Bank CC / OD' accounts: total sanctioned credit/OD limit in ₹ */
   sanctionedLimit?: number
   /** Only for 'Bank CC / OD' accounts: bank's stock/asset margin haircut percentage (0–100) */

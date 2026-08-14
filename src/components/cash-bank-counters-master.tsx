@@ -75,6 +75,13 @@ function CounterTypeBadgeIcon({ type }: { type: CounterType }) {
   return <Bank className="h-3 w-3 mr-1" />
 }
 
+/** Returns the start of the current Indian financial year as YYYY-MM-DD */
+function getFYStart(): string {
+  const now = new Date()
+  const year = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1
+  return `${year}-04-01`
+}
+
 export default function CashBankCountersMaster({
   counters,
   transactions = [],
@@ -84,6 +91,7 @@ export default function CashBankCountersMaster({
   const [name, setName] = useState('')
   const [type, setType] = useState<CounterType>('Cash')
   const [openingBalance, setOpeningBalance] = useState('')
+  const [openingBalanceDate, setOpeningBalanceDate] = useState(getFYStart())
   const [sanctionedLimit, setSanctionedLimit] = useState('')
   const [marginPercentage, setMarginPercentage] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -94,6 +102,7 @@ export default function CashBankCountersMaster({
     setName('')
     setType('Cash')
     setOpeningBalance('')
+    setOpeningBalanceDate(getFYStart())
     setSanctionedLimit('')
     setMarginPercentage('')
     setEditingId(null)
@@ -155,6 +164,7 @@ export default function CashBankCountersMaster({
         type,
         openingBalance: parseFloat(openingBalance) || 0,
         currentBalance: parseFloat(openingBalance) || 0,
+        openingBalanceDate: (parseFloat(openingBalance) || 0) !== 0 ? openingBalanceDate : undefined,
         ...(isCCOD && {
           sanctionedLimit: parseFloat(sanctionedLimit),
           marginPercentage: parseFloat(marginPercentage),
@@ -186,6 +196,7 @@ export default function CashBankCountersMaster({
     setEditingId(counter.id)
     setName(counter.name)
     setType(counter.type)
+    setOpeningBalanceDate(counter.openingBalanceDate || getFYStart())
     setSanctionedLimit(counter.sanctionedLimit != null ? String(counter.sanctionedLimit) : '')
     setMarginPercentage(counter.marginPercentage != null ? String(counter.marginPercentage) : '')
   }
@@ -349,6 +360,29 @@ export default function CashBankCountersMaster({
               )}
             </div>
 
+            {/* As-On Date: shown when opening balance is non-zero and not editing */}
+            {!editingId && (parseFloat(openingBalance) || 0) !== 0 && (
+              <div className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 bg-slate-50/60 dark:border-slate-700 dark:bg-slate-800/40 animate-in fade-in slide-in-from-top-1 duration-200">
+                <div className="space-y-1.5 flex-1">
+                  <Label htmlFor="ob-date" className="font-semibold">
+                    As-On Date
+                    <span className="text-destructive ml-0.5">*</span>
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    The date from which this opening balance is effective (typically start of financial year)
+                  </p>
+                  <Input
+                    id="ob-date"
+                    type="date"
+                    value={openingBalanceDate}
+                    onChange={(e) => setOpeningBalanceDate(e.target.value)}
+                    disabled={isLocked}
+                    required
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Row 2: CC / OD conditional fields */}
             {isCCOD && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-lg border border-amber-200 bg-amber-50/60 dark:border-amber-800 dark:bg-amber-950/30 animate-in fade-in slide-in-from-top-2 duration-200">
@@ -441,6 +475,7 @@ export default function CashBankCountersMaster({
                 <TableRow className="bg-muted/50">
                   <TableHead className="font-semibold">Counter Name</TableHead>
                   <TableHead className="font-semibold">Account Type</TableHead>
+                  <TableHead className="font-semibold">Opening Balance / As-On Date</TableHead>
                   <TableHead className="font-semibold">CC/OD Details</TableHead>
                   <TableHead className="text-right font-semibold">Live Balance</TableHead>
                   <TableHead className="text-center font-semibold">Actions</TableHead>
@@ -449,7 +484,7 @@ export default function CashBankCountersMaster({
               <TableBody>
                 {counters.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                       No counters configured yet. Add your first counter above.
                     </TableCell>
                   </TableRow>
@@ -481,6 +516,20 @@ export default function CashBankCountersMaster({
                             <CounterTypeBadgeIcon type={counter.type} />
                             {TYPE_LABEL[counter.type] ?? counter.type}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-xs space-y-0.5">
+                            <p className="font-medium text-foreground">
+                              ₹{(counter.openingBalance || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </p>
+                            {counter.openingBalanceDate ? (
+                              <p className="text-muted-foreground">
+                                As-On: {new Date(counter.openingBalanceDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                              </p>
+                            ) : (
+                              <p className="text-muted-foreground">No date set</p>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>
                           {counter.type === 'Bank CC / OD' && counter.sanctionedLimit != null ? (

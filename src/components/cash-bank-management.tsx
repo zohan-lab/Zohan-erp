@@ -48,6 +48,13 @@ interface CashBankManagementProps {
   isLocked?: boolean
 }
 
+/** Returns the start of the current Indian financial year as YYYY-MM-DD */
+function getFYStart(): string {
+  const now = new Date()
+  const year = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1
+  return `${year}-04-01`
+}
+
 export default function CashBankManagement({ 
   counters = [], 
   transactions = [], 
@@ -78,6 +85,7 @@ export default function CashBankManagement({
   const [counterName, setCounterName] = useState('')
   const [counterType, setCounterType] = useState<CounterType>('Cash')
   const [counterOpeningBal, setCounterOpeningBal] = useState('0')
+  const [counterObDate, setCounterObDate] = useState(getFYStart())
   const [counterSanctionedLimit, setCounterSanctionedLimit] = useState('')
   const [counterMarginPct, setCounterMarginPct] = useState('')
 
@@ -319,6 +327,7 @@ export default function CashBankManagement({
               type: counterType, 
               openingBalance: openBal, 
               currentBalance: c.currentBalance + diff,
+              openingBalanceDate: openBal !== 0 ? counterObDate : undefined,
               sanctionedLimit: isCCOD ? parseFloat(counterSanctionedLimit) : undefined,
               marginPercentage: isCCOD ? parseFloat(counterMarginPct) : undefined,
             }
@@ -333,6 +342,7 @@ export default function CashBankManagement({
         type: counterType,
         openingBalance: openBal,
         currentBalance: openBal,
+        openingBalanceDate: openBal !== 0 ? counterObDate : undefined,
         ...(isCCOD && {
           sanctionedLimit: parseFloat(counterSanctionedLimit),
           marginPercentage: parseFloat(counterMarginPct),
@@ -344,6 +354,7 @@ export default function CashBankManagement({
 
     setCounterName('')
     setCounterOpeningBal('0')
+    setCounterObDate(getFYStart())
     setCounterSanctionedLimit('')
     setCounterMarginPct('')
     setEditingCounter(null)
@@ -1001,6 +1012,25 @@ export default function CashBankManagement({
                 </div>
               </div>
 
+              {/* As-On Date: shown when opening balance is non-zero */}
+              {(parseFloat(counterOpeningBal) || 0) !== 0 && (
+                <div className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 bg-slate-50/60">
+                  <div className="flex-1 space-y-1">
+                    <Label className="text-[11px] font-bold text-slate-700">
+                      As-On Date <span className="text-destructive">*</span>
+                    </Label>
+                    <p className="text-[10px] text-slate-500">Date from which this opening balance is effective</p>
+                    <Input
+                      type="date"
+                      value={counterObDate}
+                      onChange={(e) => setCounterObDate(e.target.value)}
+                      className="h-8 text-xs bg-white"
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* CC / OD conditional fields */}
               {counterType === 'Bank CC / OD' && (
                 <div className="grid grid-cols-2 gap-3 p-3 rounded-lg border border-amber-200 bg-amber-50/60">
@@ -1048,6 +1078,7 @@ export default function CashBankManagement({
                       setEditingCounter(null)
                       setCounterName('')
                       setCounterOpeningBal('0')
+                      setCounterObDate(getFYStart())
                       setCounterSanctionedLimit('')
                       setCounterMarginPct('')
                     }}
@@ -1099,7 +1130,7 @@ export default function CashBankManagement({
                           )}
                         </div>
                         <p className="text-[11px] text-slate-500 mt-0.5">
-                          Opening: {formatCurrency(c.openingBalance || 0)} | Current: <span className="font-bold text-slate-800">{formatCurrency(c.currentBalance || 0)}</span>
+                          Opening: {formatCurrency(c.openingBalance || 0)}{c.openingBalanceDate ? ` · As-On: ${new Date(c.openingBalanceDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}` : ''} | Current: <span className="font-bold text-slate-800">{formatCurrency(c.currentBalance || 0)}</span>
                         </p>
                         {c.type === 'Bank CC / OD' && c.sanctionedLimit != null && (
                           <p className="text-[10px] text-amber-600 font-medium mt-0.5">
@@ -1123,6 +1154,7 @@ export default function CashBankManagement({
                             setCounterName(c.name)
                             setCounterType(c.type || 'Cash')
                             setCounterOpeningBal(c.openingBalance?.toString() || '0')
+                            setCounterObDate(c.openingBalanceDate || getFYStart())
                             setCounterSanctionedLimit(c.sanctionedLimit != null ? String(c.sanctionedLimit) : '')
                             setCounterMarginPct(c.marginPercentage != null ? String(c.marginPercentage) : '')
                           }}
