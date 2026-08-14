@@ -1853,4 +1853,253 @@ export function exportInventoryReportPDF(
   doc.save(fileName)
 }
 
+export interface DrawingPowerExportOptions {
+  businessName?: string
+  currentFY?: string
+  asOnDate: string
+  bankAccountName: string
+  sanctionedLimit: number
+  marginPercentage: number
+  summary: {
+    stockValue: number
+    eligibleDebtors: number
+    ineligibleDebtors: number
+    totalCreditors: number
+    grossBase: number
+    marginDeduction: number
+    netDrawingPower: number
+    sanctionedLimit: number
+    finalDP: number
+  }
+  stockBreakdown: Array<{
+    itemName: string
+    category: string
+    unit: string
+    quantity: number
+    rate: number
+    value: number
+  }>
+  debtorsBreakdown: Array<{
+    customerName: string
+    totalOutstanding: number
+    eligibleAmount: number
+    ineligibleAmount: number
+  }>
+  creditorsBreakdown: Array<{
+    supplierName: string
+    payableAmount: number
+  }>
+}
+
+export function exportDrawingPowerPDF(options: DrawingPowerExportOptions) {
+  const doc = new jsPDF('portrait')
+  const businessName = options.businessName || 'SK TRADERS'
+
+  const formatAmount = (val: number): string => {
+    const num = Number.isFinite(Number(val)) ? Number(val) : 0
+    return 'Rs. ' + num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  }
+
+  // Header Banner
+  doc.setFillColor(15, 23, 42) // slate-900
+  doc.rect(0, 0, 210, 32, 'F')
+
+  doc.setTextColor(255, 255, 255)
+  doc.setFontSize(16)
+  doc.setFont('helvetica', 'bold')
+  doc.text(businessName.toUpperCase(), 14, 13)
+
+  doc.setFontSize(11)
+  doc.setFont('helvetica', 'normal')
+  doc.text('STATEMENT OF DRAWING POWER & HYPOTHECATED ASSETS', 14, 20)
+
+  doc.setFontSize(8)
+  doc.text(`As on Date: ${new Date(options.asOnDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })} | FY: ${options.currentFY || '2026-27'} | Bank: ${options.bankAccountName}`, 14, 27)
+
+  doc.setTextColor(0, 0, 0)
+
+  // Executive DP Calculation Box
+  const startY = 38
+  doc.setFillColor(248, 250, 252)
+  doc.roundedRect(14, startY, 182, 60, 3, 3, 'F')
+  doc.setDrawColor(226, 232, 240)
+  doc.roundedRect(14, startY, 182, 60, 3, 3, 'D')
+
+  doc.setFontSize(10)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(30, 41, 59)
+  doc.text('1. DRAWING POWER CALCULATION STATEMENT', 18, startY + 7)
+
+  const summaryRows = [
+    ['A. Total Value of Inventory / Stock', formatAmount(options.summary.stockValue)],
+    ['B. Eligible Book Debts (Outstanding <= 90 Days)', formatAmount(options.summary.eligibleDebtors)],
+    ['C. Less: Trade Creditors / Supplier Liabilities', `(${formatAmount(options.summary.totalCreditors)})`],
+    ['D. Gross Working Capital Security Base = (A + B) - C', formatAmount(options.summary.grossBase)],
+    [`E. Less: Bank Haircut Margin (${options.marginPercentage}%)`, `(${formatAmount(options.summary.marginDeduction)})`],
+    ['F. Net Calculated Drawing Power (DP) = D - E', formatAmount(options.summary.netDrawingPower)],
+    ['G. Sanctioned CC / OD Limit', formatAmount(options.summary.sanctionedLimit)],
+    ['H. FINAL USABLE DRAWING POWER = Min(F, G)', formatAmount(options.summary.finalDP)]
+  ]
+
+  autoTable(doc, {
+    startY: startY + 10,
+    body: summaryRows,
+    theme: 'plain',
+    styles: { fontSize: 8, cellPadding: 1.2 },
+    columnStyles: {
+      0: { fontStyle: 'normal', cellWidth: 125 },
+      1: { halign: 'right', fontStyle: 'bold', cellWidth: 45 }
+    },
+    didParseCell: (data) => {
+      if (data.row.index === 3 || data.row.index === 5 || data.row.index === 7) {
+        data.cell.styles.fontStyle = 'bold'
+        if (data.row.index === 7) {
+          data.cell.styles.textColor = [2, 86, 232]
+        }
+      }
+    },
+    margin: { left: 18, right: 18 }
+  })
+
+  let currentY = (doc as any).lastAutoTable.finalY + 10
+
+  // Section 2: Stock Schedule
+  doc.setFontSize(10)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(30, 41, 59)
+  doc.text('2. INVENTORY & STOCK VALUATION SCHEDULE', 14, currentY)
+
+  const stockTableData = options.stockBreakdown.map((s, idx) => [
+    idx + 1,
+    s.itemName,
+    s.category || 'General',
+    `${s.quantity.toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${s.unit}`,
+    formatAmount(s.rate),
+    formatAmount(s.value)
+  ])
+
+  autoTable(doc, {
+    startY: currentY + 3,
+    head: [['#', 'Item Description', 'Category', 'Closing Qty', 'Valuation Rate', 'Stock Value']],
+    body: stockTableData.length > 0 ? stockTableData : [['-', 'No inventory items found', '-', '-', '-', 'Rs. 0.00']],
+    theme: 'grid',
+    headStyles: { fillColor: [30, 41, 59], fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7.5, cellPadding: 1.5 },
+    columnStyles: {
+      0: { cellWidth: 10, halign: 'center' },
+      1: { cellWidth: 55 },
+      2: { cellWidth: 35 },
+      3: { halign: 'right', cellWidth: 25 },
+      4: { halign: 'right', cellWidth: 25 },
+      5: { halign: 'right', fontStyle: 'bold', cellWidth: 32 }
+    },
+    margin: { left: 14, right: 14 }
+  })
+
+  currentY = (doc as any).lastAutoTable.finalY + 10
+
+  // Section 3: Book Debts (Debtors Aging) Schedule
+  doc.setFontSize(10)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(30, 41, 59)
+  doc.text('3. BOOK DEBTS AGING SCHEDULE (ELIGIBLE <= 90 DAYS)', 14, currentY)
+
+  const debtorsTableData = options.debtorsBreakdown.map((d, idx) => [
+    idx + 1,
+    d.customerName,
+    formatAmount(d.totalOutstanding),
+    formatAmount(d.eligibleAmount),
+    formatAmount(d.ineligibleAmount),
+    d.eligibleAmount > 0 ? 'Eligible' : 'Excluded'
+  ])
+
+  autoTable(doc, {
+    startY: currentY + 3,
+    head: [['#', 'Customer Name', 'Total Debt', '<= 90 Days (Eligible)', '> 90 Days (Ineligible)', 'Status']],
+    body: debtorsTableData.length > 0 ? debtorsTableData : [['-', 'No outstanding debtor balances', 'Rs. 0.00', 'Rs. 0.00', 'Rs. 0.00', 'Settled']],
+    theme: 'grid',
+    headStyles: { fillColor: [14, 116, 144], fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7.5, cellPadding: 1.5 },
+    columnStyles: {
+      0: { cellWidth: 10, halign: 'center' },
+      1: { cellWidth: 60 },
+      2: { halign: 'right', cellWidth: 28 },
+      3: { halign: 'right', fontStyle: 'bold', cellWidth: 32 },
+      4: { halign: 'right', cellWidth: 30 },
+      5: { halign: 'center', cellWidth: 22 }
+    },
+    margin: { left: 14, right: 14 }
+  })
+
+  currentY = (doc as any).lastAutoTable.finalY + 10
+
+  // Check page overflow for section 4 & declarations
+  if (currentY > 210) {
+    doc.addPage()
+    currentY = 20
+  }
+
+  // Section 4: Creditors Schedule
+  doc.setFontSize(10)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(30, 41, 59)
+  doc.text('4. TRADE CREDITORS (SUPPLIERS) SCHEDULE', 14, currentY)
+
+  const creditorsTableData = options.creditorsBreakdown.map((c, idx) => [
+    idx + 1,
+    c.supplierName,
+    formatAmount(c.payableAmount)
+  ])
+
+  autoTable(doc, {
+    startY: currentY + 3,
+    head: [['#', 'Supplier / Creditor Name', 'Outstanding Payable Amount']],
+    body: creditorsTableData.length > 0 ? creditorsTableData : [['-', 'No supplier payable liabilities', 'Rs. 0.00']],
+    theme: 'grid',
+    headStyles: { fillColor: [180, 83, 9], fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7.5, cellPadding: 1.5 },
+    columnStyles: {
+      0: { cellWidth: 10, halign: 'center' },
+      1: { cellWidth: 110 },
+      2: { halign: 'right', fontStyle: 'bold', cellWidth: 62 }
+    },
+    margin: { left: 14, right: 14 }
+  })
+
+  currentY = (doc as any).lastAutoTable.finalY + 12
+
+  if (currentY > 235) {
+    doc.addPage()
+    currentY = 20
+  }
+
+  // Certification & Signatures
+  doc.setFillColor(248, 250, 252)
+  doc.roundedRect(14, currentY, 182, 42, 2, 2, 'F')
+  doc.setDrawColor(203, 213, 225)
+  doc.roundedRect(14, currentY, 182, 42, 2, 2, 'D')
+
+  doc.setFontSize(7.5)
+  doc.setFont('helvetica', 'italic')
+  doc.setTextColor(71, 85, 105)
+  doc.text(
+    'DECLARATION & CERTIFICATE: We hereby certify that the stocks, receivables, and trade liabilities stated above represent true and accurate records as on the date hereof. The goods and book debts hypothecated to the Bank are free from any prior charge or encumbrance. All debtors outstanding beyond 90 days have been strictly excluded from the drawing power calculation.',
+    18,
+    currentY + 6,
+    { maxWidth: 174 }
+  )
+
+  doc.setFontSize(8.5)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(15, 23, 42)
+  doc.text(`For ${businessName.toUpperCase()}`, 18, currentY + 28)
+  doc.text('Authorised Signatory / Managing Partner', 18, currentY + 36)
+
+  doc.text('Verified & Checked by:', 125, currentY + 28)
+  doc.text('Branch Manager / Bank Official', 125, currentY + 36)
+
+  const fileName = `Drawing_Power_Statement_${options.asOnDate}_${options.bankAccountName.replace(/\s+/g, '_')}.pdf`
+  doc.save(fileName)
+}
+
 

@@ -115,11 +115,13 @@ import {
   UserGear,
   Scales,
   Percent,
-  Clock
+  Clock,
+  ChartLineUp
 } from '@phosphor-icons/react'
 
 import SupplierCDRulesPage from '@/components/supplier-cd-rules-page'
 import CustomerAgingReportPage from '@/components/customer-aging-report-page'
+import DrawingPowerReport from '@/components/drawing-power-report'
 import { toast, Toaster } from 'sonner'
 import { getCurrentFY } from '@/lib/calculations'
 import { cn } from '@/lib/utils'
@@ -440,6 +442,7 @@ const navGroups: NavGroup[] = [
   {
     title: 'Reports',
     items: [
+      { id: 'drawing-power', label: 'Drawing Power Report (DP)', icon: ChartLineUp },
       { id: 'cd-profit-report', label: 'Payment CD & Profit Analytics', icon: Scales },
       { id: 'customer-aging', label: 'Customer Aging & Receivables', icon: Clock },
       { id: 'inventory', label: 'Inventory Report', icon: Cube },
@@ -486,6 +489,7 @@ const viewNames: Record<string, string> = {
   'sales-invoices': 'Sales Invoices',
   'customer-payments': 'Customer Payments',
   'expense-entries': 'Expense Entries',
+  'drawing-power': 'Drawing Power Report (DP)',
   'cd-profit-report': 'Payment CD & Profit Analytics',
   'customer-aging': 'Customer Aging & Receivables',
   'inventory': 'Inventory Report',
@@ -2318,6 +2322,27 @@ function App() {
               salesReturns={safeSalesReturns}
               currentFY={safeCurrentFY}
               businessName={safeBusinessName}
+            />
+          )
+        case 'drawing-power':
+          return (
+            <DrawingPowerReport
+              items={safeItems}
+              purchaseInvoices={safeInvoices}
+              salesInvoices={safeSalesInvoices}
+              purchaseReturns={safePurchaseReturns}
+              salesReturns={safeSalesReturns}
+              customers={safeCustomers}
+              customerPayments={safeCustomerPayments}
+              customerDebitNotes={safeCustomerDebitNotes}
+              creditNotes={safeCreditNotes}
+              suppliers={safeSuppliers}
+              payments={safePayments}
+              debitNotes={safeDebitNotes}
+              supplierCreditNotes={safeSupplierCreditNotes}
+              counters={visibleCashBankCounters}
+              currentFY={safeCurrentFY}
+              activeCompany={safeBusinessName}
             />
           )
         case 'cd-risk':
