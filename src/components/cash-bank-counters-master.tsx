@@ -45,12 +45,14 @@ import { calculateTotalCash, calculateTotalBank } from '@/lib/report-calculation
 import { ThreeDotDropdown } from '@/components/ui/three-dot-dropdown'
 import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
 import { EditHistoryChange, EditHistoryLog } from '@/lib/types'
+import { saveCashBankCounter, deleteCashBankCounter } from '@/lib/firebase-storage'
 
 interface CashBankCountersMasterProps {
   counters: Counter[]
   transactions?: CashBankTransaction[]
   onUpdateCounters: (counters: Counter[]) => void
   isLocked?: boolean
+  activeCompanyId?: string
 }
 
 /** Visual config per counter type */
@@ -89,6 +91,7 @@ export default function CashBankCountersMaster({
   transactions = [],
   onUpdateCounters,
   isLocked = false,
+  activeCompanyId
 }: CashBankCountersMasterProps) {
   const [name, setName] = useState('')
   const [type, setType] = useState<CounterType>('Cash')
@@ -179,20 +182,28 @@ export default function CashBankCountersMaster({
       ]
 
       const diff = openBal - editingCounter.openingBalance
+      const current = typeof editingCounter.currentBalance === 'number' && Number.isFinite(editingCounter.currentBalance)
+        ? editingCounter.currentBalance
+        : (editingCounter.openingBalance || 0)
+
+      const updatedCounter: Counter = {
+        ...editingCounter,
+        name: name.trim(),
+        type,
+        openingBalance: openBal,
+        currentBalance: current + diff,
+        openingBalanceDate: openBal !== 0 ? openingBalanceDate : undefined,
+        sanctionedLimit: isCCOD ? parseFloat(sanctionedLimit) : undefined,
+        marginPercentage: isCCOD ? parseFloat(marginPercentage) : undefined,
+        history: updatedHistory,
+      }
+
+      if (activeCompanyId) {
+        void saveCashBankCounter(activeCompanyId, updatedCounter)
+      }
+
       const updatedCounters = counters.map(c =>
-        c.id === editingId
-          ? {
-              ...c,
-              name: name.trim(),
-              type,
-              openingBalance: openBal,
-              currentBalance: c.currentBalance + diff,
-              openingBalanceDate: openBal !== 0 ? openingBalanceDate : undefined,
-              sanctionedLimit: isCCOD ? parseFloat(sanctionedLimit) : undefined,
-              marginPercentage: isCCOD ? parseFloat(marginPercentage) : undefined,
-              history: updatedHistory,
-            }
-          : c
+        c.id === editingId ? updatedCounter : c
       )
       onUpdateCounters(updatedCounters)
       toast.success('Counter updated successfully')
@@ -228,6 +239,11 @@ export default function CashBankCountersMaster({
           }
         ]
       }
+
+      if (activeCompanyId) {
+        void saveCashBankCounter(activeCompanyId, newCounter)
+      }
+
       onUpdateCounters([...counters, newCounter])
       toast.success(`Counter "${newCounter.name}" created successfully`)
     }
@@ -272,6 +288,10 @@ export default function CashBankCountersMaster({
       if (!window.confirm(`Delete counter "${target.name}"? This action cannot be undone.`)) {
         return
       }
+    }
+
+    if (activeCompanyId) {
+      void deleteCashBankCounter(activeCompanyId, id)
     }
 
     const updatedCounters = counters.filter(c => c.id !== id)

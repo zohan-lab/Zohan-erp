@@ -2372,6 +2372,7 @@ function App() {
                 syncSetCashBankTransactions(t)
               }}
               isLocked={isViewReadOnly('cash-bank-master')}
+              activeCompanyId={metadata.activeCompanyId}
             />
           )
         case 'customer-credit-notes':

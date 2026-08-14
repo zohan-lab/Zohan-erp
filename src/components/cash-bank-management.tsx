@@ -34,6 +34,12 @@ import { calculateTotalCash, calculateTotalBank } from '@/lib/report-calculation
 import { ThreeDotDropdown } from '@/components/ui/three-dot-dropdown'
 import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
 import { EditHistoryChange, EditHistoryLog } from '@/lib/types'
+import { 
+  saveCashBankCounter, 
+  deleteCashBankCounter, 
+  saveCashBankTransaction, 
+  deleteCashBankTransaction 
+} from '@/lib/firebase-storage'
 
 type DisplayTransaction = CashBankTransaction & {
   displayId: string
@@ -49,6 +55,7 @@ interface CashBankManagementProps {
   transactions: CashBankTransaction[]
   onUpdateAll: (counters: Counter[], transactions: CashBankTransaction[]) => void
   isLocked?: boolean
+  activeCompanyId?: string
 }
 
 /** Returns the start of the current Indian financial year as YYYY-MM-DD */
@@ -62,7 +69,8 @@ export default function CashBankManagement({
   counters = [], 
   transactions = [], 
   onUpdateAll,
-  isLocked = false 
+  isLocked = false,
+  activeCompanyId
 }: CashBankManagementProps) {
   // Modal states
   const [transferOpen, setTransferOpen] = useState(false)
@@ -234,8 +242,19 @@ export default function CashBankManagement({
     const dest = counters.find((c) => c.id === toCounterId)
 
     const nextCounters = counters.map((c) => {
-      if (c.id === fromCounterId) return { ...c, currentBalance: c.currentBalance - amt }
-      if (c.id === toCounterId) return { ...c, currentBalance: c.currentBalance + amt }
+      const current = typeof c.currentBalance === 'number' && Number.isFinite(c.currentBalance)
+        ? c.currentBalance
+        : (c.openingBalance || 0)
+      if (c.id === fromCounterId) {
+        const updated = { ...c, currentBalance: current - amt }
+        if (activeCompanyId) void saveCashBankCounter(activeCompanyId, updated)
+        return updated
+      }
+      if (c.id === toCounterId) {
+        const updated = { ...c, currentBalance: current + amt }
+        if (activeCompanyId) void saveCashBankCounter(activeCompanyId, updated)
+        return updated
+      }
       return c
     })
 
@@ -249,6 +268,10 @@ export default function CashBankManagement({
       narration: transferNarration.trim() || `Transfer: ${source?.name} ➔ ${dest?.name}`,
       toCounterId: toCounterId,
       toCounterName: dest?.name || 'Counter'
+    }
+
+    if (activeCompanyId) {
+      void saveCashBankTransaction(activeCompanyId, newTx)
     }
 
     onUpdateAll(nextCounters, [newTx, ...transactions])
@@ -271,7 +294,12 @@ export default function CashBankManagement({
 
     const nextCounters = counters.map((c) => {
       if (c.id === targetCounterId) {
-        return { ...c, currentBalance: isAdd ? c.currentBalance + amt : c.currentBalance - amt }
+        const current = typeof c.currentBalance === 'number' && Number.isFinite(c.currentBalance)
+          ? c.currentBalance
+          : (c.openingBalance || 0)
+        const updated = { ...c, currentBalance: isAdd ? current + amt : current - amt }
+        if (activeCompanyId) void saveCashBankCounter(activeCompanyId, updated)
+        return updated
       }
       return c
     })
@@ -284,6 +312,10 @@ export default function CashBankManagement({
       type: addReduceType,
       amount: amt,
       narration: addReduceNarration.trim() || (isAdd ? 'Cash In / Deposit' : 'Cash Out / Expense')
+    }
+
+    if (activeCompanyId) {
+      void saveCashBankTransaction(activeCompanyId, newTx)
     }
 
     onUpdateAll(nextCounters, [newTx, ...transactions])
@@ -349,20 +381,28 @@ export default function CashBankManagement({
       ]
 
       const diff = openBal - editingCounter.openingBalance
+      const current = typeof editingCounter.currentBalance === 'number' && Number.isFinite(editingCounter.currentBalance)
+        ? editingCounter.currentBalance
+        : (editingCounter.openingBalance || 0)
+
+      const updatedCounter: Counter = {
+        ...editingCounter,
+        name: counterName.trim(),
+        type: counterType,
+        openingBalance: openBal,
+        currentBalance: current + diff,
+        openingBalanceDate: openBal !== 0 ? counterObDate : undefined,
+        sanctionedLimit: isCCOD ? parseFloat(counterSanctionedLimit) : undefined,
+        marginPercentage: isCCOD ? parseFloat(counterMarginPct) : undefined,
+        history: updatedHistory,
+      }
+
+      if (activeCompanyId) {
+        void saveCashBankCounter(activeCompanyId, updatedCounter)
+      }
+
       const nextCounters = counters.map((c) => 
-        c.id === editingCounter.id 
-          ? { 
-              ...c, 
-              name: counterName.trim(), 
-              type: counterType, 
-              openingBalance: openBal, 
-              currentBalance: c.currentBalance + diff,
-              openingBalanceDate: openBal !== 0 ? counterObDate : undefined,
-              sanctionedLimit: isCCOD ? parseFloat(counterSanctionedLimit) : undefined,
-              marginPercentage: isCCOD ? parseFloat(counterMarginPct) : undefined,
-              history: updatedHistory,
-            }
-          : c
+        c.id === editingCounter.id ? updatedCounter : c
       )
       onUpdateAll(nextCounters, transactions)
       toast.success(`Counter "${counterName}" updated`)
@@ -397,6 +437,11 @@ export default function CashBankManagement({
           }
         ]
       }
+
+      if (activeCompanyId) {
+        void saveCashBankCounter(activeCompanyId, newCounter)
+      }
+
       onUpdateAll([...counters, newCounter], transactions)
       toast.success(`Counter "${counterName}" added`)
     }
@@ -428,6 +473,10 @@ export default function CashBankManagement({
       if (!window.confirm(`Delete counter "${target.name}"? This action cannot be undone.`)) return
     }
 
+    if (activeCompanyId) {
+      void deleteCashBankCounter(activeCompanyId, id)
+    }
+
     const nextCounters = counters.filter((c) => c.id !== id)
     onUpdateAll(nextCounters, transactions)
     toast.success(`Counter "${target.name}" deleted`)
@@ -453,19 +502,37 @@ export default function CashBankManagement({
         : (c.openingBalance || 0)
 
       if (targetTx.type === 'In' && c.id === targetTx.counterId) {
-        return { ...c, currentBalance: current - targetTx.amount }
+        const updated = { ...c, currentBalance: current - targetTx.amount }
+        if (activeCompanyId) void saveCashBankCounter(activeCompanyId, updated)
+        return updated
       }
       if (targetTx.type === 'Out' && c.id === targetTx.counterId) {
-        return { ...c, currentBalance: current + targetTx.amount }
+        const updated = { ...c, currentBalance: current + targetTx.amount }
+        if (activeCompanyId) void saveCashBankCounter(activeCompanyId, updated)
+        return updated
       }
       if (targetTx.type === 'Transfer') {
-        if (c.id === targetTx.counterId) return { ...c, currentBalance: current + targetTx.amount }
-        if (c.id === targetTx.toCounterId) return { ...c, currentBalance: current - targetTx.amount }
+        if (c.id === targetTx.counterId) {
+          const updated = { ...c, currentBalance: current + targetTx.amount }
+          if (activeCompanyId) void saveCashBankCounter(activeCompanyId, updated)
+          return updated
+        }
+        if (c.id === targetTx.toCounterId) {
+          const updated = { ...c, currentBalance: current - targetTx.amount }
+          if (activeCompanyId) void saveCashBankCounter(activeCompanyId, updated)
+          return updated
+        }
       }
       return c
     })
 
     const nextTx = transactions.filter((tx) => tx.id !== rawId)
+
+    // Permanently remove transaction from remote storage
+    if (activeCompanyId) {
+      void deleteCashBankTransaction(activeCompanyId, rawId)
+    }
+
     onUpdateAll(nextCounters, nextTx)
     toast.success('Transaction deleted and balance restored')
   }

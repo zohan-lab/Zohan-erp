@@ -421,8 +421,20 @@ export async function deletePurchaseReturn(companyId: string, returnId: string):
   await deleteEntityRemote(companyId, 'purchaseReturns', returnId)
 }
 
-export async function deleteReceivedDiscount(companyId: string, discountId: string): Promise<void> {
-  await deleteEntityRemote(companyId, 'receivedDiscounts', discountId)
+export async function saveCashBankCounter(companyId: string, counter: any): Promise<void> {
+  await saveEntityRemote(companyId, 'cashBankCounters', counter)
+}
+
+export async function deleteCashBankCounter(companyId: string, counterId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'cashBankCounters', counterId)
+}
+
+export async function saveCashBankTransaction(companyId: string, transaction: any): Promise<void> {
+  await saveEntityRemote(companyId, 'cashBankTransactions', transaction)
+}
+
+export async function deleteCashBankTransaction(companyId: string, transactionId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'cashBankTransactions', transactionId)
 }
 
 export async function saveEntityRemote(companyId: string, collectionKey: string, entity: any): Promise<void> {
