@@ -491,20 +491,33 @@ export default function CashBankManagement({
               </div>
             ) : (
               <div className="space-y-3">
-                {counters.map((c) => (
+                {counters.map((c) => {
+                    const badgeClass = c.type === 'Cash'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : c.type === 'Current'
+                      ? 'bg-indigo-100 text-indigo-700'
+                      : c.type === 'Bank CC / OD'
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'bg-blue-100 text-blue-700' // Savings, Bank (legacy)
+
+                    return (
                   <div key={c.id} className="p-3.5 rounded-xl border border-slate-100 bg-slate-50/60 flex items-center justify-between hover:bg-slate-50 transition-colors">
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-slate-900">{c.name}</span>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          c.type === 'Bank' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'
-                        }`}>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${badgeClass}`}>
                           {c.type || 'Cash'}
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-500 font-medium mt-0.5">
                         Opening: {formatCurrency(c.openingBalance || 0)}
                       </p>
+                      {c.type === 'Bank CC / OD' && c.sanctionedLimit != null && (
+                        <p className="text-[10px] text-amber-600 font-medium mt-0.5">
+                          Limit: ₹{c.sanctionedLimit.toLocaleString('en-IN')}
+                          {c.marginPercentage != null && ` · Margin: ${c.marginPercentage}%`}
+                        </p>
+                      )}
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-extrabold text-slate-900">{formatCurrency(c.currentBalance || 0)}</p>
@@ -520,7 +533,9 @@ export default function CashBankManagement({
                       </button>
                     </div>
                   </div>
-                ))}
+                    )
+                  })}
+
               </div>
             )}
           </div>

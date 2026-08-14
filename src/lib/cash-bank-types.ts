@@ -1,9 +1,21 @@
+/** All valid counter/account types */
+export type CounterType = 'Cash' | 'Savings' | 'Current' | 'Bank CC / OD' | 'Bank'
+
+/** Returns true for any bank sub-type (Savings, Current, Bank CC/OD, or legacy Bank) */
+export function isBankType(type: string | undefined): boolean {
+  return type === 'Bank' || type === 'Savings' || type === 'Current' || type === 'Bank CC / OD'
+}
+
 export interface Counter {
   id: string
   name: string
-  type: 'Cash' | 'Bank'
+  type: CounterType
   openingBalance: number
   currentBalance: number
+  /** Only for 'Bank CC / OD' accounts: total sanctioned credit/OD limit in ₹ */
+  sanctionedLimit?: number
+  /** Only for 'Bank CC / OD' accounts: bank's stock/asset margin haircut percentage (0–100) */
+  marginPercentage?: number
 }
 
 export interface CashBankTransaction {

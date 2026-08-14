@@ -28,6 +28,7 @@ import {
   normalizeLineItem,
   getInvoiceQtyForUnit as getNormalizedInvoiceQtyForUnit
 } from './unit-conversion-service'
+import { isBankType } from './cash-bank-types'
 
 export interface InventoryData {
   itemId: string
@@ -596,7 +597,7 @@ export function calculateTotalCash(counters: any[]): number {
 
 export function calculateTotalBank(counters: any[]): number {
   return (counters || [])
-    .filter((c) => c.type === 'Bank')
+    .filter((c) => isBankType(c.type))
     .reduce((sum, c) => sum + (c.currentBalance || 0), 0)
 }
 

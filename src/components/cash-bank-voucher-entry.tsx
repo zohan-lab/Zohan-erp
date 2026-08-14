@@ -255,7 +255,7 @@ export default function CashBankVoucherEntry({
                           ) : (
                             <Bank className="h-4 w-4 text-blue-600" />
                           )}
-                          <span>{c.name} ({c.type === 'Bank' ? 'Online/Bank' : 'Cash'})</span>
+                          <span>{c.name} ({c.type === 'Cash' ? 'Cash' : c.type})</span>
                           <span className="text-xs text-muted-foreground ml-auto">
                             ₹{c.currentBalance.toLocaleString('en-IN')}
                           </span>
@@ -288,7 +288,7 @@ export default function CashBankVoucherEntry({
                               ) : (
                                 <Bank className="h-4 w-4 text-blue-600" />
                               )}
-                              <span>{c.name} ({c.type === 'Bank' ? 'Online/Bank' : 'Cash'})</span>
+                              <span>{c.name} ({c.type === 'Cash' ? 'Cash' : c.type})</span>
                               <span className="text-xs text-muted-foreground ml-auto">
                                 ₹{c.currentBalance.toLocaleString('en-IN')}
                               </span>

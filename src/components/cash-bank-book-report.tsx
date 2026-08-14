@@ -19,7 +19,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Wallet, Funnel, X, ArrowLeft, ArrowRight, ArrowUpRight, ArrowDownLeft, Coins, Bank } from '@phosphor-icons/react'
-import { Counter, CashBankTransaction } from '@/lib/cash-bank-types'
+import { Counter, CashBankTransaction, isBankType } from '@/lib/cash-bank-types'
 import { calculateTotalCash, calculateTotalBank, calculateTotalLiquid } from '@/lib/report-calculations'
 
 type DisplayTransaction = CashBankTransaction & {
@@ -202,15 +202,15 @@ export default function CashBankBookReport({
               ₹{totalBank.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
             <p className="text-xs font-medium text-blue-600/80 mt-2 uppercase tracking-widest">
-              {counters.filter(c => c.type === 'Bank').length} account(s)
+              {counters.filter(c => isBankType(c.type)).length} account(s)
             </p>
           </CardContent>
         </Card>
 
         {/* Individual Counters */}
         {[...counters].sort((a, b) => {
-          if (a.type === 'Bank' && b.type === 'Cash') return -1;
-          if (a.type === 'Cash' && b.type === 'Bank') return 1;
+          if (isBankType(a.type) && !isBankType(b.type)) return -1;
+          if (!isBankType(a.type) && isBankType(b.type)) return 1;
           return 0;
         }).map(c => (
           <div 
