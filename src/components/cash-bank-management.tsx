@@ -24,11 +24,12 @@ import {
   Receipt,
   CaretLeft,
   TrendUp,
-  TrendDown
+  TrendDown,
+  CreditCard
 } from '@phosphor-icons/react'
 import { formatCurrency } from '@/lib/calculations'
 import { toast } from 'sonner'
-import { Counter, CashBankTransaction, isManualCounterTransaction } from '@/lib/cash-bank-types'
+import { Counter, CounterType, CashBankTransaction, isManualCounterTransaction, isBankType } from '@/lib/cash-bank-types'
 import { calculateTotalCash, calculateTotalBank } from '@/lib/report-calculations'
 
 type DisplayTransaction = CashBankTransaction & {
@@ -75,8 +76,10 @@ export default function CashBankManagement({
   // Manage Counter Form state
   const [editingCounter, setEditingCounter] = useState<Counter | null>(null)
   const [counterName, setCounterName] = useState('')
-  const [counterType, setCounterType] = useState<'Cash' | 'Bank'>('Cash')
+  const [counterType, setCounterType] = useState<CounterType>('Cash')
   const [counterOpeningBal, setCounterOpeningBal] = useState('0')
+  const [counterSanctionedLimit, setCounterSanctionedLimit] = useState('')
+  const [counterMarginPct, setCounterMarginPct] = useState('')
 
   // Filter Ledger states
   const [filterCounter, setFilterCounter] = useState<string>('all')
@@ -285,6 +288,14 @@ export default function CashBankManagement({
     if (isLocked) return toast.error('Data is locked.')
     if (!counterName.trim()) return toast.error('Enter counter name')
     const openBal = parseFloat(counterOpeningBal) || 0
+    const isCCOD = counterType === 'Bank CC / OD'
+
+    if (isCCOD) {
+      if (!counterSanctionedLimit || parseFloat(counterSanctionedLimit) <= 0)
+        return toast.error('Enter a valid Sanctioned Limit for CC / OD account')
+      if (!counterMarginPct || parseFloat(counterMarginPct) < 0 || parseFloat(counterMarginPct) > 100)
+        return toast.error('Margin / Haircut Percentage must be between 0 and 100')
+    }
 
     if (editingCounter) {
       const hasTx = transactions.some((t) => 
@@ -302,7 +313,15 @@ export default function CashBankManagement({
       const diff = openBal - editingCounter.openingBalance
       const nextCounters = counters.map((c) => 
         c.id === editingCounter.id 
-          ? { ...c, name: counterName.trim(), type: counterType, openingBalance: openBal, currentBalance: c.currentBalance + diff }
+          ? { 
+              ...c, 
+              name: counterName.trim(), 
+              type: counterType, 
+              openingBalance: openBal, 
+              currentBalance: c.currentBalance + diff,
+              sanctionedLimit: isCCOD ? parseFloat(counterSanctionedLimit) : undefined,
+              marginPercentage: isCCOD ? parseFloat(counterMarginPct) : undefined,
+            }
           : c
       )
       onUpdateAll(nextCounters, transactions)
@@ -313,7 +332,11 @@ export default function CashBankManagement({
         name: counterName.trim(),
         type: counterType,
         openingBalance: openBal,
-        currentBalance: openBal
+        currentBalance: openBal,
+        ...(isCCOD && {
+          sanctionedLimit: parseFloat(counterSanctionedLimit),
+          marginPercentage: parseFloat(counterMarginPct),
+        }),
       }
       onUpdateAll([...counters, newCounter], transactions)
       toast.success(`Counter "${counterName}" added`)
@@ -321,6 +344,8 @@ export default function CashBankManagement({
 
     setCounterName('')
     setCounterOpeningBal('0')
+    setCounterSanctionedLimit('')
+    setCounterMarginPct('')
     setEditingCounter(null)
   }
 
@@ -921,7 +946,7 @@ export default function CashBankManagement({
                 <div className="space-y-1">
                   <Label className="text-[11px] font-bold text-slate-700">Counter Name</Label>
                   <Input
-                    placeholder="e.g. Counter 1, HDFC Bank"
+                    placeholder={counterType === 'Bank CC / OD' ? 'e.g. HDFC CC, SBI OD' : 'e.g. Counter 1, HDFC Bank'}
                     value={counterName}
                     onChange={(e) => setCounterName(e.target.value)}
                     className="h-8 text-xs bg-white"
@@ -930,14 +955,36 @@ export default function CashBankManagement({
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-[11px] font-bold text-slate-700">Type</Label>
-                  <Select value={counterType} onValueChange={(val: 'Cash' | 'Bank') => setCounterType(val)}>
+                  <Label className="text-[11px] font-bold text-slate-700">Account Type</Label>
+                  <Select value={counterType} onValueChange={(val: CounterType) => setCounterType(val)}>
                     <SelectTrigger className="h-8 text-xs bg-white">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="Cash">Cash</SelectItem>
-                      <SelectItem value="Bank">Bank Account</SelectItem>
+                      <SelectItem value="Cash">
+                        <div className="flex items-center gap-1.5">
+                          <Coins className="h-3.5 w-3.5 text-emerald-600" />
+                          Physical Cash
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="Savings">
+                        <div className="flex items-center gap-1.5">
+                          <Bank className="h-3.5 w-3.5 text-blue-600" />
+                          Savings Account
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="Current">
+                        <div className="flex items-center gap-1.5">
+                          <ArrowsLeftRight className="h-3.5 w-3.5 text-indigo-600" />
+                          Current Account
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="Bank CC / OD">
+                        <div className="flex items-center gap-1.5">
+                          <CreditCard className="h-3.5 w-3.5 text-amber-600" />
+                          Bank CC / OD
+                        </div>
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -954,6 +1001,43 @@ export default function CashBankManagement({
                 </div>
               </div>
 
+              {/* CC / OD conditional fields */}
+              {counterType === 'Bank CC / OD' && (
+                <div className="grid grid-cols-2 gap-3 p-3 rounded-lg border border-amber-200 bg-amber-50/60">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-bold text-amber-800">
+                      Sanctioned Limit (₹) <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      type="number"
+                      placeholder="e.g. 10000000"
+                      min="1"
+                      step="1"
+                      value={counterSanctionedLimit}
+                      onChange={(e) => setCounterSanctionedLimit(e.target.value)}
+                      className="h-8 text-xs bg-white border-amber-300"
+                      required={counterType === 'Bank CC / OD'}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-bold text-amber-800">
+                      Margin / Haircut % <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      type="number"
+                      placeholder="e.g. 25"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value={counterMarginPct}
+                      onChange={(e) => setCounterMarginPct(e.target.value)}
+                      className="h-8 text-xs bg-white border-amber-300"
+                      required={counterType === 'Bank CC / OD'}
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="flex items-center justify-end gap-2 pt-1">
                 {editingCounter && (
                   <Button
@@ -964,6 +1048,8 @@ export default function CashBankManagement({
                       setEditingCounter(null)
                       setCounterName('')
                       setCounterOpeningBal('0')
+                      setCounterSanctionedLimit('')
+                      setCounterMarginPct('')
                     }}
                     className="h-7 text-xs"
                   >
@@ -992,7 +1078,18 @@ export default function CashBankManagement({
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-bold text-slate-900">{c.name}</span>
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-semibold">
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] px-1.5 py-0 font-semibold ${
+                              c.type === 'Cash'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : c.type === 'Current'
+                                ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                : c.type === 'Bank CC / OD'
+                                ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                : 'bg-blue-50 text-blue-700 border-blue-200'
+                            }`}
+                          >
                             {c.type}
                           </Badge>
                           {hasTx && (
@@ -1004,6 +1101,11 @@ export default function CashBankManagement({
                         <p className="text-[11px] text-slate-500 mt-0.5">
                           Opening: {formatCurrency(c.openingBalance || 0)} | Current: <span className="font-bold text-slate-800">{formatCurrency(c.currentBalance || 0)}</span>
                         </p>
+                        {c.type === 'Bank CC / OD' && c.sanctionedLimit != null && (
+                          <p className="text-[10px] text-amber-600 font-medium mt-0.5">
+                            Limit: ₹{c.sanctionedLimit.toLocaleString('en-IN')}{c.marginPercentage != null ? ` · Margin: ${c.marginPercentage}%` : ''}
+                          </p>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-1">
@@ -1021,6 +1123,8 @@ export default function CashBankManagement({
                             setCounterName(c.name)
                             setCounterType(c.type || 'Cash')
                             setCounterOpeningBal(c.openingBalance?.toString() || '0')
+                            setCounterSanctionedLimit(c.sanctionedLimit != null ? String(c.sanctionedLimit) : '')
+                            setCounterMarginPct(c.marginPercentage != null ? String(c.marginPercentage) : '')
                           }}
                           disabled={isLocked || hasTx}
                           className="h-7 w-7 p-0 text-slate-600 hover:bg-slate-100 disabled:opacity-30"
