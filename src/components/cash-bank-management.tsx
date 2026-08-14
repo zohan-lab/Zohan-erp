@@ -31,6 +31,9 @@ import { formatCurrency } from '@/lib/calculations'
 import { toast } from 'sonner'
 import { Counter, CounterType, CashBankTransaction, isManualCounterTransaction, isBankType } from '@/lib/cash-bank-types'
 import { calculateTotalCash, calculateTotalBank } from '@/lib/report-calculations'
+import { ThreeDotDropdown } from '@/components/ui/three-dot-dropdown'
+import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
+import { EditHistoryChange, EditHistoryLog } from '@/lib/types'
 
 type DisplayTransaction = CashBankTransaction & {
   displayId: string
@@ -306,17 +309,44 @@ export default function CashBankManagement({
     }
 
     if (editingCounter) {
-      const hasTx = transactions.some((t) => 
-        t.counterId === editingCounter.id || 
-        t.toCounterId === editingCounter.id || 
-        (t.counterName && t.counterName.trim().toLowerCase() === editingCounter.name.trim().toLowerCase())
-      )
-      if (hasTx) {
-        toast.error(`Cannot edit counter "${editingCounter.name}"`, {
-          description: 'This counter has existing transactions and cannot be edited.'
-        })
-        return
+      const changes: EditHistoryChange[] = []
+      if (editingCounter.name !== counterName.trim()) {
+        changes.push({ field: 'Counter Name', from: editingCounter.name, to: counterName.trim() })
       }
+      if (editingCounter.type !== counterType) {
+        changes.push({ field: 'Account Type', from: editingCounter.type, to: counterType })
+      }
+      if (editingCounter.openingBalance !== openBal) {
+        changes.push({ field: 'Opening Balance', from: formatCurrency(editingCounter.openingBalance || 0), to: formatCurrency(openBal) })
+      }
+      if ((editingCounter.openingBalanceDate || '') !== (openBal !== 0 ? (counterObDate || '') : '')) {
+        changes.push({ field: 'As-On Date', from: editingCounter.openingBalanceDate || 'None', to: counterObDate || 'None' })
+      }
+      if (isCCOD && (editingCounter.sanctionedLimit || 0) !== (parseFloat(counterSanctionedLimit) || 0)) {
+        changes.push({ 
+          field: 'Sanctioned Limit', 
+          from: formatCurrency(editingCounter.sanctionedLimit || 0), 
+          to: formatCurrency(parseFloat(counterSanctionedLimit) || 0) 
+        })
+      }
+      if (isCCOD && (editingCounter.marginPercentage || 0) !== (parseFloat(counterMarginPct) || 0)) {
+        changes.push({ 
+          field: 'Margin %', 
+          from: `${editingCounter.marginPercentage || 0}%`, 
+          to: `${parseFloat(counterMarginPct) || 0}%` 
+        })
+      }
+
+      const updatedHistory: EditHistoryLog[] = [
+        ...(editingCounter.history || []),
+        ...(changes.length > 0 ? [{
+          timestamp: new Date().toISOString(),
+          action: 'updated' as const,
+          changedBy: getChangedByLabel(),
+          changedByRole: getChangedByRole(),
+          changes
+        }] : [])
+      ]
 
       const diff = openBal - editingCounter.openingBalance
       const nextCounters = counters.map((c) => 
@@ -330,12 +360,22 @@ export default function CashBankManagement({
               openingBalanceDate: openBal !== 0 ? counterObDate : undefined,
               sanctionedLimit: isCCOD ? parseFloat(counterSanctionedLimit) : undefined,
               marginPercentage: isCCOD ? parseFloat(counterMarginPct) : undefined,
+              history: updatedHistory,
             }
           : c
       )
       onUpdateAll(nextCounters, transactions)
       toast.success(`Counter "${counterName}" updated`)
     } else {
+      const changes: EditHistoryChange[] = [
+        { field: 'Counter Name', from: '', to: counterName.trim() },
+        { field: 'Account Type', from: '', to: counterType },
+        { field: 'Opening Balance', from: '', to: formatCurrency(openBal) },
+        ...(openBal !== 0 && counterObDate ? [{ field: 'As-On Date', from: '', to: counterObDate }] : []),
+        ...(isCCOD && counterSanctionedLimit ? [{ field: 'Sanctioned Limit', from: '', to: formatCurrency(parseFloat(counterSanctionedLimit)) }] : []),
+        ...(isCCOD && counterMarginPct ? [{ field: 'Margin %', from: '', to: `${counterMarginPct}%` }] : [])
+      ]
+
       const newCounter: Counter = {
         id: `cnt-${Date.now()}`,
         name: counterName.trim(),
@@ -347,6 +387,15 @@ export default function CashBankManagement({
           sanctionedLimit: parseFloat(counterSanctionedLimit),
           marginPercentage: parseFloat(counterMarginPct),
         }),
+        history: [
+          {
+            timestamp: new Date().toISOString(),
+            action: 'created',
+            changedBy: getChangedByLabel(),
+            changedByRole: getChangedByRole(),
+            changes
+          }
+        ]
       }
       onUpdateAll([...counters, newCounter], transactions)
       toast.success(`Counter "${counterName}" added`)
@@ -372,13 +421,13 @@ export default function CashBankManagement({
       (t.counterName && t.counterName.trim().toLowerCase() === target.name.trim().toLowerCase())
     )
     if (hasTx) {
-      toast.error(`Cannot delete counter "${target.name}"`, {
-        description: 'This counter has existing transactions and cannot be deleted.'
-      })
-      return
+      if (!window.confirm(`Warning: "${target.name}" has existing recorded transactions. Deleting it will remove the counter entry. Are you sure you want to delete?`)) {
+        return
+      }
+    } else {
+      if (!window.confirm(`Delete counter "${target.name}"? This action cannot be undone.`)) return
     }
 
-    if (!window.confirm(`Delete counter "${target.name}"? This action cannot be undone.`)) return
     const nextCounters = counters.filter((c) => c.id !== id)
     onUpdateAll(nextCounters, transactions)
     toast.success(`Counter "${target.name}" deleted`)
@@ -1139,17 +1188,9 @@ export default function CashBankManagement({
                         )}
                       </div>
 
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            if (hasTx) {
-                              toast.error(`Cannot edit counter "${c.name}"`, {
-                                description: 'This counter has existing transactions and cannot be edited.'
-                              })
-                              return
-                            }
+                      <div className="flex items-center">
+                        <ThreeDotDropdown
+                          onEdit={() => {
                             setEditingCounter(c)
                             setCounterName(c.name)
                             setCounterType(c.type || 'Cash')
@@ -1158,22 +1199,11 @@ export default function CashBankManagement({
                             setCounterSanctionedLimit(c.sanctionedLimit != null ? String(c.sanctionedLimit) : '')
                             setCounterMarginPct(c.marginPercentage != null ? String(c.marginPercentage) : '')
                           }}
-                          disabled={isLocked || hasTx}
-                          className="h-7 w-7 p-0 text-slate-600 hover:bg-slate-100 disabled:opacity-30"
-                          title={hasTx ? 'Cannot edit counter with existing transactions' : 'Edit Counter'}
-                        >
-                          <PencilSimple className="h-3.5 w-3.5" weight="bold" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDeleteCounter(c.id)}
-                          disabled={isLocked || hasTx}
-                          className="h-7 w-7 p-0 text-red-600 hover:bg-red-50 disabled:opacity-30"
-                          title={hasTx ? 'Cannot delete counter with existing transactions' : 'Delete Counter'}
-                        >
-                          <Trash className="h-3.5 w-3.5" weight="bold" />
-                        </Button>
+                          onDelete={() => handleDeleteCounter(c.id)}
+                          history={c.history}
+                          entityType="Counter"
+                          isLocked={isLocked}
+                        />
                       </div>
                     </div>
                   )

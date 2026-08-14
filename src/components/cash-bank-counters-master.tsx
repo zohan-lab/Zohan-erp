@@ -35,7 +35,6 @@ import {
   Coins,
   Bank,
   Plus,
-  Pencil,
   Trash,
   CreditCard,
   ArrowsLeftRight,
@@ -43,6 +42,9 @@ import {
 import { toast } from 'sonner'
 import { Counter, CounterType, CashBankTransaction, isBankType } from '@/lib/cash-bank-types'
 import { calculateTotalCash, calculateTotalBank } from '@/lib/report-calculations'
+import { ThreeDotDropdown } from '@/components/ui/three-dot-dropdown'
+import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
+import { EditHistoryChange, EditHistoryLog } from '@/lib/types'
 
 interface CashBankCountersMasterProps {
   counters: Counter[]
@@ -134,41 +136,97 @@ export default function CashBankCountersMaster({
 
     if (editingId) {
       const editingCounter = counters.find(c => c.id === editingId)
-      const hasTx = transactions.some(t =>
-        t.counterId === editingId ||
-        t.toCounterId === editingId ||
-        (editingCounter && t.counterName && t.counterName.trim().toLowerCase() === editingCounter.name.trim().toLowerCase())
-      )
-      if (hasTx) {
-        toast.error('Cannot edit counter because it has existing transactions.')
-        return
+      if (!editingCounter) return
+
+      const openBal = parseFloat(openingBalance) || 0
+      const changes: EditHistoryChange[] = []
+      if (editingCounter.name !== name.trim()) {
+        changes.push({ field: 'Counter Name', from: editingCounter.name, to: name.trim() })
+      }
+      if (editingCounter.type !== type) {
+        changes.push({ field: 'Account Type', from: editingCounter.type, to: type })
+      }
+      if (editingCounter.openingBalance !== openBal) {
+        changes.push({ field: 'Opening Balance', from: `₹${(editingCounter.openingBalance || 0).toLocaleString('en-IN')}`, to: `₹${openBal.toLocaleString('en-IN')}` })
+      }
+      if ((editingCounter.openingBalanceDate || '') !== (openBal !== 0 ? (openingBalanceDate || '') : '')) {
+        changes.push({ field: 'As-On Date', from: editingCounter.openingBalanceDate || 'None', to: openingBalanceDate || 'None' })
+      }
+      if (isCCOD && (editingCounter.sanctionedLimit || 0) !== (parseFloat(sanctionedLimit) || 0)) {
+        changes.push({ 
+          field: 'Sanctioned Limit', 
+          from: `₹${(editingCounter.sanctionedLimit || 0).toLocaleString('en-IN')}`, 
+          to: `₹${(parseFloat(sanctionedLimit) || 0).toLocaleString('en-IN')}` 
+        })
+      }
+      if (isCCOD && (editingCounter.marginPercentage || 0) !== (parseFloat(marginPercentage) || 0)) {
+        changes.push({ 
+          field: 'Margin %', 
+          from: `${editingCounter.marginPercentage || 0}%`, 
+          to: `${parseFloat(marginPercentage) || 0}%` 
+        })
       }
 
+      const updatedHistory: EditHistoryLog[] = [
+        ...(editingCounter.history || []),
+        ...(changes.length > 0 ? [{
+          timestamp: new Date().toISOString(),
+          action: 'updated' as const,
+          changedBy: getChangedByLabel(),
+          changedByRole: getChangedByRole(),
+          changes
+        }] : [])
+      ]
+
+      const diff = openBal - editingCounter.openingBalance
       const updatedCounters = counters.map(c =>
         c.id === editingId
           ? {
               ...c,
               name: name.trim(),
               type,
+              openingBalance: openBal,
+              currentBalance: c.currentBalance + diff,
+              openingBalanceDate: openBal !== 0 ? openingBalanceDate : undefined,
               sanctionedLimit: isCCOD ? parseFloat(sanctionedLimit) : undefined,
               marginPercentage: isCCOD ? parseFloat(marginPercentage) : undefined,
+              history: updatedHistory,
             }
           : c
       )
       onUpdateCounters(updatedCounters)
       toast.success('Counter updated successfully')
     } else {
+      const openBal = parseFloat(openingBalance) || 0
+      const changes: EditHistoryChange[] = [
+        { field: 'Counter Name', from: '', to: name.trim() },
+        { field: 'Account Type', from: '', to: type },
+        { field: 'Opening Balance', from: '', to: `₹${openBal.toLocaleString('en-IN')}` },
+        ...(openBal !== 0 && openingBalanceDate ? [{ field: 'As-On Date', from: '', to: openingBalanceDate }] : []),
+        ...(isCCOD && sanctionedLimit ? [{ field: 'Sanctioned Limit', from: '', to: `₹${parseFloat(sanctionedLimit).toLocaleString('en-IN')}` }] : []),
+        ...(isCCOD && marginPercentage ? [{ field: 'Margin %', from: '', to: `${marginPercentage}%` }] : [])
+      ]
+
       const newCounter: Counter = {
         id: 'counter_' + Date.now(),
         name: name.trim(),
         type,
-        openingBalance: parseFloat(openingBalance) || 0,
-        currentBalance: parseFloat(openingBalance) || 0,
-        openingBalanceDate: (parseFloat(openingBalance) || 0) !== 0 ? openingBalanceDate : undefined,
+        openingBalance: openBal,
+        currentBalance: openBal,
+        openingBalanceDate: openBal !== 0 ? openingBalanceDate : undefined,
         ...(isCCOD && {
           sanctionedLimit: parseFloat(sanctionedLimit),
           marginPercentage: parseFloat(marginPercentage),
         }),
+        history: [
+          {
+            timestamp: new Date().toISOString(),
+            action: 'created',
+            changedBy: getChangedByLabel(),
+            changedByRole: getChangedByRole(),
+            changes
+          }
+        ]
       }
       onUpdateCounters([...counters, newCounter])
       toast.success(`Counter "${newCounter.name}" created successfully`)
@@ -183,19 +241,10 @@ export default function CashBankCountersMaster({
       return
     }
 
-    const hasTx = transactions.some(t =>
-      t.counterId === counter.id ||
-      t.toCounterId === counter.id ||
-      (t.counterName && t.counterName.trim().toLowerCase() === counter.name.trim().toLowerCase())
-    )
-    if (hasTx) {
-      toast.error(`Cannot edit counter "${counter.name}" because it has existing transactions.`)
-      return
-    }
-
     setEditingId(counter.id)
     setName(counter.name)
     setType(counter.type)
+    setOpeningBalance(counter.openingBalance != null ? String(counter.openingBalance) : '0')
     setOpeningBalanceDate(counter.openingBalanceDate || getFYStart())
     setSanctionedLimit(counter.sanctionedLimit != null ? String(counter.sanctionedLimit) : '')
     setMarginPercentage(counter.marginPercentage != null ? String(counter.marginPercentage) : '')
@@ -208,14 +257,21 @@ export default function CashBankCountersMaster({
     }
 
     const target = counters.find(c => c.id === id)
+    if (!target) return
+
     const hasTx = transactions.some(t =>
       t.counterId === id ||
       t.toCounterId === id ||
-      (target && t.counterName && t.counterName.trim().toLowerCase() === target.name.trim().toLowerCase())
+      (t.counterName && t.counterName.trim().toLowerCase() === target.name.trim().toLowerCase())
     )
     if (hasTx) {
-      toast.error(`Cannot delete counter "${target?.name || 'Counter'}" because it has existing transactions.`)
-      return
+      if (!window.confirm(`Warning: Counter "${target.name}" has recorded transactions. Deleting it will remove the account. Are you sure you want to delete?`)) {
+        return
+      }
+    } else {
+      if (!window.confirm(`Delete counter "${target.name}"? This action cannot be undone.`)) {
+        return
+      }
     }
 
     const updatedCounters = counters.filter(c => c.id !== id)
@@ -553,47 +609,14 @@ export default function CashBankCountersMaster({
                           </span>
                         </TableCell>
                         <TableCell className="text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => startEdit(counter)}
-                              disabled={isLocked || hasTx}
-                              className="text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950 disabled:opacity-30"
-                              title={hasTx ? 'Cannot edit counter with existing transactions' : 'Edit Counter'}
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  disabled={isLocked || hasTx}
-                                  className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950 disabled:opacity-30"
-                                  title={hasTx ? 'Cannot delete counter with existing transactions' : 'Delete Counter'}
-                                >
-                                  <Trash className="h-4 w-4" />
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>Delete Counter</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    Are you sure you want to delete &quot;{counter.name}&quot;? This action cannot be undone and will remove all associated transactions.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() => handleDelete(counter.id)}
-                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  >
-                                    Delete Counter
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
+                          <div className="flex items-center justify-center">
+                            <ThreeDotDropdown
+                              onEdit={() => startEdit(counter)}
+                              onDelete={() => handleDelete(counter.id)}
+                              history={counter.history}
+                              entityType="Counter"
+                              isLocked={isLocked}
+                            />
                           </div>
                         </TableCell>
                       </TableRow>

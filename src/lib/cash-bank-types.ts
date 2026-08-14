@@ -6,6 +6,8 @@ export function isBankType(type: string | undefined): boolean {
   return type === 'Bank' || type === 'Savings' || type === 'Current' || type === 'Bank CC / OD'
 }
 
+import { EditHistoryLog } from './types'
+
 export interface Counter {
   id: string
   name: string
@@ -18,6 +20,8 @@ export interface Counter {
   sanctionedLimit?: number
   /** Only for 'Bank CC / OD' accounts: bank's stock/asset margin haircut percentage (0–100) */
   marginPercentage?: number
+  /** Full audit edit history log */
+  history?: EditHistoryLog[]
 }
 
 export interface CashBankTransaction {
