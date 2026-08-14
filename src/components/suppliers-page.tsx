@@ -93,6 +93,7 @@ export default function SuppliersPage({
   const [address, setAddress] = useState('')
   const [gstin, setGstin] = useState('')
   const [openingBalance, setOpeningBalance] = useState('0')
+  const [openingBalanceDate, setOpeningBalanceDate] = useState(getFYStart())
   const [balanceType, setBalanceType] = useState<'Credit' | 'Debit'>('Credit')
 
   // CD Feature Effective Date
@@ -178,6 +179,7 @@ export default function SuppliersPage({
     setAddress('')
     setGstin('')
     setOpeningBalance('0')
+    setOpeningBalanceDate(getFYStart())
     setBalanceType('Credit')
     setEffectiveFromDate(new Date().toISOString().split('T')[0])
     setAdvanceCDPercentage('0')
@@ -198,6 +200,7 @@ export default function SuppliersPage({
     setAddress(supplier.address || '')
     setGstin(supplier.gstin || '')
     setOpeningBalance((supplier.openingBalance || 0).toString())
+    setOpeningBalanceDate(supplier.openingBalanceDate || getFYStart())
     setBalanceType(supplier.balanceType || 'Credit')
     setEffectiveFromDate(supplier.cdRuleVersions?.[0]?.effectiveFrom || new Date().toISOString().split('T')[0])
     setAdvanceCDPercentage((supplier.advanceCDPercentage || 0).toString())
@@ -235,6 +238,7 @@ export default function SuppliersPage({
         address: address.trim() || undefined,
         gstin: gstin.trim() || undefined,
         openingBalance: opBal,
+        openingBalanceDate: opBal !== 0 ? openingBalanceDate : undefined,
         balanceType,
         advanceCDPercentage: advCD,
         paymentCDRules,
@@ -260,6 +264,7 @@ export default function SuppliersPage({
         address: address.trim() || undefined,
         gstin: gstin.trim() || undefined,
         openingBalance: opBal,
+        openingBalanceDate: opBal !== 0 ? openingBalanceDate : undefined,
         balanceType,
         advanceCDPercentage: advCD,
         paymentCDRules,
@@ -544,6 +549,11 @@ export default function SuppliersPage({
                         <p className={cn("text-xs font-extrabold", isPayable ? "text-red-600" : isAdvance ? "text-emerald-600" : "text-slate-700")}>
                           {formatCurrency(bal)}
                         </p>
+                        {supplier.openingBalanceDate && bal !== 0 && (
+                          <p className="text-[10px] text-slate-400 font-normal">
+                            As-On: {new Date(supplier.openingBalanceDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </p>
+                        )}
                         <span className={cn(
                           "inline-block text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded-full mt-0.5",
                           isPayable ? "bg-red-50 text-red-600" : isAdvance ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-600"
@@ -774,6 +784,25 @@ export default function SuppliersPage({
                 </Select>
               </div>
             </div>
+
+            {/* As-On Date: shown when opening balance is non-zero */}
+            {(parseFloat(openingBalance) || 0) !== 0 && (
+              <div className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 bg-slate-50/60 animate-in fade-in duration-200">
+                <div className="flex-1 space-y-1">
+                  <Label className="text-xs font-bold text-slate-700">
+                    Opening Balance As-On Date <span className="text-destructive">*</span>
+                  </Label>
+                  <p className="text-[10px] text-slate-500">The date from which this opening balance is effective (typically start of financial year)</p>
+                  <Input
+                    type="date"
+                    value={openingBalanceDate}
+                    onChange={(e) => setOpeningBalanceDate(e.target.value)}
+                    className="h-8 text-xs bg-white"
+                    required
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

@@ -44,8 +44,10 @@ export default function SupplierLedgerPage({
     }
 
     const supplier = suppliers.find(s => s.id === selectedSupplierId)
-    const initialMasterOpening = supplier?.openingBalance || 0
     const { startISO } = getPeriodDateBounds(periodFilter, currentFY)
+    const openingBalDate = supplier?.openingBalanceDate
+    const shouldIncludeOpening = !openingBalDate || !startISO || openingBalDate <= startISO
+    const initialMasterOpening = shouldIncludeOpening ? (supplier?.openingBalance || 0) : 0
 
     const rawTransactions: RawLedgerTransaction[] = []
 

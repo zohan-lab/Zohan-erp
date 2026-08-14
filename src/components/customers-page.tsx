@@ -23,7 +23,7 @@ import {
 import { formatCurrency } from '@/lib/calculations'
 import { getCustomerBalanceDetails, calculateTotalCustomerReceivables } from '@/lib/report-calculations'
 import { toast } from 'sonner'
-import { PartyEditorDialog } from '@/components/party-editor-dialog'
+import { PartyEditorDialog, getFYStart } from '@/components/party-editor-dialog'
 import { deleteCustomer, saveCustomer } from '@/lib/firebase-storage'
 
 interface CustomersPageProps {
@@ -166,7 +166,9 @@ export default function CustomersPage({
           const email = parts[2] || ''
           const address = parts[3] || ''
           const rawBal = parts[4] || '0'
+          const rawDate = parts[5] || ''
           const openingBalance = parseFloat(rawBal) || 0
+          const openingBalanceDate = openingBalance !== 0 ? (rawDate.trim() || getFYStart()) : undefined
 
           const existsInCurrent = customers.some(c => c.name.toLowerCase() === name.toLowerCase())
           const existsInNew = newCustomers.some(c => c.name.toLowerCase() === name.toLowerCase())
@@ -182,7 +184,8 @@ export default function CustomersPage({
             phone: phone || undefined,
             email: email || undefined,
             address: address || undefined,
-            openingBalance: openingBalance !== 0 ? openingBalance : undefined
+            openingBalance: openingBalance !== 0 ? openingBalance : undefined,
+            openingBalanceDate
           }
 
           newCustomers.push(customer)
@@ -428,6 +431,11 @@ export default function CustomersPage({
                     <TableCell className="text-right">
                       <div>
                         <p className="font-mono font-bold text-slate-900 text-sm">{formatCurrency(Math.abs(balance))}</p>
+                        {customer.openingBalanceDate && (customer.openingBalance || 0) !== 0 && (
+                          <p className="text-[10px] text-slate-400 font-normal">
+                            As-On: {new Date(customer.openingBalanceDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </p>
+                        )}
                         <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">
                           {balance > 0 ? 'RECEIVABLE' : balance < 0 ? 'ADVANCE' : 'SETTLED'}
                         </p>

@@ -44,8 +44,10 @@ export default function CustomerLedgerPage({
     }
 
     const selectedCustomer = customers.find(c => c.id === selectedCustomerId)
-    const initialMasterOpening = selectedCustomer?.openingBalance || 0
     const { startISO } = getPeriodDateBounds(periodFilter, currentFY)
+    const openingBalDate = selectedCustomer?.openingBalanceDate
+    const shouldIncludeOpening = !openingBalDate || !startISO || openingBalDate <= startISO
+    const initialMasterOpening = shouldIncludeOpening ? (selectedCustomer?.openingBalance || 0) : 0
 
     const rawTransactions: RawLedgerTransaction[] = []
 

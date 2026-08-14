@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { CaretDown, Check, MagnifyingGlass, Package, Plus, Scales, SquaresFour } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { getCustomCategories, saveCustomCategory, getCustomUnits, saveCustomUnit } from '@/lib/custom-data-store'
+import { getFYStart } from '@/components/party-editor-dialog'
 
 interface ItemEditorDialogProps {
   open: boolean
@@ -64,6 +65,7 @@ export function ItemEditorDialog({
   const [alternativeUnitRatio, setAlternativeUnitRatio] = useState('1')
   const [unitWeightKG, setUnitWeightKG] = useState('1000')
   const [openingStock, setOpeningStock] = useState('')
+  const [openingStockDate, setOpeningStockDate] = useState(getFYStart())
 
   // Reactive Custom Categories & Units State
   const [customCategories, setCustomCategories] = useState<string[]>(() => getCustomCategories(activeCompanyId))
@@ -112,6 +114,7 @@ export function ItemEditorDialog({
       (initialUnit === 'MT' || initialAlt === 'MT' ? '1000' : (initialUnit === 'KG' ? '1' : '1'))
     )
     setOpeningStock(item?.openingStock?.toString() || '')
+    setOpeningStockDate(item?.openingStockDate || getFYStart())
   }, [open, item])
 
   // Combine items categories & units
@@ -223,6 +226,7 @@ export function ItemEditorDialog({
       salesPrice: parseFloat(salesPrice) || undefined,
       gstRate: typeof parsedGstRate === 'number' && Number.isFinite(parsedGstRate) ? parsedGstRate : undefined,
       openingStock: parsedOpeningStock > 0 ? parsedOpeningStock : undefined,
+      openingStockDate: parsedOpeningStock > 0 ? openingStockDate : undefined,
       openingValue: (parsedOpeningStock > 0 && parsedPurchasePrice > 0) ? (parsedOpeningStock * parsedPurchasePrice) : item?.openingValue
     })
     onOpenChange(false)
@@ -412,6 +416,25 @@ export function ItemEditorDialog({
                   />
                 </div>
               </div>
+
+              {(parseFloat(openingStock) || 0) > 0 && (
+                <div className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 bg-slate-50/60 animate-in fade-in duration-200">
+                  <div className="flex-1 space-y-1">
+                    <Label htmlFor="sharedItemOpeningStockDate" className="text-xs font-bold text-slate-700">
+                      Opening Stock As-On Date <span className="text-destructive">*</span>
+                    </Label>
+                    <p className="text-[10px] text-slate-500">The date from which this opening stock is effective (typically start of financial year)</p>
+                    <Input
+                      id="sharedItemOpeningStockDate"
+                      type="date"
+                      value={openingStockDate}
+                      onChange={(event) => setOpeningStockDate(event.target.value)}
+                      className="h-8 text-xs bg-white"
+                      required
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* ROW 4: ADD UNIT BTN Section (Measuring Unit & Alternate Unit & Base Unit in KG) */}
               <div className="pt-2 border-t border-slate-100 space-y-3">

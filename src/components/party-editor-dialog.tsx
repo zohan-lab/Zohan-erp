@@ -40,6 +40,13 @@ function todayKey(): string {
   return new Date().toISOString().split('T')[0]
 }
 
+/** Returns the start of the current Indian financial year as YYYY-MM-DD */
+export function getFYStart(): string {
+  const now = new Date()
+  const year = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1
+  return `${year}-04-01`
+}
+
 function rulesChanged(
   supplier: Supplier | null | undefined,
   paymentCDRules: PaymentCDRule[],
@@ -129,6 +136,7 @@ export function PartyEditorDialog({
   const [shippingCity, setShippingCity] = useState('')
   const [gstin, setGstin] = useState('')
   const [openingBalance, setOpeningBalance] = useState('')
+  const [openingBalanceDate, setOpeningBalanceDate] = useState(getFYStart())
   const [advanceCD, setAdvanceCD] = useState('')
   const [targetMT, setTargetMT] = useState('')
   const [targetRate, setTargetRate] = useState('')
@@ -154,6 +162,7 @@ export function PartyEditorDialog({
     setShippingCity(party?.shippingCity || '')
     setGstin(party?.gstin || '')
     setOpeningBalance(party?.openingBalance?.toString() || '')
+    setOpeningBalanceDate(party?.openingBalanceDate || getFYStart())
     setAdvanceCD(isSupplier(type, party) ? party.advanceCDPercentage?.toString() || '' : '')
     setTargetMT(isSupplier(type, party) ? party.annualTarget?.targetMT?.toString() || '' : '')
     setTargetRate(isSupplier(type, party) ? party.annualTarget?.ratePerMT?.toString() || '' : '')
@@ -238,6 +247,7 @@ export function PartyEditorDialog({
         shippingCity: trimOrUndefined(cleanShippingCity),
         gstin: trimOrUndefined(gstin.toUpperCase()),
         openingBalance: openingBalanceValue !== 0 ? openingBalanceValue : undefined,
+        openingBalanceDate: openingBalanceValue !== 0 ? openingBalanceDate : undefined,
         advanceCDPercentage: normalizedAdvanceCD,
         annualTarget: targetMTValue > 0 || targetRateValue > 0 ? {
           targetMT: targetMTValue,
@@ -266,7 +276,8 @@ export function PartyEditorDialog({
         shippingPincode: trimOrUndefined(cleanShippingPincode),
         shippingCity: trimOrUndefined(cleanShippingCity),
         gstin: trimOrUndefined(gstin.toUpperCase()),
-        openingBalance: openingBalanceValue !== 0 ? openingBalanceValue : undefined
+        openingBalance: openingBalanceValue !== 0 ? openingBalanceValue : undefined,
+        openingBalanceDate: openingBalanceValue !== 0 ? openingBalanceDate : undefined
       } satisfies Customer)
     }
 
@@ -433,6 +444,20 @@ export function PartyEditorDialog({
                   className="h-10 font-mono"
                 />
               </div>
+
+              {(parseFloat(openingBalance) || 0) !== 0 && (
+                <div className="space-y-2 animate-in fade-in duration-200">
+                  <Label htmlFor="sharedPartyOpeningBalanceDate">As-On Date <span className="text-destructive">*</span></Label>
+                  <Input
+                    id="sharedPartyOpeningBalanceDate"
+                    type="date"
+                    value={openingBalanceDate}
+                    onChange={(event) => setOpeningBalanceDate(event.target.value)}
+                    className="h-10 text-xs"
+                    required
+                  />
+                </div>
+              )}
             </div>
           </div>        </div>
 

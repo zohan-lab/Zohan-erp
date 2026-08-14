@@ -27,6 +27,8 @@ export interface Item {
   description?: string
   openingStock?: number
   openingValue?: number
+  /** ISO date string (YYYY-MM-DD) for when opening stock was recorded */
+  openingStockDate?: string
   category?: string
   purchasePrice?: number
   salesPrice?: number
@@ -56,6 +58,8 @@ export interface Supplier {
   cdRuleChangeLog?: CDRuleChangeLog[]
   annualTarget?: AnnualTarget
   openingBalance?: number
+  /** ISO date string (YYYY-MM-DD) for when opening balance was recorded */
+  openingBalanceDate?: string
   balanceType?: 'Credit' | 'Debit'
 }
 
@@ -157,6 +161,8 @@ export interface Customer {
   shippingCity?: string
   gstin?: string
   openingBalance?: number
+  /** ISO date string (YYYY-MM-DD) for when opening balance was recorded */
+  openingBalanceDate?: string
 }
 
 export interface InvoiceItem {
