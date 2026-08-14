@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react'
-import { createPortal } from 'react-dom'
-import { DotsThreeVertical, PencilSimple, Trash, Clock, User, Crown, UserCircle } from '@phosphor-icons/react'
+import React, { useState } from 'react'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
+import { DotsThreeVertical, PencilSimple, Trash, Clock, Crown, UserCircle } from '@phosphor-icons/react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 
@@ -35,137 +35,67 @@ export function ThreeDotDropdown({
   entityType = 'Record',
   isLocked = false
 }: ThreeDotDropdownProps) {
-  const [isOpen, setIsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
-  const triggerRef = useRef<HTMLButtonElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
-
-  // Calculate position of the dropdown relative to the viewport
-  const updatePosition = useCallback(() => {
-    if (triggerRef.current) {
-      const rect = triggerRef.current.getBoundingClientRect()
-      const menuWidth = 176 // w-44 = 11rem = 176px
-      const menuHeight = 140 // approximate height of menu
-
-      let top = rect.bottom + 4
-      let left = rect.right - menuWidth
-
-      // If menu would overflow bottom of viewport, show above the trigger
-      if (top + menuHeight > window.innerHeight) {
-        top = rect.top - menuHeight - 4
-      }
-
-      // If menu would overflow left edge, align to left of trigger
-      if (left < 8) {
-        left = rect.left
-      }
-
-      setMenuPosition({ top, left })
-    }
-  }, [])
-
-  // Close dropdown on click outside
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      const target = event.target as Node
-      if (
-        triggerRef.current && !triggerRef.current.contains(target) &&
-        menuRef.current && !menuRef.current.contains(target)
-      ) {
-        setIsOpen(false)
-      }
-    }
-
-    function handleScroll() {
-      setIsOpen(false)
-    }
-
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside)
-      window.addEventListener('scroll', handleScroll, true)
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-      window.removeEventListener('scroll', handleScroll, true)
-    }
-  }, [isOpen])
-
-  // Update position when opened
-  useEffect(() => {
-    if (isOpen) {
-      updatePosition()
-    }
-  }, [isOpen, updatePosition])
 
   return (
     <>
-      <button
-        ref={triggerRef}
-        onClick={() => setIsOpen(!isOpen)}
-        className="p-2 text-slate-500 hover:text-slate-900 rounded-full hover:bg-slate-100 transition-colors focus:outline-none cursor-pointer"
-        type="button"
-      >
-        <DotsThreeVertical size={18} weight="bold" />
-      </button>
-
-      {/* Portal-rendered dropdown menu */}
-      {isOpen && createPortal(
-        <div
-          ref={menuRef}
-          className="fixed w-44 rounded-xl bg-white border border-slate-200 shadow-xl overflow-hidden py-1 animate-in fade-in slide-in-from-top-1 duration-150"
-          style={{
-            top: menuPosition.top,
-            left: menuPosition.left,
-            zIndex: 9999,
-          }}
-        >
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger asChild>
           <button
+            className="p-1.5 text-slate-500 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition-colors focus:outline-none cursor-pointer flex items-center justify-center"
             type="button"
-            disabled={isLocked}
-            onClick={() => {
-              setIsOpen(false)
-              onEdit()
-            }}
-            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            title="More actions"
           >
-            <PencilSimple size={16} className="text-slate-500" />
-            Edit
+            <DotsThreeVertical size={18} weight="bold" />
           </button>
+        </DropdownMenu.Trigger>
 
-          <button
-            type="button"
-            onClick={() => {
-              setIsOpen(false)
-              setHistoryOpen(true)
-            }}
-            className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2 cursor-pointer"
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            align="end"
+            sideOffset={4}
+            className="w-44 rounded-xl bg-white border border-slate-200 shadow-xl overflow-hidden py-1 z-[99999] focus:outline-none animate-in fade-in-0 zoom-in-95"
           >
-            <Clock size={16} className="text-slate-500" />
-            Edit History
-          </button>
+            <DropdownMenu.Item
+              disabled={isLocked}
+              onSelect={() => {
+                onEdit()
+              }}
+              className="w-full text-left px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 focus:bg-slate-50 flex items-center gap-2 outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <PencilSimple size={15} className="text-slate-500" />
+              Edit
+            </DropdownMenu.Item>
 
-          <div className="h-px bg-slate-100 my-1" />
+            <DropdownMenu.Item
+              onSelect={() => {
+                setTimeout(() => setHistoryOpen(true), 50)
+              }}
+              className="w-full text-left px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 focus:bg-slate-50 flex items-center gap-2 outline-none cursor-pointer"
+            >
+              <Clock size={15} className="text-slate-500" />
+              Edit History
+            </DropdownMenu.Item>
 
-          <button
-            type="button"
-            disabled={isLocked}
-            onClick={() => {
-              setIsOpen(false)
-              onDelete()
-            }}
-            className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50/50 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer font-medium"
-          >
-            <Trash size={16} className="text-red-500" />
-            Delete
-          </button>
-        </div>,
-        document.body
-      )}
+            <DropdownMenu.Separator className="h-px bg-slate-100 my-1" />
+
+            <DropdownMenu.Item
+              disabled={isLocked}
+              onSelect={() => {
+                onDelete()
+              }}
+              className="w-full text-left px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 focus:bg-red-50 flex items-center gap-2 outline-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Trash size={15} className="text-red-500" />
+              Delete
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
 
       {/* History Dialog */}
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
-        <DialogContent className="sm:max-w-[520px] rounded-2xl p-6 bg-white shadow-xl max-h-[90vh] overflow-y-auto" style={{ zIndex: 9999 }}>
+        <DialogContent className="sm:max-w-[520px] rounded-2xl p-6 bg-white shadow-xl max-h-[90vh] overflow-y-auto z-[99999]">
           <DialogHeader className="flex flex-row items-center justify-between border-b pb-4 border-slate-100">
             <DialogTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <Clock size={20} className="text-blue-600" />
@@ -200,8 +130,6 @@ export function ThreeDotDropdown({
                         {/* Changed by */}
                         {(() => {
                           const label = log.changedBy || ''
-                          // Authoritative check: use the persisted role field if present (new logs).
-                          // Fall back to string-sniff only for legacy entries that predate the schema.
                           const isMaster =
                             log.changedByRole === 'master_admin' ||
                             (!log.changedByRole && (

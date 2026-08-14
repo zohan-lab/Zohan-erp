@@ -1269,6 +1269,7 @@ export default function CashBankManagement({
                             setCounterObDate(c.openingBalanceDate || getFYStart())
                             setCounterSanctionedLimit(c.sanctionedLimit != null ? String(c.sanctionedLimit) : '')
                             setCounterMarginPct(c.marginPercentage != null ? String(c.marginPercentage) : '')
+                            toast.info(`Editing counter: ${c.name}`)
                           }}
                           onDelete={() => handleDeleteCounter(c.id)}
                           history={c.history}

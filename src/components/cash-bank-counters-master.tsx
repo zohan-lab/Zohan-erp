@@ -264,6 +264,7 @@ export default function CashBankCountersMaster({
     setOpeningBalanceDate(counter.openingBalanceDate || getFYStart())
     setSanctionedLimit(counter.sanctionedLimit != null ? String(counter.sanctionedLimit) : '')
     setMarginPercentage(counter.marginPercentage != null ? String(counter.marginPercentage) : '')
+    toast.info(`Editing counter: ${counter.name}`)
   }
 
   const handleDelete = (id: string) => {
