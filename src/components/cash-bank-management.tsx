@@ -446,17 +446,21 @@ export default function CashBankManagement({
     const targetTx = transactions.find((tx) => tx.id === rawId)
     if (!targetTx) return
 
-    // Revert counter balances
+    // Revert counter balances accurately without mutating openingBalance
     const nextCounters = counters.map((c) => {
+      const current = typeof c.currentBalance === 'number' && Number.isFinite(c.currentBalance)
+        ? c.currentBalance
+        : (c.openingBalance || 0)
+
       if (targetTx.type === 'In' && c.id === targetTx.counterId) {
-        return { ...c, currentBalance: c.currentBalance - targetTx.amount }
+        return { ...c, currentBalance: current - targetTx.amount }
       }
       if (targetTx.type === 'Out' && c.id === targetTx.counterId) {
-        return { ...c, currentBalance: c.currentBalance + targetTx.amount }
+        return { ...c, currentBalance: current + targetTx.amount }
       }
       if (targetTx.type === 'Transfer') {
-        if (c.id === targetTx.counterId) return { ...c, currentBalance: c.currentBalance + targetTx.amount }
-        if (c.id === targetTx.toCounterId) return { ...c, currentBalance: c.currentBalance - targetTx.amount }
+        if (c.id === targetTx.counterId) return { ...c, currentBalance: current + targetTx.amount }
+        if (c.id === targetTx.toCounterId) return { ...c, currentBalance: current - targetTx.amount }
       }
       return c
     })
