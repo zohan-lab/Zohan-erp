@@ -64,10 +64,11 @@ export const keyBindings: KeyBinding[] = [
   { key: 'e', ctrlKey: true, action: 'expense-entries', description: 'Expense Entries', category: 'Navigation' },
   
   { key: 'g', ctrlKey: true, action: 'supplier-ledger', description: 'Supplier Ledger', category: 'Reports' },
-  { key: 'y', ctrlKey: true, action: 'annual', description: 'Annual Discount', category: 'Reports' },
   { key: 'u', ctrlKey: true, action: 'inventory', description: 'Inventory Report', category: 'Reports' },
   { key: 'c', ctrlKey: true, shiftKey: true, action: 'cd-risk', description: 'CD at Risk', category: 'Reports' },
   { key: 'w', ctrlKey: true, shiftKey: true, action: 'wallet', description: 'Discount Wallet', category: 'Reports' },
+  
+  { key: 'y', ctrlKey: true, action: 'annual', description: 'Annual Discount', category: 'Discount Configuration' },
   
   { key: '1', altKey: true, action: 'suppliers', description: 'Suppliers Master', category: 'Masters' },
   { key: '2', altKey: true, action: 'customers', description: 'Customers Master', category: 'Masters' },

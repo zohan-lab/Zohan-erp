@@ -445,7 +445,6 @@ const navGroups: NavGroup[] = [
       { id: 'inventory', label: 'Inventory Report', icon: Cube },
       { id: 'cd-risk', label: 'CD at Risk', icon: ChartBar },
       { id: 'wallet', label: 'Discount Wallet', icon: Wallet },
-      { id: 'annual', label: 'Annual Discount', icon: ChartPie },
       { id: 'invoice-details', label: 'Invoice Details', icon: Receipt },
       { id: 'payment-details', label: 'Payment Details', icon: CreditCard },
     ]
@@ -455,6 +454,7 @@ const navGroups: NavGroup[] = [
     items: [
       { id: 'supplier-cd-rules', label: 'Supplier CD Rules', icon: Percent },
       { id: 'fixed-schemes', label: 'Fixed Schemes', icon: CalendarBlank },
+      { id: 'annual', label: 'Annual Discount', icon: ChartPie },
       { id: 'mt-bookings', label: 'MT Booking Master', icon: BookBookmark },
     ]
   }
