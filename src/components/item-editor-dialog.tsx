@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 import { CaretDown, Check, MagnifyingGlass, Package, Plus, Scales, SquaresFour } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { getCustomCategories, saveCustomCategory, getCustomUnits, saveCustomUnit } from '@/lib/custom-data-store'
-import { getFYStart } from '@/components/party-editor-dialog'
+import { getFYStart } from '@/lib/calculations'
 
 interface ItemEditorDialogProps {
   open: boolean

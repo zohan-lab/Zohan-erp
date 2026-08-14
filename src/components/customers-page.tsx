@@ -20,10 +20,10 @@ import {
   Warning, 
   Upload 
 } from '@phosphor-icons/react'
-import { formatCurrency } from '@/lib/calculations'
+import { formatCurrency, getFYStart } from '@/lib/calculations'
 import { getCustomerBalanceDetails, calculateTotalCustomerReceivables } from '@/lib/report-calculations'
 import { toast } from 'sonner'
-import { PartyEditorDialog, getFYStart } from '@/components/party-editor-dialog'
+import { PartyEditorDialog } from '@/components/party-editor-dialog'
 import { deleteCustomer, saveCustomer } from '@/lib/firebase-storage'
 
 interface CustomersPageProps {

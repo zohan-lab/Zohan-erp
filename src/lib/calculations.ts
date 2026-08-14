@@ -1199,6 +1199,13 @@ export function getFYFromDate(date: string | Date): string {
   return `FY${fyStartYear}-${shortEnd}`
 }
 
+/** Returns the start of the current Indian financial year as YYYY-MM-DD */
+export function getFYStart(): string {
+  const now = new Date()
+  const year = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1
+  return `${year}-04-01`
+}
+
 export function formatDateForInput(date: Date): string {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')

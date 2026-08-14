@@ -40,12 +40,7 @@ function todayKey(): string {
   return new Date().toISOString().split('T')[0]
 }
 
-/** Returns the start of the current Indian financial year as YYYY-MM-DD */
-export function getFYStart(): string {
-  const now = new Date()
-  const year = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1
-  return `${year}-04-01`
-}
+import { getFYStart } from '@/lib/calculations'
 
 function rulesChanged(
   supplier: Supplier | null | undefined,
