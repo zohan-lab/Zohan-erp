@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { getChangedByLabel } from '@/lib/security-utils'
-import { Supplier, PurchaseInvoice, Payment, PaymentCDRule, InvoiceCloseCDRule, SupplierCDRuleVersion, CDRuleChangeLog, AnnualTarget } from '@/lib/types'
+import { Supplier, PurchaseInvoice, Payment, PaymentCDRule, InvoiceCloseCDRule, SupplierCDRuleVersion, CDRuleChangeLog, AnnualTarget, SupplierDebitNote, SupplierCreditNote, PurchaseReturn } from '@/lib/types'
 import { getAvailableUnits } from '@/lib/custom-data-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -38,7 +38,7 @@ import {
   FileText
 } from '@phosphor-icons/react'
 import { formatCurrency, getFYStart } from '@/lib/calculations'
-import { calculateTotalSupplierPayables, getSupplierYTDInvoiced, getSupplierPendingPayments } from '@/lib/report-calculations'
+import { calculateTotalSupplierPayables, getSupplierYTDInvoiced, getSupplierPendingPayments, getSupplierBalanceDetails } from '@/lib/report-calculations'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { deleteSupplier, saveSupplier } from '@/lib/firebase-storage'
@@ -48,6 +48,9 @@ interface SuppliersPageProps {
   setSuppliers: (updater: (prev: Supplier[]) => Supplier[]) => void
   invoices?: PurchaseInvoice[]
   payments?: Payment[]
+  debitNotes?: SupplierDebitNote[]
+  supplierCreditNotes?: SupplierCreditNote[]
+  purchaseReturns?: PurchaseReturn[]
   isLocked?: boolean
   activeFY?: string
   activeCompanyId?: string
@@ -58,6 +61,9 @@ export default function SuppliersPage({
   setSuppliers, 
   invoices = [], 
   payments = [], 
+  debitNotes = [],
+  supplierCreditNotes = [],
+  purchaseReturns = [],
   isLocked = false, 
   activeFY,
   activeCompanyId
@@ -143,8 +149,8 @@ export default function SuppliersPage({
   const totalSuppliersCount = suppliers.length
   
   const totalPayable = useMemo(() => {
-    return calculateTotalSupplierPayables(suppliers)
-  }, [suppliers])
+    return calculateTotalSupplierPayables(suppliers, invoices, payments, debitNotes, supplierCreditNotes, purchaseReturns)
+  }, [suppliers, invoices, payments, debitNotes, supplierCreditNotes, purchaseReturns])
 
   const activeThisMonthCount = useMemo(() => {
     // Count suppliers with recent purchase invoices or payments
@@ -510,9 +516,9 @@ export default function SuppliersPage({
                     'bg-sky-600 text-white'
                   ]
                   const avatarColor = avatarColors[idx % avatarColors.length]
-                  const bal = supplier.openingBalance || 0
-                  const isPayable = (supplier.balanceType || 'Credit') === 'Credit' && bal > 0
-                  const isAdvance = supplier.balanceType === 'Debit' && bal > 0
+                  const { netBalance: balance } = getSupplierBalanceDetails(supplier, invoices, payments, debitNotes, supplierCreditNotes, purchaseReturns)
+                  const isPayable = balance > 0
+                  const isAdvance = balance < 0
 
                   return (
                     <TableRow key={supplier.id} className="hover:bg-slate-50/80 border-b border-slate-100">
@@ -547,13 +553,8 @@ export default function SuppliersPage({
                       {/* Balance & Status Badge */}
                       <TableCell className="text-right py-3.5 font-mono">
                         <p className={cn("text-xs font-extrabold", isPayable ? "text-red-600" : isAdvance ? "text-emerald-600" : "text-slate-700")}>
-                          {formatCurrency(bal)}
+                          {formatCurrency(Math.abs(balance))}
                         </p>
-                        {supplier.openingBalanceDate && bal !== 0 && (
-                          <p className="text-[10px] text-slate-400 font-normal">
-                            As-On: {new Date(supplier.openingBalanceDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                          </p>
-                        )}
                         <span className={cn(
                           "inline-block text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded-full mt-0.5",
                           isPayable ? "bg-red-50 text-red-600" : isAdvance ? "bg-emerald-50 text-emerald-600" : "bg-slate-100 text-slate-600"

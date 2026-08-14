@@ -2044,12 +2044,27 @@ function App() {
               setSuppliers={syncSetSuppliers}
               invoices={safeInvoices}
               payments={safePayments}
+              debitNotes={safeDebitNotes}
+              supplierCreditNotes={safeSupplierCreditNotes}
+              purchaseReturns={safePurchaseReturns}
               isLocked={isViewReadOnly('suppliers')}
               activeCompanyId={metadata.activeCompanyId}
             />
           )
         case 'customers':
-          return <CustomersPage customers={safeCustomers} setCustomers={syncSetCustomers} isLocked={isViewReadOnly('customers')} salesInvoices={safeSalesInvoices} customerPayments={safeCustomerPayments} activeCompanyId={metadata.activeCompanyId} />
+          return (
+            <CustomersPage
+              customers={safeCustomers}
+              setCustomers={syncSetCustomers}
+              isLocked={isViewReadOnly('customers')}
+              salesInvoices={safeSalesInvoices}
+              customerPayments={safeCustomerPayments}
+              customerDebitNotes={safeCustomerDebitNotes}
+              creditNotes={safeCreditNotes}
+              salesReturns={safeSalesReturns}
+              activeCompanyId={metadata.activeCompanyId}
+            />
+          )
         case 'items':
           return (
             <ItemsPage

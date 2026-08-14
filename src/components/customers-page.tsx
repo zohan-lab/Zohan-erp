@@ -31,6 +31,9 @@ interface CustomersPageProps {
   setCustomers: (updater: (prev: Customer[]) => Customer[]) => void
   salesInvoices?: SalesInvoice[]
   customerPayments?: CustomerPayment[]
+  customerDebitNotes?: any[]
+  creditNotes?: any[]
+  salesReturns?: any[]
   isLocked?: boolean
   activeCompanyId?: string
 }
@@ -40,6 +43,9 @@ export default function CustomersPage({
   setCustomers, 
   salesInvoices = [], 
   customerPayments = [], 
+  customerDebitNotes = [],
+  creditNotes = [],
+  salesReturns = [],
   isLocked = false,
   activeCompanyId
 }: CustomersPageProps) {
@@ -247,8 +253,8 @@ export default function CustomersPage({
 
   // Summary Card Statistics
   const totalReceivable = useMemo(() => {
-    return calculateTotalCustomerReceivables(customers, salesInvoices, customerPayments)
-  }, [customers, salesInvoices, customerPayments])
+    return calculateTotalCustomerReceivables(customers, salesInvoices, customerPayments, customerDebitNotes, creditNotes, salesReturns)
+  }, [customers, salesInvoices, customerPayments, customerDebitNotes, creditNotes, salesReturns])
 
   const activeThisMonthCount = useMemo(() => {
     const now = new Date()
@@ -413,7 +419,7 @@ export default function CustomersPage({
                 ]
                 const colorClass = avatarColors[idx % avatarColors.length]
 
-                const { netBalance: balance } = getCustomerBalanceDetails(customer, salesInvoices, customerPayments)
+                const { netBalance: balance } = getCustomerBalanceDetails(customer, salesInvoices, customerPayments, customerDebitNotes, creditNotes, salesReturns)
 
                 return (
                   <TableRow key={customer.id} className="hover:bg-slate-50/80 border-b border-slate-100">
@@ -435,11 +441,6 @@ export default function CustomersPage({
                     <TableCell className="text-right">
                       <div>
                         <p className="font-mono font-bold text-slate-900 text-sm">{formatCurrency(Math.abs(balance))}</p>
-                        {customer.openingBalanceDate && (customer.openingBalance || 0) !== 0 && (
-                          <p className="text-[10px] text-slate-400 font-normal">
-                            As-On: {new Date(customer.openingBalanceDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                          </p>
-                        )}
                         <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">
                           {balance > 0 ? 'RECEIVABLE' : balance < 0 ? 'ADVANCE' : 'SETTLED'}
                         </p>

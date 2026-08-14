@@ -312,8 +312,8 @@ export default function SupplierLedgerPage({
                                 <TableCell>
                                   {entry.date && !isNaN(new Date(entry.date).getTime())
                                     ? new Date(entry.date.includes('T') ? entry.date : entry.date + 'T00:00:00').toLocaleDateString('en-IN')
-                                    : (supplier?.openingBalanceDate
-                                        ? new Date(supplier.openingBalanceDate + 'T00:00:00').toLocaleDateString('en-IN')
+                                    : (selectedSupplier?.openingBalanceDate
+                                        ? new Date(selectedSupplier.openingBalanceDate + 'T00:00:00').toLocaleDateString('en-IN')
                                         : 'Opening')}
                                 </TableCell>
                                 <TableCell className="font-medium">{entry.description}</TableCell>

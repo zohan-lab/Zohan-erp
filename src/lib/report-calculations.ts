@@ -529,18 +529,68 @@ export interface CustomerBalanceDetails {
   receivableBalance: number
 }
 
+export interface SupplierBalanceDetails {
+  totalInvoiced: number
+  totalPaid: number
+  netBalance: number // positive = Payable (Credit), negative = Advance (Debit)
+  payableBalance: number // Math.max(0, netBalance)
+}
+
+export function getSupplierBalanceDetails(
+  supplier: Supplier,
+  purchaseInvoices: PurchaseInvoice[] = [],
+  payments: Payment[] = [],
+  debitNotes: any[] = [],
+  supplierCreditNotes: any[] = [],
+  purchaseReturns: any[] = []
+): SupplierBalanceDetails {
+  const supInvoices = (purchaseInvoices || []).filter(inv => inv.supplierId === supplier.id)
+  const supPayments = (payments || []).filter(p => p.supplierId === supplier.id)
+  const supDebitNotes = (debitNotes || []).filter(dn => dn.supplierId === supplier.id)
+  const supCreditNotes = (supplierCreditNotes || []).filter(cn => cn.supplierId === supplier.id)
+  const supReturns = (purchaseReturns || []).filter(pr => pr.supplierId === supplier.id)
+
+  const totalInvoiced = supInvoices.reduce((s, inv) => s + (inv.invoiceAmount || 0), 0)
+  const totalPaid = supPayments.reduce((s, p) => s + (p.amount || 0), 0)
+  const totalDebitNotes = supDebitNotes.reduce((s, dn) => s + (dn.amount || 0), 0)
+  const totalCreditNotes = supCreditNotes.reduce((s, cn) => s + (cn.amount || 0), 0)
+  const totalReturns = supReturns.reduce((s, pr) => s + (pr.amount || 0), 0)
+
+  const rawBal = supplier.openingBalance || 0
+  const signedOpening = supplier.balanceType === 'Debit' ? -rawBal : rawBal
+
+  // Net balance = Opening (Cr +, Dr -) + Purchases (Cr +) - Payments (Dr -) - DebitNotes (Dr -) + CreditNotes (Cr +) - Returns (Dr -)
+  const netBalance = signedOpening + totalInvoiced - totalPaid - totalDebitNotes + totalCreditNotes - totalReturns
+  const payableBalance = netBalance > 0 ? netBalance : 0
+
+  return { totalInvoiced, totalPaid, netBalance, payableBalance }
+}
+
 export function getCustomerBalanceDetails(
   customer: Customer,
-  salesInvoices: SalesInvoice[],
-  customerPayments: any[]
+  salesInvoices: SalesInvoice[] = [],
+  customerPayments: any[] = [],
+  customerDebitNotes: any[] = [],
+  creditNotes: any[] = [],
+  salesReturns: any[] = []
 ): CustomerBalanceDetails {
-  const custInvoices = salesInvoices.filter(inv => inv.customerId === customer.id)
-  const custPayments = customerPayments.filter(p => p.customerId === customer.id)
+  const custInvoices = (salesInvoices || []).filter(inv => inv.customerId === customer.id)
+  const custPayments = (customerPayments || []).filter(p => p.customerId === customer.id)
+  const custDebitNotes = (customerDebitNotes || []).filter(dn => dn.customerId === customer.id)
+  const custCreditNotes = (creditNotes || []).filter(cn => cn.customerId === customer.id)
+  const custReturns = (salesReturns || []).filter(sr => sr.customerId === customer.id)
+
   const totalInvoiced = custInvoices.reduce((s, inv) => s + (inv.invoiceAmount || 0), 0)
   const totalPaid = custPayments.reduce((s, p) => s + (p.amount || 0), 0)
+  const totalDebitNotes = custDebitNotes.reduce((s, dn) => s + (dn.amount || 0), 0)
+  const totalCreditNotes = custCreditNotes.reduce((s, cn) => s + (cn.amount || 0), 0)
+  const totalReturns = custReturns.reduce((s, sr) => s + (sr.amount || 0), 0)
+
   const opBal = customer.openingBalance || 0
   const signedOpening = customer.balanceType === 'Credit' ? -opBal : opBal
-  const netBalance = signedOpening + totalInvoiced - totalPaid
+
+  // Net balance = Opening (Dr +, Cr -) + Sales (Dr +) - Payments (Cr -) + DebitNotes (Dr +) - CreditNotes (Cr -) - Returns (Cr -)
+  const netBalance = signedOpening + totalInvoiced - totalPaid + totalDebitNotes - totalCreditNotes - totalReturns
   const receivableBalance = netBalance > 0 ? netBalance : 0
 
   return { totalInvoiced, totalPaid, netBalance, receivableBalance }
@@ -548,22 +598,38 @@ export function getCustomerBalanceDetails(
 
 export function calculateTotalCustomerReceivables(
   customers: Customer[],
-  salesInvoices: SalesInvoice[],
-  customerPayments: any[]
+  salesInvoices: SalesInvoice[] = [],
+  customerPayments: any[] = [],
+  customerDebitNotes: any[] = [],
+  creditNotes: any[] = [],
+  salesReturns: any[] = []
 ): number {
   return customers.reduce((sum, customer) => {
-    const { receivableBalance } = getCustomerBalanceDetails(customer, salesInvoices, customerPayments)
+    const { receivableBalance } = getCustomerBalanceDetails(customer, salesInvoices, customerPayments, customerDebitNotes, creditNotes, salesReturns)
     return sum + receivableBalance
   }, 0)
 }
 
-export function getSupplierPayableBalance(supplier: Supplier): number {
-  const bal = supplier.openingBalance || 0
-  return supplier.balanceType === 'Debit' ? -bal : bal
+export function getSupplierPayableBalance(
+  supplier: Supplier,
+  purchaseInvoices: PurchaseInvoice[] = [],
+  payments: Payment[] = [],
+  debitNotes: any[] = [],
+  supplierCreditNotes: any[] = [],
+  purchaseReturns: any[] = []
+): number {
+  return getSupplierBalanceDetails(supplier, purchaseInvoices, payments, debitNotes, supplierCreditNotes, purchaseReturns).payableBalance
 }
 
-export function calculateTotalSupplierPayables(suppliers: Supplier[]): number {
-  return suppliers.reduce((sum, s) => sum + getSupplierPayableBalance(s), 0)
+export function calculateTotalSupplierPayables(
+  suppliers: Supplier[],
+  purchaseInvoices: PurchaseInvoice[] = [],
+  payments: Payment[] = [],
+  debitNotes: any[] = [],
+  supplierCreditNotes: any[] = [],
+  purchaseReturns: any[] = []
+): number {
+  return suppliers.reduce((sum, s) => sum + getSupplierPayableBalance(s, purchaseInvoices, payments, debitNotes, supplierCreditNotes, purchaseReturns), 0)
 }
 
 export function getSupplierYTDInvoiced(
