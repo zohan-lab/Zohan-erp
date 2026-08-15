@@ -669,3 +669,7 @@ export function exportCustomerAgingToExcel(
   downloadCSV(csv, `Customer_Aging_Report_${businessName.replace(/\s+/g, '_')}_${fy}.csv`)
 }
 
+// Re-export Tally Excel Import & Export utilities and types
+export * from './tally-payment-types'
+export * from './tally-payment-excel'
+
