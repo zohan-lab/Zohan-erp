@@ -40,6 +40,7 @@ export interface PaymentVoucher {
   drLedger?: string
   crLedger?: string
   status: 'valid' | 'warning' | 'error'
+  isValid?: boolean
   warnings?: string[]
   errors?: string[]
   rawRows?: TallyRawExcelRow[]

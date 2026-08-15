@@ -456,6 +456,7 @@ export function parseTallyPayments(fileBuffer: ArrayBuffer | Uint8Array): TallyI
       drLedger: drRows.map(r => r.ledgerName).join(', '),
       crLedger: crRows.map(r => r.ledgerName).join(', '),
       status: hasErrors ? 'error' : hasWarnings ? 'warning' : 'valid',
+      isValid: !hasErrors,
       errors: voucherErrors.length > 0 ? voucherErrors : undefined,
       warnings: voucherWarnings.length > 0 ? voucherWarnings : undefined,
       rawRows: rows.map(r => r.raw),
