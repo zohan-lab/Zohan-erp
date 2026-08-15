@@ -2759,6 +2759,10 @@ function App() {
             currentUserRole={isMasterAdmin ? 'Master' : 'Agent'}
             setShortcutsDialogOpen={setShortcutsDialogOpen}
             onLogout={handleLogout}
+            payments={safePayments}
+            customerPayments={safeCustomerPayments}
+            suppliers={safeSuppliers}
+            customers={safeCustomers}
           />
 
           <AppDialogs

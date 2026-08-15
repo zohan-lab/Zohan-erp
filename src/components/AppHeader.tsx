@@ -10,6 +10,9 @@ import {
   Plus,
   CaretDown,
   SignOut,
+  FileArrowUp,
+  FileArrowDown,
+  ArrowsClockwise,
 } from '@phosphor-icons/react'
 import {
   Select,
@@ -18,9 +21,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
+import { toast } from 'sonner'
 
 import { generateFYList } from '@/lib/calculations'
+import {
+  parseTallyPayments,
+  exportPaymentsToTallyExcel,
+  generateSampleTallyExcel,
+  PaymentVoucher,
+  TallyImportResult,
+} from '@/lib/tally-payment-excel'
+import { Payment, CustomerPayment, Supplier, Customer } from '@/lib/types'
 
 interface AppHeaderProps {
   sidebarExpanded: boolean
@@ -37,6 +49,14 @@ interface AppHeaderProps {
   currentUserRole: string
   setShortcutsDialogOpen: (open: boolean) => void
   onLogout?: () => void
+  // Optional data props for Tally actions
+  payments?: Payment[]
+  customerPayments?: CustomerPayment[]
+  suppliers?: Supplier[]
+  customers?: Customer[]
+  vouchers?: PaymentVoucher[]
+  onImportTally?: (vouchers: PaymentVoucher[]) => void
+  onExportTally?: () => void
 }
 
 // Map view IDs to human-readable titles
@@ -75,6 +95,13 @@ export function AppHeader({
   currentUserRole,
   setShortcutsDialogOpen,
   onLogout,
+  payments = [],
+  customerPayments = [],
+  suppliers = [],
+  customers = [],
+  vouchers,
+  onImportTally,
+  onExportTally,
 }: AppHeaderProps) {
   const viewMeta = VIEW_TITLES[activeView] ?? {
     title: activeView.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
@@ -83,8 +110,138 @@ export function AppHeader({
   const initials = getInitials(currentUserLabel || 'Master Admin')
   const fyOptions = useMemo(() => generateFYList(2015, 2040, safeCurrentFY), [safeCurrentFY])
 
+  const [isImporting, setIsImporting] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // 1. Handle Import Tally Excel
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+
+    const file = files[0]
+    const validExtensions = ['.xlsx', '.xls', '.csv']
+    const hasValidExt = validExtensions.some(ext => file.name.toLowerCase().endsWith(ext))
+
+    if (!hasValidExt) {
+      toast.error('Invalid file format. Please upload an Excel (.xlsx, .xls) or CSV file.')
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
+    }
+
+    setIsImporting(true)
+    try {
+      const arrayBuffer = await file.arrayBuffer()
+      const result: TallyImportResult = parseTallyPayments(arrayBuffer)
+
+      if (result.success && result.data.length > 0) {
+        toast.success(
+          `Imported ${result.data.length} Tally voucher(s) (${result.summary.paymentCount} Payments, ${result.summary.receiptCount} Receipts)`
+        )
+        onImportTally?.(result.data)
+      } else if (result.data.length > 0) {
+        toast.warning(
+          `Imported ${result.data.length} vouchers with ${result.errors.length} issue(s)`
+        )
+        onImportTally?.(result.data)
+      } else {
+        toast.error(result.errors[0] || 'No valid Payment/Receipt vouchers found in the uploaded file')
+      }
+    } catch (err: any) {
+      console.error('Tally import error:', err)
+      toast.error(`Import failed: ${err?.message || 'Error processing Excel file'}`)
+    } finally {
+      setIsImporting(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
+  // 2. Handle Export Tally Excel
+  const handleExportTally = () => {
+    if (onExportTally) {
+      onExportTally()
+      return
+    }
+
+    setIsExporting(true)
+    try {
+      let exportList: PaymentVoucher[] = []
+
+      // If explicit vouchers were passed
+      if (vouchers && vouchers.length > 0) {
+        exportList = vouchers.filter(v => v.isValid !== false && v.status !== 'error')
+      } else {
+        // Map ERP Payments (Suppliers) & CustomerPayments (Customers) into Tally vouchers
+        const supplierMap = new Map(suppliers.map(s => [s.id, s]))
+        const customerMap = new Map(customers.map(c => [c.id, c]))
+
+        const paymentVouchers: PaymentVoucher[] = (payments || []).map((p, idx) => {
+          const sup = supplierMap.get(p.supplierId)
+          return {
+            id: p.id || `pay-${idx}`,
+            voucherNumber: `PAY-${p.paymentDate?.replace(/-/g, '') || '000'}-${idx + 1}`,
+            voucherDate: p.paymentDate || new Date().toISOString().split('T')[0],
+            type: 'PAYMENT',
+            partyLedger: sup?.name || 'Supplier Account',
+            bankCashLedger: p.counterName || 'Bank/Cash Account',
+            amount: p.amount || 0,
+            address: [sup?.address, sup?.city, sup?.state].filter(Boolean).join(', ') || undefined,
+            pincode: sup?.pincode || undefined,
+            status: 'valid',
+            isValid: true,
+          }
+        })
+
+        const receiptVouchers: PaymentVoucher[] = (customerPayments || []).map((cp, idx) => {
+          const cust = customerMap.get(cp.customerId)
+          return {
+            id: cp.id || `rec-${idx}`,
+            voucherNumber: `REC-${cp.paymentDate?.replace(/-/g, '') || '000'}-${idx + 1}`,
+            voucherDate: cp.paymentDate || new Date().toISOString().split('T')[0],
+            type: 'RECEIPT',
+            partyLedger: cust?.name || 'Customer Account',
+            bankCashLedger: cp.counterName || 'Bank/Cash Account',
+            amount: cp.amount || 0,
+            address: [cust?.address, cust?.city, cust?.state].filter(Boolean).join(', ') || undefined,
+            pincode: cust?.pincode || undefined,
+            status: 'valid',
+            isValid: true,
+          }
+        })
+
+        exportList = [...paymentVouchers, ...receiptVouchers]
+      }
+
+      if (exportList.length === 0) {
+        toast.info('No payment records found. Generating sample Tally template...')
+        generateSampleTallyExcel(`Tally_Sample_Template_${Date.now()}.xlsx`)
+        toast.success('Sample Tally Excel template downloaded')
+      } else {
+        const filename = `Tally_Payments_Export_${Date.now()}.xlsx`
+        exportPaymentsToTallyExcel(exportList, { filename })
+        toast.success(`Exported ${exportList.length} Tally voucher(s) to ${filename}`)
+      }
+    } catch (err: any) {
+      console.error('Tally export error:', err)
+      toast.error(`Export failed: ${err?.message || 'Unknown error'}`)
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
   return (
     <header className="app-header h-16 bg-white border-b border-[#E8EAEF] px-4 md:px-6 flex items-center justify-between z-30 shrink-0 shadow-[0_1px_4px_rgba(91,95,239,0.06)]">
+      {/* Hidden File Input for Tally Import */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".xlsx, .xls, .csv"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+
       {/* ── Left: hamburger + page title ── */}
       <div className="flex items-center gap-3">
         {/* Mobile hamburger */}
@@ -145,7 +302,6 @@ export function AppHeader({
 
       {/* ── Right: controls ── */}
       <div className="flex items-center gap-1.5 sm:gap-2">
-
         {/* Locked badge */}
         {safeIsLocked && (
           <span className="hidden sm:inline-flex items-center gap-1 bg-amber-50 text-amber-700 text-xs font-semibold px-2.5 py-1 rounded-full border border-amber-200">
@@ -153,6 +309,43 @@ export function AppHeader({
             Read Only
           </span>
         )}
+
+        {/* ── Tally Action Buttons (Immediately to the LEFT of Bell Icon) ── */}
+        <div className="flex items-center gap-1.5">
+          {/* Import Tally Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isImporting}
+            className="h-8 px-2 sm:px-2.5 text-xs font-semibold text-slate-700 hover:text-[#5B5FEF] hover:bg-[#5B5FEF]/8 border-[#E8EAEF] rounded-xl shadow-2xs transition-all gap-1 cursor-pointer"
+            title="Import Tally Excel Vouchers"
+          >
+            {isImporting ? (
+              <ArrowsClockwise className="h-3.5 w-3.5 animate-spin text-[#5B5FEF]" />
+            ) : (
+              <FileArrowUp className="h-3.5 w-3.5 text-[#5B5FEF]" weight="bold" />
+            )}
+            <span className="hidden sm:inline text-[11px]">Import Tally</span>
+          </Button>
+
+          {/* Export Tally Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExportTally}
+            disabled={isExporting}
+            className="h-8 px-2 sm:px-2.5 text-xs font-semibold text-slate-700 hover:text-emerald-700 hover:bg-emerald-50 border-[#E8EAEF] rounded-xl shadow-2xs transition-all gap-1 cursor-pointer"
+            title="Export Tally Excel Vouchers"
+          >
+            {isExporting ? (
+              <ArrowsClockwise className="h-3.5 w-3.5 animate-spin text-emerald-600" />
+            ) : (
+              <FileArrowDown className="h-3.5 w-3.5 text-emerald-600" weight="bold" />
+            )}
+            <span className="hidden sm:inline text-[11px]">Export Tally</span>
+          </Button>
+        </div>
 
         {/* Notification bell */}
         <Button
@@ -223,3 +416,5 @@ export function AppHeader({
     </header>
   )
 }
+
+export default AppHeader
