@@ -31,7 +31,15 @@ import {
   ShieldCheck,
   Building,
   Scales,
-  FileText
+  FileText,
+  MagnifyingGlass,
+  CaretDown,
+  CaretRight,
+  Funnel,
+  Check,
+  X,
+  SlidersHorizontal,
+  ArrowRight
 } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -648,6 +656,17 @@ import {
 } from '@/lib/tally-xml-parser'
 import { Counter, CashBankTransaction } from '@/lib/cash-bank-types'
 
+export interface VoucherRowOverride {
+  included: boolean
+  typeOverride?: TallyParsedXmlVoucher['normalizedType']
+  matchedEntityType?: 'customer' | 'supplier' | 'expense' | 'counter' | 'unmapped'
+  matchedEntityId?: string
+  partyName?: string
+  categoryId?: string
+  fromCounterId?: string
+  toCounterId?: string
+}
+
 export interface TallyImportDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -693,6 +712,12 @@ export function TallyImportDialog({
   const [fileName, setFileName] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Interactive UI state
+  const [overrides, setOverrides] = useState<Record<string, VoucherRowOverride>>({})
+  const [expandedVoucherId, setExpandedVoucherId] = useState<string | null>(null)
+  const [filterTab, setFilterTab] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState('')
+
   const supplierMap = useMemo(() => new Map(suppliers.map(s => [s.name.trim().toLowerCase(), s])), [suppliers])
   const customerMap = useMemo(() => new Map(customers.map(c => [c.name.trim().toLowerCase(), c])), [customers])
   const counterMap = useMemo(() => new Map(counters.map(c => [c.name.trim().toLowerCase(), c])), [counters])
@@ -707,18 +732,22 @@ export function TallyImportDialog({
 
   const processedList = useMemo(() => {
     return parsedVouchers.map(v => {
-      const normParty = v.partyName.trim().toLowerCase()
-      let matchedEntityType = v.matchedEntityType || 'unmapped'
-      let matchedEntityId = v.matchedEntityId
+      const override = overrides[v.id]
+      const effectiveType = override?.typeOverride || v.normalizedType
+      let partyName = (override?.partyName || v.partyName).trim()
+      const normParty = partyName.toLowerCase()
+
+      let matchedEntityType = override?.matchedEntityType || v.matchedEntityType || 'unmapped'
+      let matchedEntityId = override?.matchedEntityId || v.matchedEntityId
       let contraDetails = v.contraDetails
       let expenseDetails = v.expenseDetails
       let isAutoCreated = false
 
-      if (v.normalizedType === 'contra') {
+      if (effectiveType === 'contra') {
         const fromName = v.contraDetails?.fromCounterName || v.legs.find(l => l.drCr === 'Cr')?.ledgerName || ''
         const toName = v.contraDetails?.toCounterName || v.legs.find(l => l.drCr === 'Dr')?.ledgerName || ''
-        const fromId = counterMap.get(fromName.trim().toLowerCase())?.id
-        const toId = counterMap.get(toName.trim().toLowerCase())?.id
+        const fromId = override?.fromCounterId || v.contraDetails?.fromCounterId || counterMap.get(fromName.trim().toLowerCase())?.id
+        const toId = override?.toCounterId || v.contraDetails?.toCounterId || counterMap.get(toName.trim().toLowerCase())?.id
 
         contraDetails = {
           fromCounterName: fromName,
@@ -738,16 +767,31 @@ export function TallyImportDialog({
         } else {
           matchedEntityType = 'unmapped'
         }
-      } else if (v.normalizedType === 'expense') {
-        if (expenseTypeMap.has(normParty)) {
+      } else if (effectiveType === 'expense') {
+        if (override?.categoryId) {
+          matchedEntityType = 'expense'
+          matchedEntityId = override.categoryId
+        } else if (expenseTypeMap.has(normParty)) {
           matchedEntityType = 'expense'
           matchedEntityId = expenseTypeMap.get(normParty)?.id
         } else if (autoCreateMasters) {
           matchedEntityType = 'expense'
           isAutoCreated = true
+        } else {
+          matchedEntityType = 'unmapped'
         }
-      } else if (v.normalizedType === 'sales' || v.normalizedType === 'credit_note') {
-        if (customerMap.has(normParty)) {
+        expenseDetails = {
+          categoryId: matchedEntityId,
+          categoryName: partyName,
+          amount: v.totalAmount,
+          paymentAccountId: v.legs.find(l => l.drCr === 'Cr')?.ledgerName,
+          paymentAccountName: v.legs.find(l => l.drCr === 'Cr')?.ledgerName
+        }
+      } else if (effectiveType === 'sales' || effectiveType === 'credit_note') {
+        if (override?.matchedEntityId) {
+          matchedEntityType = 'customer'
+          matchedEntityId = override.matchedEntityId
+        } else if (customerMap.has(normParty)) {
           matchedEntityType = 'customer'
           matchedEntityId = customerMap.get(normParty)?.id
         } else if (supplierMap.has(normParty)) {
@@ -756,9 +800,14 @@ export function TallyImportDialog({
         } else if (autoCreateMasters) {
           matchedEntityType = 'customer'
           isAutoCreated = true
+        } else {
+          matchedEntityType = 'unmapped'
         }
-      } else if (v.normalizedType === 'purchase' || v.normalizedType === 'debit_note') {
-        if (supplierMap.has(normParty)) {
+      } else if (effectiveType === 'purchase' || effectiveType === 'debit_note') {
+        if (override?.matchedEntityId) {
+          matchedEntityType = 'supplier'
+          matchedEntityId = override.matchedEntityId
+        } else if (supplierMap.has(normParty)) {
           matchedEntityType = 'supplier'
           matchedEntityId = supplierMap.get(normParty)?.id
         } else if (customerMap.has(normParty)) {
@@ -767,9 +816,14 @@ export function TallyImportDialog({
         } else if (autoCreateMasters) {
           matchedEntityType = 'supplier'
           isAutoCreated = true
+        } else {
+          matchedEntityType = 'unmapped'
         }
-      } else if (v.normalizedType === 'payment') {
-        if (supplierMap.has(normParty)) {
+      } else if (effectiveType === 'payment') {
+        if (override?.matchedEntityId) {
+          matchedEntityType = 'supplier'
+          matchedEntityId = override.matchedEntityId
+        } else if (supplierMap.has(normParty)) {
           matchedEntityType = 'supplier'
           matchedEntityId = supplierMap.get(normParty)?.id
         } else if (expenseTypeMap.has(normParty)) {
@@ -778,9 +832,14 @@ export function TallyImportDialog({
         } else if (autoCreateMasters) {
           matchedEntityType = 'supplier'
           isAutoCreated = true
+        } else {
+          matchedEntityType = 'unmapped'
         }
-      } else if (v.normalizedType === 'receipt') {
-        if (customerMap.has(normParty)) {
+      } else if (effectiveType === 'receipt') {
+        if (override?.matchedEntityId) {
+          matchedEntityType = 'customer'
+          matchedEntityId = override.matchedEntityId
+        } else if (customerMap.has(normParty)) {
           matchedEntityType = 'customer'
           matchedEntityId = customerMap.get(normParty)?.id
         } else if (supplierMap.has(normParty)) {
@@ -789,6 +848,8 @@ export function TallyImportDialog({
         } else if (autoCreateMasters) {
           matchedEntityType = 'customer'
           isAutoCreated = true
+        } else {
+          matchedEntityType = 'unmapped'
         }
       }
 
@@ -797,31 +858,36 @@ export function TallyImportDialog({
       const hasUnmappedItem = unmappedItems.length > 0
       let unmappedReason = v.skipReason
 
-      if (v.normalizedType !== 'skipped') {
-        if (v.normalizedType === 'contra' && matchedEntityType === 'unmapped') {
+      if (effectiveType !== 'skipped') {
+        if (effectiveType === 'contra' && matchedEntityType === 'unmapped') {
           unmappedReason = `Unmapped Counter: ${!contraDetails?.fromCounterId ? contraDetails?.fromCounterName : contraDetails?.toCounterName}`
         } else if (matchedEntityType === 'unmapped') {
-          unmappedReason = `Unmapped Master: ${v.partyName}`
+          unmappedReason = `Unmapped Master: ${partyName}`
         } else if (hasUnmappedItem) {
           unmappedReason = `Unmapped Item: ${unmappedItems.map(i => i.itemName).join(', ')}`
-        } else if (isAutoCreated) {
+        } else {
           unmappedReason = undefined
         }
       }
 
+      const isIncluded = override?.included !== undefined ? override.included : (effectiveType !== 'skipped')
+
       return {
         ...v,
+        effectiveType,
+        partyName,
         matchedEntityType,
         matchedEntityId,
         contraDetails,
         expenseDetails,
         isAutoCreated,
+        isIncluded,
         hasUnmappedItem,
         unmappedItemNames: unmappedItems.map(i => i.itemName),
         skipReason: unmappedReason
       }
     })
-  }, [parsedVouchers, supplierMap, customerMap, counterMap, expenseTypeMap, itemMap, counters.length, autoCreateMasters])
+  }, [parsedVouchers, overrides, supplierMap, customerMap, counterMap, expenseTypeMap, itemMap, counters.length, autoCreateMasters])
 
   // Count candidates for display
   const newMastersSummary = useMemo(() => {
@@ -831,14 +897,14 @@ export function TallyImportDialog({
     const cntrSet = new Set<string>()
 
     processedList.forEach(v => {
-      if (v.normalizedType === 'skipped') return
+      if (v.effectiveType === 'skipped') return
       const norm = v.partyName.trim().toLowerCase()
       if (v.isAutoCreated) {
         if (v.matchedEntityType === 'customer' && !customerMap.has(norm)) custSet.add(v.partyName.trim())
         if (v.matchedEntityType === 'supplier' && !supplierMap.has(norm)) suppSet.add(v.partyName.trim())
         if (v.matchedEntityType === 'expense' && !expenseTypeMap.has(norm)) expSet.add(v.partyName.trim())
       }
-      if (v.normalizedType === 'contra') {
+      if (v.effectiveType === 'contra') {
         const fromName = (v.contraDetails?.fromCounterName || '').trim()
         const toName = (v.contraDetails?.toCounterName || '').trim()
         if (fromName && !counterMap.has(fromName.toLowerCase())) cntrSet.add(fromName)
@@ -854,9 +920,111 @@ export function TallyImportDialog({
     }
   }, [processedList, customerMap, supplierMap, expenseTypeMap, counterMap])
 
-  const validCount = processedList.filter(v => v.normalizedType !== 'skipped' && v.matchedEntityType !== 'unmapped' && !v.hasUnmappedItem).length
-  const unmappedCount = processedList.filter(v => v.normalizedType !== 'skipped' && (v.matchedEntityType === 'unmapped' || v.hasUnmappedItem)).length
-  const skippedCount = processedList.filter(v => v.normalizedType === 'skipped').length
+  // Summary counts
+  const totalCount = processedList.length
+  const matchedCount = processedList.filter(v => v.effectiveType !== 'skipped' && v.matchedEntityType !== 'unmapped' && !v.hasUnmappedItem).length
+  const unmappedCount = processedList.filter(v => v.effectiveType !== 'skipped' && (v.matchedEntityType === 'unmapped' || v.hasUnmappedItem)).length
+  const skippedCount = processedList.filter(v => v.effectiveType === 'skipped').length
+  const selectedCount = processedList.filter(v => v.isIncluded && v.effectiveType !== 'skipped').length
+
+  // Filtered list based on active tab and search query
+  const filteredList = useMemo(() => {
+    return processedList.filter(v => {
+      // 1. Tab Filter
+      if (filterTab === 'matched') {
+        if (v.effectiveType === 'skipped' || v.matchedEntityType === 'unmapped' || v.hasUnmappedItem) return false
+      } else if (filterTab === 'unmapped') {
+        if (v.effectiveType === 'skipped' || (v.matchedEntityType !== 'unmapped' && !v.hasUnmappedItem)) return false
+      } else if (filterTab === 'skipped') {
+        if (v.effectiveType !== 'skipped') return false
+      } else if (filterTab === 'notes') {
+        if (v.effectiveType !== 'credit_note' && v.effectiveType !== 'debit_note') return false
+      } else if (filterTab !== 'all') {
+        if (v.effectiveType !== filterTab) return false
+      }
+
+      // 2. Search Query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim()
+        const matchVch = v.voucherNumber.toLowerCase().includes(q)
+        const matchParty = v.partyName.toLowerCase().includes(q)
+        const matchAmt = v.totalAmount.toString().includes(q)
+        const matchNarr = (v.narration || '').toLowerCase().includes(q)
+        const matchLeg = v.legs.some(l => l.ledgerName.toLowerCase().includes(q))
+        const matchItem = v.inventory.some(i => i.itemName.toLowerCase().includes(q))
+        if (!matchVch && !matchParty && !matchAmt && !matchNarr && !matchLeg && !matchItem) return false
+      }
+
+      return true
+    })
+  }, [processedList, filterTab, searchQuery])
+
+  // Bulk Actions
+  const handleSelectAll = (select: boolean) => {
+    setOverrides(prev => {
+      const next = { ...prev }
+      filteredList.forEach(v => {
+        next[v.id] = { ...(next[v.id] || { included: select }), included: select }
+      })
+      return next
+    })
+  }
+
+  const handleSelectMatchedOnly = () => {
+    setOverrides(prev => {
+      const next = { ...prev }
+      processedList.forEach(v => {
+        const isMatch = v.effectiveType !== 'skipped' && v.matchedEntityType !== 'unmapped' && !v.hasUnmappedItem
+        next[v.id] = { ...(next[v.id] || { included: isMatch }), included: isMatch }
+      })
+      return next
+    })
+  }
+
+  const handleExcludeUnmapped = () => {
+    setOverrides(prev => {
+      const next = { ...prev }
+      processedList.forEach(v => {
+        const isUnmapped = v.effectiveType === 'skipped' || v.matchedEntityType === 'unmapped' || v.hasUnmappedItem
+        if (isUnmapped) {
+          next[v.id] = { ...(next[v.id] || { included: false }), included: false }
+        }
+      })
+      return next
+    })
+  }
+
+  const handleTypeOverride = (voucherId: string, newType: TallyParsedXmlVoucher['normalizedType']) => {
+    setOverrides(prev => ({
+      ...prev,
+      [voucherId]: {
+        ...(prev[voucherId] || { included: true }),
+        typeOverride: newType,
+        matchedEntityId: undefined // Reset entity so it recalculates for the new type
+      }
+    }))
+  }
+
+  const handleEntityOverride = (voucherId: string, entityId: string, entityType: 'customer' | 'supplier' | 'expense' | 'counter') => {
+    setOverrides(prev => ({
+      ...prev,
+      [voucherId]: {
+        ...(prev[voucherId] || { included: true }),
+        matchedEntityType: entityType,
+        matchedEntityId: entityId === 'auto-create' ? undefined : entityId
+      }
+    }))
+  }
+
+  const handleIncludeToggle = (voucherId: string, included: boolean) => {
+    setOverrides(prev => ({
+      ...prev,
+      [voucherId]: {
+        ...(prev[voucherId] || { included }),
+        included
+      }
+    }))
+  }
 
   const processFile = async (file: File) => {
     setFileName(file.name)
@@ -888,6 +1056,14 @@ export function TallyImportDialog({
         setParsedVouchers(result.vouchers)
         setCandidateMasters(result.newMasterCandidates)
 
+        const initialOverrides: Record<string, VoucherRowOverride> = {}
+        result.vouchers.forEach(v => {
+          initialOverrides[v.id] = {
+            included: v.normalizedType !== 'skipped'
+          }
+        })
+        setOverrides(initialOverrides)
+
         if (result.success && result.vouchers.length > 0) {
           toast.success(`Successfully parsed ${result.summary.totalParsed} Tally XML voucher(s)`)
         } else if (result.vouchers.length > 0) {
@@ -907,6 +1083,14 @@ export function TallyImportDialog({
 
         setParsedVouchers(result.vouchers)
         setCandidateMasters(result.newMasterCandidates)
+
+        const initialOverrides: Record<string, VoucherRowOverride> = {}
+        result.vouchers.forEach(v => {
+          initialOverrides[v.id] = {
+            included: v.normalizedType !== 'skipped'
+          }
+        })
+        setOverrides(initialOverrides)
 
         if (result.success && result.vouchers.length > 0) {
           toast.success(`Parsed ${result.vouchers.length} Tally voucher(s) from Excel`)
@@ -964,7 +1148,7 @@ export function TallyImportDialog({
       let custSeq = 0, suppSeq = 0, expSeq = 0, cntrSeq = 0
 
       processedList.forEach(v => {
-        if (v.normalizedType === 'skipped') return
+        if (!v.isIncluded || v.effectiveType === 'skipped') return
         const norm = v.partyName.trim().toLowerCase()
 
         if (v.isAutoCreated) {
@@ -1008,7 +1192,7 @@ export function TallyImportDialog({
         }
 
         // Check Contra Counters
-        if (v.normalizedType === 'contra') {
+        if (v.effectiveType === 'contra') {
           const fromName = (v.contraDetails?.fromCounterName || '').trim()
           const toName = (v.contraDetails?.toCounterName || '').trim()
 
@@ -1044,14 +1228,14 @@ export function TallyImportDialog({
     let skipped = 0
 
     processedList.forEach((v, idx) => {
-      if (v.normalizedType === 'skipped' || v.matchedEntityType === 'unmapped' || v.hasUnmappedItem) {
+      if (!v.isIncluded || v.effectiveType === 'skipped' || v.matchedEntityType === 'unmapped' || v.hasUnmappedItem) {
         skipped++
         return
       }
 
       const normParty = v.partyName.trim().toLowerCase()
 
-      if (v.normalizedType === 'payment' && v.matchedEntityType === 'supplier') {
+      if (v.effectiveType === 'payment' && v.matchedEntityType === 'supplier') {
         const suppId = v.matchedEntityId || autoSuppMap.get(normParty) || supplierMap.get(normParty)?.id
         if (suppId) {
           newPayments.push({
@@ -1067,7 +1251,7 @@ export function TallyImportDialog({
         } else {
           skipped++
         }
-      } else if (v.normalizedType === 'expense') {
+      } else if (v.effectiveType === 'expense') {
         const crLeg = v.legs.find(l => l.drCr === 'Cr')
         const expCatId = v.expenseDetails?.categoryId || v.matchedEntityId || autoExpMap.get(normParty) || expenseTypeMap.get(normParty)?.id || 'exp-cat-general'
         newExpenseEntries.push({
@@ -1085,7 +1269,7 @@ export function TallyImportDialog({
           fy: '2025-2026',
           createdAt: Date.now()
         } as any)
-      } else if (v.normalizedType === 'contra') {
+      } else if (v.effectiveType === 'contra') {
         const fromName = v.contraDetails?.fromCounterName || 'Source Counter'
         const toName = v.contraDetails?.toCounterName || 'Destination Counter'
         const fromId = v.contraDetails?.fromCounterId || autoCntrMap.get(fromName.toLowerCase()) || counterMap.get(fromName.trim().toLowerCase())?.id || 'counter-src'
@@ -1102,7 +1286,7 @@ export function TallyImportDialog({
           toCounterName: toName,
           narration: v.narration || `Tally Contra Transfer #${v.voucherNumber}`
         })
-      } else if (v.normalizedType === 'receipt' && v.matchedEntityType === 'customer') {
+      } else if (v.effectiveType === 'receipt' && v.matchedEntityType === 'customer') {
         const custId = v.matchedEntityId || autoCustMap.get(normParty) || customerMap.get(normParty)?.id
         if (custId) {
           newCustomerPayments.push({
@@ -1118,7 +1302,7 @@ export function TallyImportDialog({
         } else {
           skipped++
         }
-      } else if (v.normalizedType === 'sales' && v.matchedEntityType === 'customer') {
+      } else if (v.effectiveType === 'sales' && v.matchedEntityType === 'customer') {
         const custId = v.matchedEntityId || autoCustMap.get(normParty) || customerMap.get(normParty)?.id
         if (custId) {
           newSalesInvoices.push({
@@ -1140,7 +1324,7 @@ export function TallyImportDialog({
         } else {
           skipped++
         }
-      } else if (v.normalizedType === 'purchase' && v.matchedEntityType === 'supplier') {
+      } else if (v.effectiveType === 'purchase' && v.matchedEntityType === 'supplier') {
         const suppId = v.matchedEntityId || autoSuppMap.get(normParty) || supplierMap.get(normParty)?.id
         if (suppId) {
           newPurchaseInvoices.push({
@@ -1161,7 +1345,7 @@ export function TallyImportDialog({
         } else {
           skipped++
         }
-      } else if (v.normalizedType === 'credit_note' && v.matchedEntityType === 'customer') {
+      } else if (v.effectiveType === 'credit_note' && v.matchedEntityType === 'customer') {
         const custId = v.matchedEntityId || autoCustMap.get(normParty) || customerMap.get(normParty)?.id
         if (custId) {
           newCreditNotes.push({
@@ -1176,7 +1360,7 @@ export function TallyImportDialog({
         } else {
           skipped++
         }
-      } else if (v.normalizedType === 'debit_note' && v.matchedEntityType === 'supplier') {
+      } else if (v.effectiveType === 'debit_note' && v.matchedEntityType === 'supplier') {
         const suppId = v.matchedEntityId || autoSuppMap.get(normParty) || supplierMap.get(normParty)?.id
         if (suppId) {
           newDebitNotes.push({
@@ -1224,6 +1408,7 @@ export function TallyImportDialog({
 
     setParsedVouchers([])
     setCandidateMasters(null)
+    setOverrides({})
     setFileName(null)
     onOpenChange(false)
   }
@@ -1253,8 +1438,8 @@ export function TallyImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[760px] p-6 rounded-2xl">
-        <DialogHeader className="space-y-1.5">
+      <DialogContent className="sm:max-w-[880px] max-h-[92vh] flex flex-col p-6 rounded-2xl overflow-hidden">
+        <DialogHeader className="space-y-1.5 shrink-0">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
               <span className="p-2 rounded-xl bg-violet-50 text-violet-700 border border-violet-100">
@@ -1267,122 +1452,240 @@ export function TallyImportDialog({
             </Badge>
           </div>
           <DialogDescription className="text-xs text-slate-500">
-            Upload Tally Native XML (.xml) or Excel (.xlsx, .xls, .csv) to ingest Sales, Purchases, Receipts, Payments, Contra Transfers, and Notes.
+            Inspect, filter, override types, match accounts, and auto-create missing master ledgers during Tally ingestion.
           </DialogDescription>
         </DialogHeader>
 
         {/* Upload Drop Area */}
-        <div
-          onDragOver={e => {
-            e.preventDefault()
-            setIsDragging(true)
-          }}
-          onDragLeave={() => setIsDragging(false)}
-          onDrop={handleDrop}
-          className={cn(
-            'border-2 border-dashed p-5 rounded-2xl text-center space-y-3 transition-all cursor-pointer',
-            isDragging ? 'border-violet-600 bg-violet-50/80 scale-[0.99]' : 'border-slate-200 hover:border-violet-400 bg-slate-50/60'
-          )}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            accept=".xml, .xlsx, .xls, .csv, text/xml, application/xml"
-            className="hidden"
-          />
-          <div className="mx-auto w-10 h-10 rounded-xl bg-violet-100 text-violet-700 flex items-center justify-center">
-            <FileArrowUp className="w-5 h-5" weight="bold" />
-          </div>
-          <div>
-            <Button
-              size="sm"
-              type="button"
-              onClick={e => {
-                e.stopPropagation()
-                fileInputRef.current?.click()
-              }}
-              disabled={isParsing}
-              className="h-8 text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white rounded-xl shadow-xs"
-            >
-              {isParsing ? 'Parsing Vouchers...' : 'Select Tally XML / Excel File'}
-            </Button>
-            <p className="text-[11px] text-slate-400 mt-1.5">
-              Drag & Drop or click to upload native Tally XML (<span className="font-mono">.xml</span>) or Excel (<span className="font-mono">.xlsx, .xls, .csv</span>)
-            </p>
-          </div>
-          {fileName && (
-            <Badge variant="secondary" className="text-xs font-mono">
-              Loaded: {fileName}
-            </Badge>
-          )}
-        </div>
-
-        {/* Auto-Creation Toggle & Candidate Summary */}
-        {processedList.length > 0 && (
-          <div className="flex items-center justify-between bg-violet-50/60 border border-violet-100 p-3 rounded-xl gap-2 flex-wrap">
-            <div className="flex items-center space-x-2.5">
-              <Switch
-                id="auto-create-masters-toggle"
-                checked={autoCreateMasters}
-                onCheckedChange={setAutoCreateMasters}
-              />
-              <Label htmlFor="auto-create-masters-toggle" className="text-xs font-bold text-slate-800 cursor-pointer">
-                Auto-Create Missing Masters & Ledgers
-              </Label>
+        {processedList.length === 0 ? (
+          <div
+            onDragOver={e => {
+              e.preventDefault()
+              setIsDragging(true)
+            }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
+            className={cn(
+              'border-2 border-dashed p-8 rounded-2xl text-center space-y-3 transition-all cursor-pointer my-auto',
+              isDragging ? 'border-violet-600 bg-violet-50/80 scale-[0.99]' : 'border-slate-200 hover:border-violet-400 bg-slate-50/60'
+            )}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept=".xml, .xlsx, .xls, .csv, text/xml, application/xml"
+              className="hidden"
+            />
+            <div className="mx-auto w-12 h-12 rounded-2xl bg-violet-100 text-violet-700 flex items-center justify-center">
+              <FileArrowUp className="w-6 h-6" weight="bold" />
             </div>
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {autoCreateMasters && newMastersSummary.customersCount > 0 && (
-                <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[10px]">
-                  +{newMastersSummary.customersCount} New Customers
-                </Badge>
-              )}
-              {autoCreateMasters && newMastersSummary.suppliersCount > 0 && (
-                <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px]">
-                  +{newMastersSummary.suppliersCount} New Suppliers
-                </Badge>
-              )}
-              {autoCreateMasters && newMastersSummary.expensesCount > 0 && (
-                <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px]">
-                  +{newMastersSummary.expensesCount} New Expenses
-                </Badge>
-              )}
-              {autoCreateMasters && newMastersSummary.countersCount > 0 && (
-                <Badge className="bg-cyan-100 text-cyan-800 border-cyan-200 text-[10px]">
-                  +{newMastersSummary.countersCount} New Counters
-                </Badge>
-              )}
+            <div>
+              <Button
+                size="sm"
+                type="button"
+                onClick={e => {
+                  e.stopPropagation()
+                  fileInputRef.current?.click()
+                }}
+                disabled={isParsing}
+                className="h-9 text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white rounded-xl shadow-xs"
+              >
+                {isParsing ? 'Parsing Vouchers...' : 'Select Tally XML / Excel File'}
+              </Button>
+              <p className="text-xs text-slate-400 mt-2">
+                Drag & Drop or click to upload native Tally XML (<span className="font-mono">.xml</span>) or 14-Column Excel (<span className="font-mono">.xlsx, .xls, .csv</span>)
+              </p>
             </div>
           </div>
-        )}
-
-        {/* Preview Table */}
-        {processedList.length > 0 && (
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-bold text-slate-700">Parsed Voucher Preview ({processedList.length})</span>
-              <div className="flex items-center gap-1.5">
-                <Badge className="bg-emerald-100 text-emerald-800 text-[10px]">
-                  {validCount} Matched
-                </Badge>
-                {unmappedCount > 0 && (
-                  <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200 text-[10px]">
-                    {unmappedCount} Unmapped
+        ) : (
+          <div className="flex flex-col flex-1 overflow-hidden space-y-3 min-h-0 pt-1">
+            {/* Auto-Creation Toggle & Candidate Summary Bar */}
+            <div className="flex items-center justify-between bg-violet-50/60 border border-violet-100 p-2.5 rounded-xl gap-2 flex-wrap shrink-0">
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="auto-create-masters-toggle"
+                  checked={autoCreateMasters}
+                  onCheckedChange={setAutoCreateMasters}
+                />
+                <Label htmlFor="auto-create-masters-toggle" className="text-xs font-bold text-slate-800 cursor-pointer">
+                  Auto-Create Missing Masters & Ledgers
+                </Label>
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {autoCreateMasters && newMastersSummary.customersCount > 0 && (
+                  <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[10px]">
+                    +{newMastersSummary.customersCount} Customers
                   </Badge>
                 )}
-                {skippedCount > 0 && (
-                  <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-200 text-[10px]">
-                    {skippedCount} Skipped (Journal/Memo)
+                {autoCreateMasters && newMastersSummary.suppliersCount > 0 && (
+                  <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px]">
+                    +{newMastersSummary.suppliersCount} Suppliers
+                  </Badge>
+                )}
+                {autoCreateMasters && newMastersSummary.expensesCount > 0 && (
+                  <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px]">
+                    +{newMastersSummary.expensesCount} Expenses
+                  </Badge>
+                )}
+                {autoCreateMasters && newMastersSummary.countersCount > 0 && (
+                  <Badge className="bg-cyan-100 text-cyan-800 border-cyan-200 text-[10px]">
+                    +{newMastersSummary.countersCount} Counters
                   </Badge>
                 )}
               </div>
             </div>
 
-            <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+            {/* Interactive Filter Pills & Search Bar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+                <Button
+                  size="sm"
+                  variant={filterTab === 'all' ? 'default' : 'outline'}
+                  onClick={() => setFilterTab('all')}
+                  className={cn(
+                    'h-7 px-2.5 text-xs font-semibold rounded-lg',
+                    filterTab === 'all' ? 'bg-slate-900 text-white' : 'text-slate-600 bg-white'
+                  )}
+                >
+                  All ({totalCount})
+                </Button>
+                <Button
+                  size="sm"
+                  variant={filterTab === 'matched' ? 'default' : 'outline'}
+                  onClick={() => setFilterTab('matched')}
+                  className={cn(
+                    'h-7 px-2.5 text-xs font-semibold rounded-lg',
+                    filterTab === 'matched' ? 'bg-emerald-700 text-white' : 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                  )}
+                >
+                  Matched ({matchedCount})
+                </Button>
+                <Button
+                  size="sm"
+                  variant={filterTab === 'unmapped' ? 'default' : 'outline'}
+                  onClick={() => setFilterTab('unmapped')}
+                  className={cn(
+                    'h-7 px-2.5 text-xs font-semibold rounded-lg',
+                    filterTab === 'unmapped' ? 'bg-amber-600 text-white' : 'text-amber-800 bg-amber-50 border-amber-200'
+                  )}
+                >
+                  Unmapped ({unmappedCount})
+                </Button>
+                <Button
+                  size="sm"
+                  variant={filterTab === 'payment' ? 'default' : 'outline'}
+                  onClick={() => setFilterTab('payment')}
+                  className={cn(
+                    'h-7 px-2 text-xs font-semibold rounded-lg',
+                    filterTab === 'payment' ? 'bg-orange-600 text-white' : 'text-orange-800 bg-orange-50 border-orange-200'
+                  )}
+                >
+                  Payments
+                </Button>
+                <Button
+                  size="sm"
+                  variant={filterTab === 'expense' ? 'default' : 'outline'}
+                  onClick={() => setFilterTab('expense')}
+                  className={cn(
+                    'h-7 px-2 text-xs font-semibold rounded-lg',
+                    filterTab === 'expense' ? 'bg-amber-600 text-white' : 'text-amber-800 bg-amber-50 border-amber-200'
+                  )}
+                >
+                  Expenses
+                </Button>
+                <Button
+                  size="sm"
+                  variant={filterTab === 'contra' ? 'default' : 'outline'}
+                  onClick={() => setFilterTab('contra')}
+                  className={cn(
+                    'h-7 px-2 text-xs font-semibold rounded-lg',
+                    filterTab === 'contra' ? 'bg-cyan-700 text-white' : 'text-cyan-800 bg-cyan-50 border-cyan-200'
+                  )}
+                >
+                  Contra
+                </Button>
+                <Button
+                  size="sm"
+                  variant={filterTab === 'skipped' ? 'default' : 'outline'}
+                  onClick={() => setFilterTab('skipped')}
+                  className={cn(
+                    'h-7 px-2.5 text-xs font-semibold rounded-lg',
+                    filterTab === 'skipped' ? 'bg-slate-700 text-white' : 'text-slate-500 bg-slate-50 border-slate-200'
+                  )}
+                >
+                  Skipped ({skippedCount})
+                </Button>
+              </div>
+
+              {/* Search Bar */}
+              <div className="relative min-w-[200px]">
+                <MagnifyingGlass className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Input
+                  placeholder="Search party, voucher #, ₹..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="h-7 pl-8 pr-7 text-xs bg-slate-50/80 rounded-lg border-slate-200"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Bulk Action Controls */}
+            <div className="flex items-center justify-between text-xs py-1 px-1.5 bg-slate-50 rounded-lg border border-slate-200 shrink-0">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={filteredList.length > 0 && filteredList.every(v => v.isIncluded)}
+                  onCheckedChange={checked => handleSelectAll(Boolean(checked))}
+                  id="select-all-filtered"
+                />
+                <label htmlFor="select-all-filtered" className="font-semibold text-slate-700 cursor-pointer text-[11px]">
+                  Showing {filteredList.length} of {totalCount} ({selectedCount} Selected)
+                </label>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleSelectMatchedOnly}
+                  className="h-6 px-2 text-[11px] text-emerald-700 hover:bg-emerald-100/60"
+                >
+                  Select Matched
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleExcludeUnmapped}
+                  className="h-6 px-2 text-[11px] text-amber-700 hover:bg-amber-100/60"
+                >
+                  Exclude Unmapped
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => handleSelectAll(false)}
+                  className="h-6 px-2 text-[11px] text-slate-500 hover:bg-slate-200/60"
+                >
+                  Deselect All
+                </Button>
+              </div>
+            </div>
+
+            {/* Main Interactive Preview Table */}
+            <div className="flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-white min-h-0">
               <Table>
-                <TableHeader className="bg-slate-50 sticky top-0 z-10">
+                <TableHeader className="bg-slate-50 sticky top-0 z-10 shadow-xs">
                   <TableRow>
+                    <TableHead className="w-8 text-center"></TableHead>
+                    <TableHead className="w-8"></TableHead>
                     <TableHead className="text-[11px] font-bold text-slate-600">Type</TableHead>
                     <TableHead className="text-[11px] font-bold text-slate-600">Voucher No</TableHead>
                     <TableHead className="text-[11px] font-bold text-slate-600">Date</TableHead>
@@ -1392,58 +1695,256 @@ export function TallyImportDialog({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {processedList.map((v, idx) => (
-                    <TableRow key={idx} className="text-xs">
-                      <TableCell>{getVoucherBadge(v.normalizedType, v.rawVoucherType)}</TableCell>
-                      <TableCell className="font-mono text-slate-900">{v.voucherNumber}</TableCell>
-                      <TableCell className="font-mono text-slate-500 text-[11px]">{v.displayDate}</TableCell>
-                      <TableCell className="font-semibold text-slate-800 max-w-[160px]">
-                        <div className="truncate" title={v.partyName}>{v.partyName}</div>
-                        {v.inventory && v.inventory.length > 0 && (
-                          <div className="text-[10px] text-slate-400 font-normal truncate" title={v.inventory.map(i => `${i.quantity} ${i.unit || ''} ${i.itemName}`).join(', ')}>
-                            {v.inventory.length} item{v.inventory.length > 1 ? 's' : ''}: {v.inventory[0].itemName}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right font-mono font-bold text-slate-900">
-                        {formatCurrency(v.totalAmount)}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {v.normalizedType === 'skipped' ? (
-                          <Badge variant="outline" className="text-[10px] text-slate-400">Skip Journal</Badge>
-                        ) : v.isAutoCreated ? (
-                          <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[10px] font-semibold">
-                            + Auto {v.matchedEntityType === 'customer' ? 'Customer' : v.matchedEntityType === 'supplier' ? 'Supplier' : v.matchedEntityType === 'expense' ? 'Expense' : 'Counter'}
-                          </Badge>
-                        ) : v.matchedEntityType === 'unmapped' ? (
-                          <Badge variant="outline" className="text-[10px] text-rose-700 bg-rose-50 border-rose-200" title={`Unmapped Master: ${v.partyName}`}>
-                            Unmapped Master: {v.partyName.length > 12 ? v.partyName.slice(0, 12) + '...' : v.partyName}
-                          </Badge>
-                        ) : v.hasUnmappedItem ? (
-                          <Badge variant="outline" className="text-[10px] text-amber-700 bg-amber-50 border-amber-200" title={`Unmapped Item: ${v.unmappedItemNames?.join(', ')}`}>
-                            Unmapped Item
-                          </Badge>
-                        ) : v.normalizedType === 'contra' || v.matchedEntityType === 'counter' ? (
-                          <Badge className="bg-cyan-100 text-cyan-800 text-[10px]">Contra Transfer</Badge>
-                        ) : v.normalizedType === 'expense' || v.matchedEntityType === 'expense' ? (
-                          <Badge className="bg-amber-100 text-amber-800 text-[10px]">Expense Match</Badge>
-                        ) : v.matchedEntityType === 'supplier' ? (
-                          <Badge className="bg-blue-100 text-blue-800 text-[10px]">Supplier Match</Badge>
-                        ) : v.matchedEntityType === 'customer' ? (
-                          <Badge className="bg-emerald-100 text-emerald-800 text-[10px]">Customer Match</Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-[10px] text-slate-600 bg-slate-50 border-slate-200">General Match</Badge>
-                        )}
+                  {filteredList.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8 text-slate-400 text-xs">
+                        No vouchers match the selected filter or search criteria.
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    filteredList.map((v, idx) => {
+                      const isExpanded = expandedVoucherId === v.id
+                      return (
+                        <React.Fragment key={v.id || idx}>
+                          <TableRow
+                            className={cn(
+                              'text-xs transition-colors cursor-pointer',
+                              !v.isIncluded ? 'opacity-50 bg-slate-50/50' : isExpanded ? 'bg-violet-50/40' : 'hover:bg-slate-50/80'
+                            )}
+                            onClick={() => setExpandedVoucherId(isExpanded ? null : v.id)}
+                          >
+                            <TableCell className="text-center p-2" onClick={e => e.stopPropagation()}>
+                              <Checkbox
+                                checked={v.isIncluded}
+                                onCheckedChange={checked => handleIncludeToggle(v.id, Boolean(checked))}
+                              />
+                            </TableCell>
+                            <TableCell className="p-2 text-slate-400">
+                              {isExpanded ? <CaretDown className="w-3.5 h-3.5" /> : <CaretRight className="w-3.5 h-3.5" />}
+                            </TableCell>
+                            <TableCell>{getVoucherBadge(v.effectiveType, v.rawVoucherType)}</TableCell>
+                            <TableCell className="font-mono text-slate-900 font-semibold">{v.voucherNumber}</TableCell>
+                            <TableCell className="font-mono text-slate-500 text-[11px]">{v.displayDate}</TableCell>
+                            <TableCell className="font-semibold text-slate-800 max-w-[200px]">
+                              <div className="truncate" title={v.partyName}>{v.partyName}</div>
+                              {v.inventory && v.inventory.length > 0 && (
+                                <div className="text-[10px] text-slate-400 font-normal truncate">
+                                  {v.inventory.length} item{v.inventory.length > 1 ? 's' : ''}: {v.inventory[0].itemName}
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right font-mono font-bold text-slate-900">
+                              {formatCurrency(v.totalAmount)}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              {v.effectiveType === 'skipped' ? (
+                                <Badge variant="outline" className="text-[10px] text-slate-400">Skip Journal</Badge>
+                              ) : v.isAutoCreated ? (
+                                <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[10px] font-semibold">
+                                  + Auto {v.matchedEntityType === 'customer' ? 'Customer' : v.matchedEntityType === 'supplier' ? 'Supplier' : v.matchedEntityType === 'expense' ? 'Expense' : 'Counter'}
+                                </Badge>
+                              ) : v.matchedEntityType === 'unmapped' ? (
+                                <Badge variant="outline" className="text-[10px] text-rose-700 bg-rose-50 border-rose-200" title={v.skipReason}>
+                                  Unmapped Master
+                                </Badge>
+                              ) : v.hasUnmappedItem ? (
+                                <Badge variant="outline" className="text-[10px] text-amber-700 bg-amber-50 border-amber-200" title={v.skipReason}>
+                                  Unmapped Item
+                                </Badge>
+                              ) : v.effectiveType === 'contra' || v.matchedEntityType === 'counter' ? (
+                                <Badge className="bg-cyan-100 text-cyan-800 text-[10px]">Contra Transfer</Badge>
+                              ) : v.effectiveType === 'expense' || v.matchedEntityType === 'expense' ? (
+                                <Badge className="bg-amber-100 text-amber-800 text-[10px]">Expense Match</Badge>
+                              ) : v.matchedEntityType === 'supplier' ? (
+                                <Badge className="bg-blue-100 text-blue-800 text-[10px]">Supplier Match</Badge>
+                              ) : v.matchedEntityType === 'customer' ? (
+                                <Badge className="bg-emerald-100 text-emerald-800 text-[10px]">Customer Match</Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-[10px] text-slate-600 bg-slate-50 border-slate-200">General Match</Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+
+                          {/* Expanded Inspection Drawer */}
+                          {isExpanded && (
+                            <TableRow className="bg-slate-50/90 border-b border-slate-200">
+                              <TableCell colSpan={8} className="p-4 space-y-3">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                                  {/* Left Col: Ledger Entries Breakdown */}
+                                  <div className="space-y-2">
+                                    <div className="flex items-center justify-between text-xs font-bold text-slate-700 border-b pb-1">
+                                      <span>Accounting Leg Breakdown</span>
+                                      <span className="text-[11px] font-mono text-slate-500 font-normal">
+                                        Dr: {formatCurrency(v.drTotal)} | Cr: {formatCurrency(v.crTotal)}
+                                      </span>
+                                    </div>
+                                    <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                                      {v.legs.map((leg, lIdx) => (
+                                        <div key={lIdx} className="flex items-center justify-between text-xs py-1 px-2 rounded bg-slate-50 border border-slate-100">
+                                          <div className="flex items-center gap-1.5 truncate max-w-[240px]">
+                                            <Badge variant={leg.drCr === 'Dr' ? 'default' : 'outline'} className={cn(
+                                              'text-[9px] px-1 py-0 font-mono',
+                                              leg.drCr === 'Dr' ? 'bg-blue-600 text-white' : 'text-purple-700 border-purple-200 bg-purple-50'
+                                            )}>
+                                              {leg.drCr}
+                                            </Badge>
+                                            <span className="font-semibold text-slate-800 truncate" title={leg.ledgerName}>{leg.ledgerName}</span>
+                                          </div>
+                                          <span className="font-mono font-bold text-slate-900 text-[11px]">
+                                            {formatCurrency(leg.amount)}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+
+                                    {v.narration && (
+                                      <div className="mt-2 text-[11px] bg-slate-50 p-2 rounded border border-slate-200 text-slate-600">
+                                        <span className="font-bold text-slate-700 mr-1">Narration:</span>
+                                        {v.narration}
+                                      </div>
+                                    )}
+
+                                    {v.inventory && v.inventory.length > 0 && (
+                                      <div className="mt-2 space-y-1">
+                                        <div className="text-[11px] font-bold text-slate-700">Inventory Items ({v.inventory.length})</div>
+                                        <div className="max-h-24 overflow-y-auto space-y-1">
+                                          {v.inventory.map((inv, iIdx) => (
+                                            <div key={iIdx} className="flex items-center justify-between text-[10px] bg-slate-50 p-1.5 rounded border border-slate-100 font-mono">
+                                              <span className="font-semibold text-slate-800 truncate max-w-[180px]">{inv.itemName}</span>
+                                              <span>{inv.quantity} {inv.unit} @ ₹{inv.rate} = {formatCurrency(inv.amount)}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Right Col: Interactive Voucher Override Controls */}
+                                  <div className="space-y-3 border-l md:pl-4 border-slate-100">
+                                    <div className="text-xs font-bold text-slate-700 border-b pb-1 flex items-center justify-between">
+                                      <span>Voucher Controls &amp; Re-Mapping</span>
+                                      <Badge variant="outline" className="text-[10px]">
+                                        ID: {v.voucherNumber}
+                                      </Badge>
+                                    </div>
+
+                                    {/* 1. Voucher Type Override */}
+                                    <div className="space-y-1">
+                                      <label className="text-[11px] font-semibold text-slate-600">Classification Type</label>
+                                      <Select
+                                        value={v.effectiveType}
+                                        onValueChange={val => handleTypeOverride(v.id, val as any)}
+                                      >
+                                        <SelectTrigger className="h-8 text-xs bg-slate-50">
+                                          <SelectValue placeholder="Select type" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="payment">Supplier Payment</SelectItem>
+                                          <SelectItem value="expense">Expense Entry</SelectItem>
+                                          <SelectItem value="receipt">Customer Receipt</SelectItem>
+                                          <SelectItem value="contra">Contra Transfer</SelectItem>
+                                          <SelectItem value="sales">Sales Invoice</SelectItem>
+                                          <SelectItem value="purchase">Purchase Invoice</SelectItem>
+                                          <SelectItem value="credit_note">Credit Note (Sales Return)</SelectItem>
+                                          <SelectItem value="debit_note">Debit Note (Purchase Return)</SelectItem>
+                                          <SelectItem value="skipped">Skip / Journal</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+
+                                    {/* 2. Target Master Mapping */}
+                                    {v.effectiveType === 'payment' || v.effectiveType === 'purchase' || v.effectiveType === 'debit_note' ? (
+                                      <div className="space-y-1">
+                                        <label className="text-[11px] font-semibold text-slate-600">Linked Supplier Master</label>
+                                        <Select
+                                          value={v.matchedEntityId || (v.isAutoCreated ? 'auto-create' : '')}
+                                          onValueChange={val => handleEntityOverride(v.id, val, 'supplier')}
+                                        >
+                                          <SelectTrigger className="h-8 text-xs bg-slate-50">
+                                            <SelectValue placeholder="Map to Supplier" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="auto-create">
+                                              ✨ Auto-Create &quot;{v.partyName}&quot;
+                                            </SelectItem>
+                                            {suppliers.map(s => (
+                                              <SelectItem key={s.id} value={s.id}>
+                                                {s.name}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                    ) : v.effectiveType === 'sales' || v.effectiveType === 'receipt' || v.effectiveType === 'credit_note' ? (
+                                      <div className="space-y-1">
+                                        <label className="text-[11px] font-semibold text-slate-600">Linked Customer Master</label>
+                                        <Select
+                                          value={v.matchedEntityId || (v.isAutoCreated ? 'auto-create' : '')}
+                                          onValueChange={val => handleEntityOverride(v.id, val, 'customer')}
+                                        >
+                                          <SelectTrigger className="h-8 text-xs bg-slate-50">
+                                            <SelectValue placeholder="Map to Customer" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="auto-create">
+                                              ✨ Auto-Create &quot;{v.partyName}&quot;
+                                            </SelectItem>
+                                            {customers.map(c => (
+                                              <SelectItem key={c.id} value={c.id}>
+                                                {c.name}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                    ) : v.effectiveType === 'expense' ? (
+                                      <div className="space-y-1">
+                                        <label className="text-[11px] font-semibold text-slate-600">Linked Expense Category</label>
+                                        <Select
+                                          value={v.matchedEntityId || (v.isAutoCreated ? 'auto-create' : '')}
+                                          onValueChange={val => handleEntityOverride(v.id, val, 'expense')}
+                                        >
+                                          <SelectTrigger className="h-8 text-xs bg-slate-50">
+                                            <SelectValue placeholder="Map to Expense Type" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="auto-create">
+                                              ✨ Auto-Create &quot;{v.partyName}&quot;
+                                            </SelectItem>
+                                            {expenseTypes.map(e => (
+                                              <SelectItem key={e.id} value={e.id}>
+                                                {e.name}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                    ) : null}
+
+                                    {/* 3. Include in Commit Switch */}
+                                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                                      <span className="text-xs font-semibold text-slate-700">Include in Database Commit</span>
+                                      <Switch
+                                        checked={v.isIncluded}
+                                        onCheckedChange={checked => handleIncludeToggle(v.id, checked)}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </React.Fragment>
+                      )
+                    })
+                  )}
                 </TableBody>
               </Table>
             </div>
           </div>
         )}
 
-        <DialogFooter className="flex items-center justify-between pt-2">
+        <DialogFooter className="flex items-center justify-between pt-3 border-t border-slate-100 shrink-0">
           <Button
             variant="ghost"
             size="sm"
@@ -1469,10 +1970,10 @@ export function TallyImportDialog({
             <Button
               size="sm"
               onClick={handleCommit}
-              disabled={validCount === 0}
+              disabled={selectedCount === 0}
               className="text-xs h-8 bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
             >
-              Import {validCount} Verified Vouchers
+              Import {selectedCount} Selected Vouchers
             </Button>
           </div>
         </DialogFooter>

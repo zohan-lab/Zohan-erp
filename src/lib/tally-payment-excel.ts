@@ -16,7 +16,8 @@ import {
   TallyNewMasterCandidates,
   TallyNewMasterCandidateParty,
   TallyNewMasterCandidateExpense,
-  TallyNewMasterCandidateCounter
+  TallyNewMasterCandidateCounter,
+  isLikelyIndirectExpenseLedger
 } from './tally-xml-parser'
 
 // Re-export all types so callers can import everything from this single module
@@ -1329,7 +1330,7 @@ export function parseTallyAccountingVouchersExcel(
         matchedEntityType = 'customer'
         matchedEntityId = custMap.get(normDr)?.id
         partyName = drParty
-      } else {
+      } else if (isLikelyIndirectExpenseLedger(drParty)) {
         normalizedType = 'expense'
         partyName = drParty
         expenseDetails = {
@@ -1343,6 +1344,17 @@ export function parseTallyAccountingVouchersExcel(
           linkType: 'netprofit'
         })
         matchedEntityType = 'unmapped'
+        skipReason = `Unmapped Master: ${drParty}`
+      } else {
+        normalizedType = 'payment'
+        partyName = drParty
+        matchedEntityType = 'unmapped'
+        candidateSuppliers.set(normDr, {
+          name: drParty,
+          address: partyAddress,
+          pincode: partyPincode,
+          state: 'West Bengal'
+        })
         skipReason = `Unmapped Master: ${drParty}`
       }
     } else if (normalizedType === 'receipt') {

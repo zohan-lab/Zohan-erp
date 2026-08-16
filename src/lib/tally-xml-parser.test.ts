@@ -6,7 +6,9 @@ import {
   decodeXmlFileBuffer,
   parseTallyXmlDate,
   normalizeTallyVoucherType,
-  parseTallyXmlVouchers
+  parseTallyXmlVouchers,
+  isLikelyCommercialEntity,
+  isLikelyIndirectExpenseLedger
 } from './tally-xml-parser'
 import { Customer, Supplier, Item } from './types'
 
@@ -618,5 +620,93 @@ describe('Native Tally XML Ingestion Engine', () => {
     expect(counterNames).toContain('HDFC Current A/c')
     expect(counterNames).toContain('Axis Bank OD')
     expect(counterNames).toContain('Cash Counter Main')
+  })
+
+  it('accurately distinguishes commercial entities from indirect expenses in Payment vouchers', () => {
+    // 1. Check helper functions
+    expect(isLikelyCommercialEntity('Captain Steel India Limited')).toBe(true)
+    expect(isLikelyCommercialEntity('Apex Infrastructure Traders')).toBe(true)
+    expect(isLikelyCommercialEntity('Tata Metaliks Ltd')).toBe(true)
+    expect(isLikelyCommercialEntity('Office Rent')).toBe(false)
+    expect(isLikelyCommercialEntity('Tea & Refreshment Expenses')).toBe(false)
+
+    expect(isLikelyIndirectExpenseLedger('Office Rent')).toBe(true)
+    expect(isLikelyIndirectExpenseLedger('Electricity Charges')).toBe(true)
+    expect(isLikelyIndirectExpenseLedger('Bank Charges & Processing Fee')).toBe(true)
+    expect(isLikelyIndirectExpenseLedger('Captain Steel India Limited')).toBe(false)
+    expect(isLikelyIndirectExpenseLedger('Shree Shyam Enterprises')).toBe(false)
+
+    // 2. Parse XML with commercial payment vs expense payment
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+<ENVELOPE>
+  <BODY>
+    <IMPORTDATA>
+      <REQUESTDATA>
+        <TALLYMESSAGE>
+          <VOUCHER VCHTYPE="Payment" ACTION="Create">
+            <DATE>20260405</DATE>
+            <VOUCHERNUMBER>297</VOUCHERNUMBER>
+            <NARRATION>Payment against supply of TMT bars</NARRATION>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Captain Steel India Limited</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+              <AMOUNT>-500000.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>State Bank of India</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+              <AMOUNT>500000.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+          </VOUCHER>
+          <VOUCHER VCHTYPE="Payment" ACTION="Create">
+            <DATE>20260406</DATE>
+            <VOUCHERNUMBER>298</VOUCHERNUMBER>
+            <NARRATION>Office electricity bill</NARRATION>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Electricity Charges</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+              <AMOUNT>-12450.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>State Bank of India</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+              <AMOUNT>12450.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+          </VOUCHER>
+        </TALLYMESSAGE>
+      </REQUESTDATA>
+    </IMPORTDATA>
+  </BODY>
+</ENVELOPE>`
+
+    const result = parseTallyXmlVouchers(xml, {
+      customers: [],
+      suppliers: [],
+      expenseTypes: [],
+      counters: []
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.vouchers).toHaveLength(2)
+
+    // Voucher 297: Captain Steel -> classified as Supplier Payment
+    const vch297 = result.vouchers.find(v => v.voucherNumber === '297')
+    expect(vch297).toBeDefined()
+    expect(vch297?.normalizedType).toBe('payment')
+    expect(vch297?.partyName).toBe('Captain Steel India Limited')
+    expect(vch297?.totalAmount).toBe(500000)
+
+    // Candidate supplier generated
+    expect(result.newMasterCandidates.suppliers.some(s => s.name === 'Captain Steel India Limited')).toBe(true)
+
+    // Voucher 298: Electricity Charges -> classified as Expense
+    const vch298 = result.vouchers.find(v => v.voucherNumber === '298')
+    expect(vch298).toBeDefined()
+    expect(vch298?.normalizedType).toBe('expense')
+    expect(vch298?.partyName).toBe('Electricity Charges')
+    expect(vch298?.totalAmount).toBe(12450)
+
+    // Candidate expense category generated
+    expect(result.newMasterCandidates.expenseCategories.some(e => e.name === 'Electricity Charges')).toBe(true)
   })
 })

@@ -203,6 +203,47 @@ export function normalizeTallyVoucherType(vchType: string): TallyParsedXmlVouche
   return 'skipped'
 }
 
+/**
+ * Keywords indicating commercial business entities (Suppliers / Vendors / Trade Parties).
+ */
+export const COMMERCIAL_ENTITY_KEYWORDS = [
+  'steel', 'industries', 'industry', 'traders', 'trader', 'trading', 'enterprise', 'enterprises',
+  'infra', 'infrastructure', 'pvt ltd', 'private limited', 'ltd', 'limited', 'corp', 'corporation',
+  'co.', 'company', 'llp', 'iron', 'agency', 'agencies', 'brothers', 'associates', 'mills', 'stores',
+  'hardware', 'cement', 'metals', 'alloys', 'wires', 'pipes', 'tubes', 'casting', 'foundry',
+  'commercial', 'buildcon', 'builders', 'fabricator', 'fabrication'
+]
+
+/**
+ * Keywords indicating indirect overhead or administrative expense ledgers.
+ */
+export const INDIRECT_EXPENSE_KEYWORDS = [
+  'rent', 'electricity', 'electric', 'power', 'fuel', 'diesel', 'petrol', 'salary', 'salaries',
+  'wages', 'wage', 'loading', 'unloading', 'labour', 'labor', 'stationery', 'printing',
+  'tea', 'refreshment', 'refreshments', 'snacks', 'bank charge', 'bank charges', 'bank interest',
+  'interest on', 'interest a/c', 'interest paid', 'repair', 'repairs', 'maintenance',
+  'brokerage', 'commission', 'audit', 'auditor', 'legal', 'lawyer', 'advocate',
+  'office expense', 'office exp', 'cleaning', 'courier', 'postage', 'telephone', 'phone',
+  'mobile', 'internet', 'broadband', 'drawings', 'insurance', 'tax', 'taxes', 'cess',
+  'professional fee', 'professional fees', 'travelling', 'travel', 'conveyance', 'hospitality',
+  'advertisement', 'advertising', 'publicity', 'software', 'subscription', 'domain', 'hosting',
+  'pest control', 'water charge', 'generator', 'security', 'guard', 'vehicle maintenance'
+]
+
+export function isLikelyCommercialEntity(ledgerName: string): boolean {
+  if (!ledgerName) return false
+  const lower = ledgerName.toLowerCase()
+  return COMMERCIAL_ENTITY_KEYWORDS.some(k => lower.includes(k))
+}
+
+export function isLikelyIndirectExpenseLedger(ledgerName: string): boolean {
+  if (!ledgerName) return false
+  const lower = ledgerName.toLowerCase()
+  // If it clearly contains commercial entity identifiers like 'pvt ltd' or 'steel', it is not an expense ledger
+  if (isLikelyCommercialEntity(ledgerName)) return false
+  return INDIRECT_EXPENSE_KEYWORDS.some(k => lower.includes(k))
+}
+
 function unescapeXml(text: string): string {
   if (!text) return ''
   return text
@@ -591,8 +632,8 @@ export function parseTallyXmlVouchers(
         matchedEntityType = 'customer'
         matchedEntityId = custMap.get(normDr)?.id
         partyName = drParty
-      } else {
-        // Dr ledger not found in registered suppliers. Ingest as Expense entry.
+      } else if (isLikelyIndirectExpenseLedger(drParty)) {
+        // Unmapped Indirect Expense ledger (e.g. "Office Rent", "Tea Expenses", "Bank Charges")
         normalizedType = 'expense'
         partyName = drParty
         expenseDetails = {
@@ -606,6 +647,17 @@ export function parseTallyXmlVouchers(
           linkType: 'netprofit'
         })
         matchedEntityType = 'unmapped'
+        skipReason = `Unmapped Master: ${drParty}`
+      } else {
+        // High-value commercial entity / trade supplier payment (e.g. "Captain Steel India Limited", "ABC Traders")
+        normalizedType = 'payment'
+        partyName = drParty
+        matchedEntityType = 'unmapped'
+        candidateSuppliers.set(normDr, {
+          name: drParty,
+          gstin: raw.partyGstin,
+          state: 'West Bengal'
+        })
         skipReason = `Unmapped Master: ${drParty}`
       }
     } else if (normalizedType === 'receipt') {
