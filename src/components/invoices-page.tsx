@@ -858,36 +858,31 @@ export default function InvoicesPage({
     setOpen(true)
   }
 
-  const supplierMap = useMemo(() => new Map(suppliers.map(s => [s.id, s])), [suppliers])
-  const isCashSupplierRef = (id?: string) => {
-    if (!id) return false
-    const norm = id.trim().toLowerCase()
-    return norm === 'supp-cash' || norm === 'cash supplier' || norm === 'cash'
-  }
+  const effectiveSuppliers = useMemo(() => {
+    const hasCash = suppliers.some(s => s.id === 'supp-cash' || s.name.trim().toLowerCase() === 'cash supplier')
+    if (hasCash) return suppliers
+    const defaultCashSupplier: Supplier = {
+      id: 'supp-cash',
+      name: 'Cash Supplier',
+      openingBalance: 0,
+      balanceType: 'Credit',
+      phone: '',
+      address: '',
+      stateCode: '19',
+      paymentCDRules: [],
+      invoiceCloseCDRules: []
+    }
+    return [defaultCashSupplier, ...suppliers]
+  }, [suppliers])
+
+  const supplierMap = useMemo(() => new Map(effectiveSuppliers.map(s => [s.id, s])), [effectiveSuppliers])
   const selectedInvoiceSupplier = useMemo(() => {
-    if (
-      isCashSupplierRef(selectedSupplierId) ||
-      ((editingInvoice as any)?.supplierNameSnapshot === 'Cash Supplier' && (!selectedSupplierId || isCashSupplierRef(selectedSupplierId)))
-    ) {
-      return {
-        id: 'supp-cash',
-        name: 'Cash Supplier',
-        openingBalance: 0,
-        balanceType: 'Credit' as const,
-        phone: '',
-        address: '',
-        stateCode: '19',
-        paymentCDRules: [],
-        invoiceCloseCDRules: [],
-        isCash: true
-      } as Supplier & { isCash?: boolean }
-    }
-    if (selectedSupplierId) {
-      return supplierMap.get(selectedSupplierId) || suppliers.find(s => s.id === selectedSupplierId || s.name.toLowerCase() === selectedSupplierId.toLowerCase())
-    }
-    return undefined
-  }, [selectedSupplierId, supplierMap, suppliers, editingInvoice])
-  const filteredSuppliers = suppliers.filter((supplier) => {
+    const targetId = selectedSupplierId || (editingInvoice ? editingInvoice.supplierId : undefined)
+    if (!targetId) return undefined
+    return supplierMap.get(targetId) || effectiveSuppliers.find(s => s.id === targetId || s.name.toLowerCase() === targetId.toLowerCase())
+  }, [selectedSupplierId, supplierMap, effectiveSuppliers, editingInvoice])
+
+  const filteredSuppliers = effectiveSuppliers.filter((supplier) => {
     const query = supplierSearch.trim().toLowerCase()
     if (!query) return true
     return [supplier.name, supplier.phone, supplier.gstin]
@@ -1104,66 +1099,33 @@ export default function InvoicesPage({
                   <div className="erp-party-picker-field">
                     <input type="hidden" name="supplierId" value={selectedSupplierId || selectedInvoiceSupplier?.id || ''} />
                     {!supplierPickerOpen && selectedInvoiceSupplier ? (
-                      (selectedInvoiceSupplier.id === 'supp-cash' || (selectedInvoiceSupplier as any).isCash) ? (
-                        <div className="flex items-center justify-between p-3.5 bg-emerald-50/80 border-2 border-emerald-500 rounded-2xl shadow-xs">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-extrabold text-base shrink-0 shadow-xs">
-                              💵
+                      <div className="flex items-center justify-between p-3.5 bg-[#5B5FEF]/10 border-2 border-[#5B5FEF] rounded-2xl shadow-sm">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-[#5B5FEF] text-white flex items-center justify-center font-extrabold text-sm shrink-0 shadow-sm">
+                            {selectedInvoiceSupplier.name.substring(0, 2).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-sm font-extrabold text-slate-900 truncate">
+                              {selectedInvoiceSupplier.name}
                             </div>
-                            <div className="min-w-0">
-                              <div className="text-sm font-extrabold text-emerald-950 flex items-center gap-2 truncate">
-                                Cash Supplier
-                                <Badge className="bg-emerald-600 text-white text-[10px] font-bold px-1.5 py-0 border-0">
-                                  Direct Purchase
-                                </Badge>
-                              </div>
-                              <div className="text-xs font-semibold text-emerald-700">
-                                Counter Cash Purchase • Fully Settled
-                              </div>
+                            <div className="text-xs font-bold text-[#5B5FEF]">
+                              Balance: {formatCurrency(selectedInvoiceSupplier.openingBalance || 0)}
                             </div>
                           </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setSupplierPickerOpen(true)
-                              setSupplierSearch('')
-                            }}
-                            className="h-8 px-3 text-xs font-bold text-emerald-700 bg-white border-emerald-300 hover:bg-emerald-600 hover:text-white rounded-xl shadow-2xs transition-all shrink-0 ml-2"
-                          >
-                            Change Party
-                          </Button>
                         </div>
-                      ) : (
-                        <div className="flex items-center justify-between p-3.5 bg-[#5B5FEF]/10 border-2 border-[#5B5FEF] rounded-2xl shadow-sm">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-10 h-10 rounded-xl bg-[#5B5FEF] text-white flex items-center justify-center font-extrabold text-sm shrink-0 shadow-sm">
-                              {selectedInvoiceSupplier.name.substring(0, 2).toUpperCase()}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="text-sm font-extrabold text-slate-900 truncate">
-                                {selectedInvoiceSupplier.name}
-                              </div>
-                              <div className="text-xs font-bold text-[#5B5FEF]">
-                                Balance: {formatCurrency(selectedInvoiceSupplier.openingBalance || 0)}
-                              </div>
-                            </div>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setSupplierPickerOpen(true)
-                              setSupplierSearch('')
-                            }}
-                            className="h-8 px-3 text-xs font-bold text-[#5B5FEF] bg-white border-[#5B5FEF]/30 hover:bg-[#5B5FEF] hover:text-white rounded-xl shadow-2xs transition-all shrink-0 ml-2"
-                          >
-                            Change Party
-                          </Button>
-                        </div>
-                      )
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSupplierPickerOpen(true)
+                            setSupplierSearch('')
+                          }}
+                          className="h-8 px-3 text-xs font-bold text-[#5B5FEF] bg-white border-[#5B5FEF]/30 hover:bg-[#5B5FEF] hover:text-white rounded-xl shadow-2xs transition-all shrink-0 ml-2"
+                        >
+                          Change Party
+                        </Button>
+                      </div>
                     ) : !supplierPickerOpen && !selectedInvoiceSupplier ? (
                       <button
                         type="button"

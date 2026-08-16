@@ -25,7 +25,11 @@ import {
   SlidersHorizontal,
   Package,
   ArrowsLeftRight,
-  Database
+  Database,
+  Users,
+  Buildings,
+  Tag,
+  Bank
 } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -187,20 +191,36 @@ export function TallyIntegrationPage({
   const [filterTab, setFilterTab] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState('')
 
-  // Inventory Item Selector & Master Mapping State
+  // -------------------------------------------------------------
+  // Comprehensive 5-Master Mapping States
+  // -------------------------------------------------------------
   const [itemMappings, setItemMappings] = useState<Record<string, string>>({})
+  const [customerMappings, setCustomerMappings] = useState<Record<string, string>>({})
+  const [supplierMappings, setSupplierMappings] = useState<Record<string, string>>({})
+  const [expenseMappings, setExpenseMappings] = useState<Record<string, string>>({})
+  const [counterMappings, setCounterMappings] = useState<Record<string, string>>({})
   const [itemOverrides, setItemOverrides] = useState<Record<string, Record<number, string>>>({})
-  const [showItemMappingDrawer, setShowItemMappingDrawer] = useState(false)
-  const [itemSearchQuery, setItemSearchQuery] = useState('')
 
-  const handleGlobalItemMapping = (tallyItemName: string, targetItemId: string) => {
-    const norm = tallyItemName.trim().toLowerCase()
-    setItemMappings(prev => ({
-      ...prev,
-      [norm]: targetItemId
-    }))
+  // Active accordion panel: 'items' | 'customers' | 'suppliers' | 'expenses' | 'counters' | null
+  const [activeMappingPanel, setActiveMappingPanel] = useState<'items' | 'customers' | 'suppliers' | 'expenses' | 'counters' | null>(null)
+  const [mappingSearchQuery, setMappingSearchQuery] = useState('')
+
+  // Master update handlers
+  const handleItemMapping = (tallyName: string, targetId: string) => {
+    setItemMappings(prev => ({ ...prev, [tallyName.trim().toLowerCase()]: targetId }))
   }
-
+  const handleCustomerMapping = (tallyName: string, targetId: string) => {
+    setCustomerMappings(prev => ({ ...prev, [tallyName.trim().toLowerCase()]: targetId }))
+  }
+  const handleSupplierMapping = (tallyName: string, targetId: string) => {
+    setSupplierMappings(prev => ({ ...prev, [tallyName.trim().toLowerCase()]: targetId }))
+  }
+  const handleExpenseMapping = (tallyName: string, targetId: string) => {
+    setExpenseMappings(prev => ({ ...prev, [tallyName.trim().toLowerCase()]: targetId }))
+  }
+  const handleCounterMapping = (tallyName: string, targetId: string) => {
+    setCounterMappings(prev => ({ ...prev, [tallyName.trim().toLowerCase()]: targetId }))
+  }
   const handleVoucherItemOverride = (voucherId: string, itemIndex: number, targetItemId: string) => {
     setItemOverrides(prev => ({
       ...prev,
@@ -288,8 +308,38 @@ export function TallyIntegrationPage({
     })
   }
 
+  // Master Lookup Maps
+  const effectiveCustomers = useMemo(() => {
+    const hasCash = customers.some(c => c.id === 'cust-cash' || c.name.trim().toLowerCase() === 'cash customer' || c.name.trim().toLowerCase() === 'cash')
+    if (hasCash) return customers
+    const defaultCashCustomer: Customer = {
+      id: 'cust-cash',
+      name: 'Cash Customer',
+      openingBalance: 0,
+      balanceType: 'Debit',
+      phone: '',
+      address: '',
+      stateCode: '19'
+    }
+    return [defaultCashCustomer, ...customers]
+  }, [customers])
+
   const supplierMap = useMemo(() => new Map(suppliers.map(s => [s.name.trim().toLowerCase(), s])), [suppliers])
-  const customerMap = useMemo(() => new Map(customers.map(c => [c.name.trim().toLowerCase(), c])), [customers])
+  const customerMap = useMemo(() => {
+    const map = new Map(effectiveCustomers.map(c => [c.name.trim().toLowerCase(), c]))
+    effectiveCustomers.forEach(c => {
+      if (c.id) map.set(c.id.toLowerCase(), c)
+    })
+    // Support standard cash variations
+    const cashCust = effectiveCustomers.find(c => c.id === 'cust-cash' || c.name.toLowerCase() === 'cash customer')
+    if (cashCust) {
+      map.set('cash', cashCust)
+      map.set('cash customer', cashCust)
+      map.set('cash a/c', cashCust)
+      map.set('cash account', cashCust)
+    }
+    return map
+  }, [effectiveCustomers])
   const counterMap = useMemo(() => new Map(counters.map(c => [c.name.trim().toLowerCase(), c])), [counters])
   const expenseTypeMap = useMemo(() => new Map(expenseTypes.map(e => [e.name.trim().toLowerCase(), e])), [expenseTypes])
   const itemMap = useMemo(() => {
@@ -300,6 +350,7 @@ export function TallyIntegrationPage({
     return map
   }, [items])
 
+  // Processed Vouchers List with Dynamic 5-Master Re-Mapping Engine
   const processedList = useMemo(() => {
     return parsedVouchers.map(v => {
       const override = overrides[v.id]
@@ -316,8 +367,11 @@ export function TallyIntegrationPage({
       if (effectiveType === 'contra') {
         const fromName = v.contraDetails?.fromCounterName || v.legs.find(l => l.drCr === 'Cr')?.ledgerName || ''
         const toName = v.contraDetails?.toCounterName || v.legs.find(l => l.drCr === 'Dr')?.ledgerName || ''
-        const fromId = override?.fromCounterId || v.contraDetails?.fromCounterId || counterMap.get(fromName.trim().toLowerCase())?.id
-        const toId = override?.toCounterId || v.contraDetails?.toCounterId || counterMap.get(toName.trim().toLowerCase())?.id
+        const fromMapped = counterMappings[fromName.trim().toLowerCase()]
+        const toMapped = counterMappings[toName.trim().toLowerCase()]
+
+        const fromId = override?.fromCounterId || (fromMapped && fromMapped !== 'auto-create' ? fromMapped : counterMap.get(fromName.trim().toLowerCase())?.id)
+        const toId = override?.toCounterId || (toMapped && toMapped !== 'auto-create' ? toMapped : counterMap.get(toName.trim().toLowerCase())?.id)
 
         contraDetails = {
           fromCounterName: fromName,
@@ -326,38 +380,63 @@ export function TallyIntegrationPage({
           toCounterId: toId,
           amount: v.totalAmount
         }
+
+        if (fromMapped === 'auto-create' || toMapped === 'auto-create' || (!fromId && autoCreateMasters) || (!toId && autoCreateMasters)) {
+          isAutoCreated = true
+        }
       } else if (effectiveType === 'expense') {
-        const expMatch = expenseTypeMap.get(normParty)
+        const mappedExpId = expenseMappings[normParty]
+        const expMatch = mappedExpId && mappedExpId !== 'auto-create'
+          ? expenseTypes.find(e => e.id === mappedExpId)
+          : (override?.matchedEntityId ? expenseTypes.find(e => e.id === override.matchedEntityId) : expenseTypeMap.get(normParty))
+
         if (expMatch) {
           matchedEntityType = 'expense'
           matchedEntityId = expMatch.id
-        } else if (autoCreateMasters) {
+          isAutoCreated = false
+        } else if (mappedExpId === 'auto-create' || autoCreateMasters) {
           matchedEntityType = 'expense'
+          matchedEntityId = undefined
           isAutoCreated = true
         } else {
           matchedEntityType = 'unmapped'
+          matchedEntityId = undefined
         }
       } else if (effectiveType === 'payment' || effectiveType === 'purchase' || effectiveType === 'debit_note') {
-        const suppMatch = supplierMap.get(normParty)
+        const mappedSuppId = supplierMappings[normParty]
+        const suppMatch = mappedSuppId && mappedSuppId !== 'auto-create'
+          ? suppliers.find(s => s.id === mappedSuppId)
+          : (override?.matchedEntityId ? suppliers.find(s => s.id === override.matchedEntityId) : supplierMap.get(normParty))
+
         if (suppMatch) {
           matchedEntityType = 'supplier'
           matchedEntityId = suppMatch.id
-        } else if (autoCreateMasters) {
+          isAutoCreated = false
+        } else if (mappedSuppId === 'auto-create' || autoCreateMasters) {
           matchedEntityType = 'supplier'
+          matchedEntityId = undefined
           isAutoCreated = true
         } else {
           matchedEntityType = 'unmapped'
+          matchedEntityId = undefined
         }
       } else if (effectiveType === 'receipt' || effectiveType === 'sales' || effectiveType === 'credit_note') {
-        const custMatch = customerMap.get(normParty)
+        const mappedCustId = customerMappings[normParty]
+        const custMatch = mappedCustId && mappedCustId !== 'auto-create'
+          ? effectiveCustomers.find(c => c.id === mappedCustId)
+          : (override?.matchedEntityId ? effectiveCustomers.find(c => c.id === override.matchedEntityId) : customerMap.get(normParty))
+
         if (custMatch) {
           matchedEntityType = 'customer'
           matchedEntityId = custMatch.id
-        } else if (autoCreateMasters) {
+          isAutoCreated = false
+        } else if (mappedCustId === 'auto-create' || autoCreateMasters) {
           matchedEntityType = 'customer'
+          matchedEntityId = undefined
           isAutoCreated = true
         } else {
           matchedEntityType = 'unmapped'
+          matchedEntityId = undefined
         }
       }
 
@@ -408,9 +487,32 @@ export function TallyIntegrationPage({
         isIncluded
       }
     })
-  }, [parsedVouchers, overrides, autoCreateMasters, customerMap, supplierMap, counterMap, expenseTypeMap, itemMap, items, itemMappings, itemOverrides])
+  }, [
+    parsedVouchers,
+    overrides,
+    autoCreateMasters,
+    customerMap,
+    supplierMap,
+    counterMap,
+    expenseTypeMap,
+    itemMap,
+    effectiveCustomers,
+    suppliers,
+    items,
+    expenseTypes,
+    itemMappings,
+    customerMappings,
+    supplierMappings,
+    expenseMappings,
+    counterMappings,
+    itemOverrides
+  ])
 
-  // Distinct Tally Stock Items
+  // -------------------------------------------------------------
+  // Distinct Extracted Masters from Vouchers
+  // -------------------------------------------------------------
+
+  // 1. Inventory Items
   const distinctTallyItems = useMemo(() => {
     const map = new Map<string, {
       rawName: string
@@ -418,6 +520,7 @@ export function TallyIntegrationPage({
       totalQty: number
       unit: string
       sampleRate: number
+      totalAmount: number
       voucherCount: number
       matchedItem: Item | null
       isAutoCreate: boolean
@@ -443,7 +546,8 @@ export function TallyIntegrationPage({
             normName: norm,
             totalQty: 0,
             unit: inv.unit || 'PCS',
-            sampleRate: inv.rate,
+            sampleRate: inv.rate || 0,
+            totalAmount: 0,
             voucherCount: 0,
             matchedItem: existingItem || null,
             isAutoCreate: mappedId === 'auto-create' || (!existingItem && autoCreateMasters)
@@ -452,6 +556,7 @@ export function TallyIntegrationPage({
 
         const entry = map.get(norm)!
         entry.totalQty += inv.quantity || 0
+        entry.totalAmount += inv.amount || ((inv.quantity || 0) * (inv.rate || 0))
         entry.voucherCount += 1
         if (inv.rate > 0) entry.sampleRate = inv.rate
       })
@@ -460,12 +565,229 @@ export function TallyIntegrationPage({
     return Array.from(map.values())
   }, [processedList, selectedModules, itemMappings, itemMap, items, autoCreateMasters])
 
-  // Filtered distinct items for search
+  // 2. Customers (Sales, Receipt, Credit Notes)
+  const distinctTallyCustomers = useMemo(() => {
+    const map = new Map<string, {
+      rawName: string
+      normName: string
+      voucherCount: number
+      totalAmount: number
+      gstin?: string
+      matchedCustomer: Customer | null
+      isAutoCreate: boolean
+    }>()
+
+    processedList.forEach(v => {
+      const modKey = v.effectiveType as keyof typeof selectedModules
+      if (modKey in selectedModules && !selectedModules[modKey]) return
+      if (v.effectiveType !== 'sales' && v.effectiveType !== 'receipt' && v.effectiveType !== 'credit_note') return
+
+      const raw = v.partyName.trim()
+      if (!raw) return
+      const norm = raw.toLowerCase()
+
+      if (!map.has(norm)) {
+        const mappedId = customerMappings[norm]
+        const existingCust = mappedId && mappedId !== 'auto-create'
+          ? effectiveCustomers.find(c => c.id === mappedId)
+          : customerMap.get(norm) || null
+
+        map.set(norm, {
+          rawName: raw,
+          normName: norm,
+          voucherCount: 0,
+          totalAmount: 0,
+          gstin: v.partyGstin,
+          matchedCustomer: existingCust || null,
+          isAutoCreate: mappedId === 'auto-create' || (!existingCust && autoCreateMasters)
+        })
+      }
+
+      const entry = map.get(norm)!
+      entry.voucherCount += 1
+      entry.totalAmount += v.totalAmount || 0
+      if (!entry.gstin && v.partyGstin) entry.gstin = v.partyGstin
+    })
+
+    return Array.from(map.values())
+  }, [processedList, selectedModules, customerMappings, customerMap, effectiveCustomers, autoCreateMasters])
+
+  // 3. Suppliers (Purchases, Payments, Debit Notes)
+  const distinctTallySuppliers = useMemo(() => {
+    const map = new Map<string, {
+      rawName: string
+      normName: string
+      voucherCount: number
+      totalAmount: number
+      gstin?: string
+      matchedSupplier: Supplier | null
+      isAutoCreate: boolean
+    }>()
+
+    processedList.forEach(v => {
+      const modKey = v.effectiveType as keyof typeof selectedModules
+      if (modKey in selectedModules && !selectedModules[modKey]) return
+      if (v.effectiveType !== 'purchase' && v.effectiveType !== 'payment' && v.effectiveType !== 'debit_note') return
+
+      const raw = v.partyName.trim()
+      if (!raw) return
+      const norm = raw.toLowerCase()
+
+      if (!map.has(norm)) {
+        const mappedId = supplierMappings[norm]
+        const existingSupp = mappedId && mappedId !== 'auto-create'
+          ? suppliers.find(s => s.id === mappedId)
+          : supplierMap.get(norm) || null
+
+        map.set(norm, {
+          rawName: raw,
+          normName: norm,
+          voucherCount: 0,
+          totalAmount: 0,
+          gstin: v.partyGstin,
+          matchedSupplier: existingSupp || null,
+          isAutoCreate: mappedId === 'auto-create' || (!existingSupp && autoCreateMasters)
+        })
+      }
+
+      const entry = map.get(norm)!
+      entry.voucherCount += 1
+      entry.totalAmount += v.totalAmount || 0
+      if (!entry.gstin && v.partyGstin) entry.gstin = v.partyGstin
+    })
+
+    return Array.from(map.values())
+  }, [processedList, selectedModules, supplierMappings, supplierMap, suppliers, autoCreateMasters])
+
+  // 4. Expenses (Expense Vouchers / Payment Expense accounts)
+  const distinctTallyExpenses = useMemo(() => {
+    const map = new Map<string, {
+      rawName: string
+      normName: string
+      voucherCount: number
+      totalAmount: number
+      matchedExpenseType: ExpenseType | null
+      isAutoCreate: boolean
+    }>()
+
+    processedList.forEach(v => {
+      const modKey = v.effectiveType as keyof typeof selectedModules
+      if (modKey in selectedModules && !selectedModules[modKey]) return
+      if (v.effectiveType !== 'expense') return
+
+      const raw = (v.expenseDetails?.categoryName || v.partyName).trim()
+      if (!raw) return
+      const norm = raw.toLowerCase()
+
+      if (!map.has(norm)) {
+        const mappedId = expenseMappings[norm]
+        const existingExp = mappedId && mappedId !== 'auto-create'
+          ? expenseTypes.find(e => e.id === mappedId)
+          : expenseTypeMap.get(norm) || null
+
+        map.set(norm, {
+          rawName: raw,
+          normName: norm,
+          voucherCount: 0,
+          totalAmount: 0,
+          matchedExpenseType: existingExp || null,
+          isAutoCreate: mappedId === 'auto-create' || (!existingExp && autoCreateMasters)
+        })
+      }
+
+      const entry = map.get(norm)!
+      entry.voucherCount += 1
+      entry.totalAmount += v.totalAmount || 0
+    })
+
+    return Array.from(map.values())
+  }, [processedList, selectedModules, expenseMappings, expenseTypeMap, expenseTypes, autoCreateMasters])
+
+  // 5. Bank / Cash Accounts (Contra & Payment/Receipt Settlements)
+  const distinctTallyCounters = useMemo(() => {
+    const map = new Map<string, {
+      rawName: string
+      normName: string
+      voucherCount: number
+      totalAmount: number
+      matchedCounter: Counter | null
+      isAutoCreate: boolean
+    }>()
+
+    const addCounterRef = (name: string, amount: number) => {
+      const raw = name.trim()
+      if (!raw) return
+      const norm = raw.toLowerCase()
+
+      if (!map.has(norm)) {
+        const mappedId = counterMappings[norm]
+        const existingCntr = mappedId && mappedId !== 'auto-create'
+          ? counters.find(c => c.id === mappedId)
+          : counterMap.get(norm) || null
+
+        map.set(norm, {
+          rawName: raw,
+          normName: norm,
+          voucherCount: 0,
+          totalAmount: 0,
+          matchedCounter: existingCntr || null,
+          isAutoCreate: mappedId === 'auto-create' || (!existingCntr && autoCreateMasters)
+        })
+      }
+
+      const entry = map.get(norm)!
+      entry.voucherCount += 1
+      entry.totalAmount += amount
+    }
+
+    processedList.forEach(v => {
+      const modKey = v.effectiveType as keyof typeof selectedModules
+      if (modKey in selectedModules && !selectedModules[modKey]) return
+
+      if (v.effectiveType === 'contra') {
+        if (v.contraDetails?.fromCounterName) addCounterRef(v.contraDetails.fromCounterName, v.totalAmount)
+        if (v.contraDetails?.toCounterName) addCounterRef(v.contraDetails.toCounterName, v.totalAmount)
+      } else if (v.effectiveType === 'payment' || v.effectiveType === 'receipt') {
+        const bankCashLeg = v.legs.find(l => l.ledgerName.trim().toLowerCase() !== v.partyName.trim().toLowerCase())
+        if (bankCashLeg) {
+          addCounterRef(bankCashLeg.ledgerName, bankCashLeg.amount)
+        }
+      }
+    })
+
+    return Array.from(map.values())
+  }, [processedList, selectedModules, counterMappings, counterMap, counters, autoCreateMasters])
+
+  // Filtered distinct lists based on search
   const filteredDistinctItems = useMemo(() => {
-    if (!itemSearchQuery.trim()) return distinctTallyItems
-    const q = itemSearchQuery.toLowerCase().trim()
+    if (!mappingSearchQuery.trim()) return distinctTallyItems
+    const q = mappingSearchQuery.toLowerCase().trim()
     return distinctTallyItems.filter(it => it.rawName.toLowerCase().includes(q) || (it.matchedItem && it.matchedItem.name.toLowerCase().includes(q)))
-  }, [distinctTallyItems, itemSearchQuery])
+  }, [distinctTallyItems, mappingSearchQuery])
+
+  const filteredDistinctCustomers = useMemo(() => {
+    if (!mappingSearchQuery.trim()) return distinctTallyCustomers
+    const q = mappingSearchQuery.toLowerCase().trim()
+    return distinctTallyCustomers.filter(c => c.rawName.toLowerCase().includes(q) || (c.matchedCustomer && c.matchedCustomer.name.toLowerCase().includes(q)))
+  }, [distinctTallyCustomers, mappingSearchQuery])
+
+  const filteredDistinctSuppliers = useMemo(() => {
+    if (!mappingSearchQuery.trim()) return distinctTallySuppliers
+    const q = mappingSearchQuery.toLowerCase().trim()
+    return distinctTallySuppliers.filter(s => s.rawName.toLowerCase().includes(q) || (s.matchedSupplier && s.matchedSupplier.name.toLowerCase().includes(q)))
+  }, [distinctTallySuppliers, mappingSearchQuery])
+
+  const filteredDistinctExpenses = useMemo(() => {
+    if (!mappingSearchQuery.trim()) return distinctTallyExpenses
+    const q = mappingSearchQuery.toLowerCase().trim()
+    return distinctTallyExpenses.filter(e => e.rawName.toLowerCase().includes(q) || (e.matchedExpenseType && e.matchedExpenseType.name.toLowerCase().includes(q)))
+  }, [distinctTallyExpenses, mappingSearchQuery])
+
+  const filteredDistinctCounters = useMemo(() => {
+    if (!mappingSearchQuery.trim()) return distinctTallyCounters
+    const q = mappingSearchQuery.toLowerCase().trim()
+    return distinctTallyCounters.filter(c => c.rawName.toLowerCase().includes(q) || (c.matchedCounter && c.matchedCounter.name.toLowerCase().includes(q)))
+  }, [distinctTallyCounters, mappingSearchQuery])
 
   // Compute live counts per module
   const moduleCounts = useMemo(() => {
@@ -650,7 +972,7 @@ export function TallyIntegrationPage({
         const buffer = await file.arrayBuffer()
         const text = decodeXmlFileBuffer(buffer)
         const result = parseTallyXmlVouchers(text, {
-          customers,
+          customers: effectiveCustomers,
           suppliers,
           items,
           expenseTypes,
@@ -678,7 +1000,7 @@ export function TallyIntegrationPage({
       } else {
         const buffer = await file.arrayBuffer()
         const result = parseTallyAccountingVouchersExcel(buffer, {
-          customers,
+          customers: effectiveCustomers,
           suppliers,
           items,
           expenseTypes,
@@ -1060,6 +1382,10 @@ export function TallyIntegrationPage({
     setFileName(null)
     setOverrides({})
     setItemMappings({})
+    setCustomerMappings({})
+    setSupplierMappings({})
+    setExpenseMappings({})
+    setCounterMappings({})
     setItemOverrides({})
   }
 
@@ -1405,6 +1731,10 @@ export function TallyIntegrationPage({
                         setFileName(null)
                         setOverrides({})
                         setItemMappings({})
+                        setCustomerMappings({})
+                        setSupplierMappings({})
+                        setExpenseMappings({})
+                        setCounterMappings({})
                         setItemOverrides({})
                       }}
                       className="text-xs h-8 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg"
@@ -1511,9 +1841,9 @@ export function TallyIntegrationPage({
                   </div>
                 </div>
 
-                {/* 3. Candidate Masters & Item Mapping Bar */}
-                <div className="flex flex-col gap-2 p-3 bg-gradient-to-r from-violet-50/70 via-purple-50/50 to-indigo-50/70 rounded-xl border border-violet-100">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                {/* 3. Comprehensive 5-Master Mapping Accordion Toolbar */}
+                <div className="flex flex-col gap-2.5 p-3 bg-gradient-to-r from-violet-50/70 via-purple-50/50 to-indigo-50/70 rounded-xl border border-violet-100">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <div className="flex items-center gap-2">
                         <Switch
@@ -1522,26 +1852,26 @@ export function TallyIntegrationPage({
                           onCheckedChange={setAutoCreateMasters}
                         />
                         <Label htmlFor="autoCreateMasters" className="text-xs font-bold text-slate-800 cursor-pointer flex items-center gap-1.5">
-                          Auto-Create Missing Masters &amp; Ledgers
+                          Auto-Create Missing Masters
                         </Label>
                       </div>
 
                       {autoCreateMasters && (
-                        <div className="hidden sm:flex items-center gap-1.5 text-xs text-violet-900 flex-wrap">
+                        <div className="hidden lg:flex items-center gap-1.5 text-xs text-violet-900 flex-wrap">
                           <span className="text-[11px] font-semibold text-slate-500">Will create:</span>
                           {newMastersSummary.customersCount > 0 && (
                             <Badge variant="secondary" className="text-[10px] bg-white text-emerald-800 border-emerald-200">
-                              +{newMastersSummary.customersCount} Customers
+                              +{newMastersSummary.customersCount} Cust
                             </Badge>
                           )}
                           {newMastersSummary.suppliersCount > 0 && (
                             <Badge variant="secondary" className="text-[10px] bg-white text-blue-800 border-blue-200">
-                              +{newMastersSummary.suppliersCount} Suppliers
+                              +{newMastersSummary.suppliersCount} Supp
                             </Badge>
                           )}
                           {newMastersSummary.expensesCount > 0 && (
                             <Badge variant="secondary" className="text-[10px] bg-white text-amber-800 border-amber-200">
-                              +{newMastersSummary.expensesCount} Expenses
+                              +{newMastersSummary.expensesCount} Exp
                             </Badge>
                           )}
                           {newMastersSummary.itemsCount > 0 && (
@@ -1553,133 +1883,654 @@ export function TallyIntegrationPage({
                       )}
                     </div>
 
-                    {distinctTallyItems.length > 0 && (
+                    {/* 5 Master Mapping Triggers */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <Button
                         size="sm"
-                        variant={showItemMappingDrawer ? 'default' : 'outline'}
-                        onClick={() => setShowItemMappingDrawer(prev => !prev)}
+                        variant={activeMappingPanel === 'items' ? 'default' : 'outline'}
+                        onClick={() => {
+                          setActiveMappingPanel(prev => prev === 'items' ? null : 'items')
+                          setMappingSearchQuery('')
+                        }}
                         className={cn(
-                          'h-7 text-xs font-bold px-3 rounded-lg transition-all',
-                          showItemMappingDrawer
-                            ? 'bg-violet-700 text-white shadow-xs'
-                            : 'bg-white text-violet-700 border-violet-200 hover:bg-violet-50'
+                          'h-7 text-xs font-bold px-2.5 rounded-lg transition-all',
+                          activeMappingPanel === 'items'
+                            ? 'bg-purple-700 text-white shadow-xs'
+                            : 'bg-white text-purple-700 border-purple-200 hover:bg-purple-50'
                         )}
                       >
-                        <Package className="w-3.5 h-3.5 mr-1.5" />
-                        Map Inventory Items ({distinctTallyItems.length})
-                        <CaretDown className={cn('w-3.5 h-3.5 ml-1.5 transition-transform duration-200', showItemMappingDrawer && 'rotate-180')} />
+                        <Package className="w-3.5 h-3.5 mr-1" />
+                        Items ({distinctTallyItems.length})
+                        <CaretDown className={cn('w-3 h-3 ml-1 transition-transform duration-200', activeMappingPanel === 'items' && 'rotate-180')} />
                       </Button>
-                    )}
+
+                      <Button
+                        size="sm"
+                        variant={activeMappingPanel === 'customers' ? 'default' : 'outline'}
+                        onClick={() => {
+                          setActiveMappingPanel(prev => prev === 'customers' ? null : 'customers')
+                          setMappingSearchQuery('')
+                        }}
+                        className={cn(
+                          'h-7 text-xs font-bold px-2.5 rounded-lg transition-all',
+                          activeMappingPanel === 'customers'
+                            ? 'bg-emerald-700 text-white shadow-xs'
+                            : 'bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50'
+                        )}
+                      >
+                        <Users className="w-3.5 h-3.5 mr-1" />
+                        Customers ({distinctTallyCustomers.length})
+                        <CaretDown className={cn('w-3 h-3 ml-1 transition-transform duration-200', activeMappingPanel === 'customers' && 'rotate-180')} />
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant={activeMappingPanel === 'suppliers' ? 'default' : 'outline'}
+                        onClick={() => {
+                          setActiveMappingPanel(prev => prev === 'suppliers' ? null : 'suppliers')
+                          setMappingSearchQuery('')
+                        }}
+                        className={cn(
+                          'h-7 text-xs font-bold px-2.5 rounded-lg transition-all',
+                          activeMappingPanel === 'suppliers'
+                            ? 'bg-blue-700 text-white shadow-xs'
+                            : 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50'
+                        )}
+                      >
+                        <Buildings className="w-3.5 h-3.5 mr-1" />
+                        Suppliers ({distinctTallySuppliers.length})
+                        <CaretDown className={cn('w-3 h-3 ml-1 transition-transform duration-200', activeMappingPanel === 'suppliers' && 'rotate-180')} />
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant={activeMappingPanel === 'expenses' ? 'default' : 'outline'}
+                        onClick={() => {
+                          setActiveMappingPanel(prev => prev === 'expenses' ? null : 'expenses')
+                          setMappingSearchQuery('')
+                        }}
+                        className={cn(
+                          'h-7 text-xs font-bold px-2.5 rounded-lg transition-all',
+                          activeMappingPanel === 'expenses'
+                            ? 'bg-amber-700 text-white shadow-xs'
+                            : 'bg-white text-amber-700 border-amber-200 hover:bg-amber-50'
+                        )}
+                      >
+                        <Tag className="w-3.5 h-3.5 mr-1" />
+                        Expenses ({distinctTallyExpenses.length})
+                        <CaretDown className={cn('w-3 h-3 ml-1 transition-transform duration-200', activeMappingPanel === 'expenses' && 'rotate-180')} />
+                      </Button>
+
+                      <Button
+                        size="sm"
+                        variant={activeMappingPanel === 'counters' ? 'default' : 'outline'}
+                        onClick={() => {
+                          setActiveMappingPanel(prev => prev === 'counters' ? null : 'counters')
+                          setMappingSearchQuery('')
+                        }}
+                        className={cn(
+                          'h-7 text-xs font-bold px-2.5 rounded-lg transition-all',
+                          activeMappingPanel === 'counters'
+                            ? 'bg-cyan-700 text-white shadow-xs'
+                            : 'bg-white text-cyan-700 border-cyan-200 hover:bg-cyan-50'
+                        )}
+                      >
+                        <Bank className="w-3.5 h-3.5 mr-1" />
+                        Bank / Cash ({distinctTallyCounters.length})
+                        <CaretDown className={cn('w-3 h-3 ml-1 transition-transform duration-200', activeMappingPanel === 'counters' && 'rotate-180')} />
+                      </Button>
+                    </div>
                   </div>
 
-                  {/* Expandable Inventory Item Mapping Drawer */}
-                  {showItemMappingDrawer && distinctTallyItems.length > 0 && (
-                    <div className="mt-2 pt-3 border-t border-violet-200/80 space-y-3 bg-white/90 p-3.5 rounded-xl border shadow-2xs">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <div>
-                          <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                            <Package className="w-4 h-4 text-violet-600" />
-                            Inventory Items Mapping &amp; Master Selector
-                            <Badge variant="outline" className="text-[10px] bg-violet-50 text-violet-700 border-violet-200 font-mono">
-                              {distinctTallyItems.length} Stock Items in Vouchers
-                            </Badge>
-                          </h4>
-                          <p className="text-[11px] text-slate-500">
-                            Map each Tally stock item to an existing ERP inventory item or auto-create it as a new item master.
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <div className="relative w-48">
-                            <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                            <Input
-                              value={itemSearchQuery}
-                              onChange={(e) => setItemSearchQuery(e.target.value)}
-                              placeholder="Search items..."
-                              className="h-7 text-xs pl-7 pr-2 bg-slate-50 border-slate-200 rounded-md"
-                            />
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => {
-                              const autoMap: Record<string, string> = {}
-                              distinctTallyItems.forEach(it => {
-                                if (!it.matchedItem) {
-                                  autoMap[it.normName] = 'auto-create'
-                                }
-                              })
-                              setItemMappings(prev => ({ ...prev, ...autoMap }))
-                              toast.success('Set all unmapped items to Auto-Create')
-                            }}
-                            className="h-7 text-[11px] font-semibold px-2.5 rounded-md text-purple-700 border-purple-200 bg-purple-50 hover:bg-purple-100"
-                          >
-                            <Sparkle className="w-3.5 h-3.5 mr-1" />
-                            Auto-Create All
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-64 overflow-y-auto pr-1">
-                        {filteredDistinctItems.map((itemStat) => {
-                          const customMappedId = itemMappings[itemStat.normName]
-                          const selectedTargetItem = customMappedId && customMappedId !== 'auto-create'
-                            ? items.find(it => it.id === customMappedId)
-                            : itemStat.matchedItem
-
-                          const isAutoCreated = customMappedId === 'auto-create' || (!selectedTargetItem && autoCreateMasters)
-
-                          return (
-                            <div key={itemStat.normName} className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/70 hover:bg-slate-50 flex flex-col justify-between gap-2">
-                              <div className="space-y-0.5">
-                                <div className="flex items-center justify-between gap-1">
-                                  <span className="font-bold text-slate-800 text-xs truncate" title={itemStat.rawName}>
-                                    {itemStat.rawName}
-                                  </span>
-                                  {selectedTargetItem ? (
-                                    <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[9px] px-1.5 py-0">
-                                      ✓ Matched
-                                    </Badge>
-                                  ) : isAutoCreated ? (
-                                    <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[9px] px-1.5 py-0">
-                                      ✨ New Item
-                                    </Badge>
-                                  ) : (
-                                    <Badge variant="outline" className="text-amber-700 bg-amber-50 border-amber-200 text-[9px] px-1.5 py-0">
-                                      ⚠️ Unmapped
-                                    </Badge>
-                                  )}
-                                </div>
-                                <div className="text-[10px] text-slate-400 font-mono">
-                                  Total Qty: {itemStat.totalQty.toLocaleString()} {itemStat.unit} • {itemStat.voucherCount} vouchers
-                                </div>
-                              </div>
-
-                              <div className="space-y-1">
-                                <label className="text-[10px] font-semibold text-slate-500">Map to ERP Inventory Item:</label>
-                                <Select
-                                  value={customMappedId || (selectedTargetItem?.id) || (isAutoCreated ? 'auto-create' : '')}
-                                  onValueChange={(val) => handleGlobalItemMapping(itemStat.rawName, val)}
-                                >
-                                  <SelectTrigger className="h-7 text-xs bg-white border-slate-200">
-                                    <SelectValue placeholder="Select ERP item" />
-                                  </SelectTrigger>
-                                  <SelectContent className="max-h-60">
-                                    <SelectItem value="auto-create" className="text-purple-600 font-semibold text-xs">
-                                      ✨ Auto-Create &quot;{itemStat.rawName}&quot;
-                                    </SelectItem>
-                                    {items.map(it => (
-                                      <SelectItem key={it.id} value={it.id} className="text-xs">
-                                        {it.name} ({it.category || 'General'}) • {it.unit || 'PCS'}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
+                  {/* -------------------------------------------------------------
+                      Active Mapping Panel Accordion Body
+                     ------------------------------------------------------------- */}
+                  {activeMappingPanel && (
+                    <div className="mt-2 pt-3 border-t border-violet-200/80 space-y-3 bg-white/95 p-4 rounded-xl border shadow-2xs">
+                      {/* Panel 1: Inventory Items */}
+                      {activeMappingPanel === 'items' && (
+                        <>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                <Package className="w-4 h-4 text-purple-600" />
+                                Inventory Items Mapping &amp; Master Selector
+                                <Badge variant="outline" className="text-[10px] bg-purple-50 text-purple-700 border-purple-200 font-mono">
+                                  {distinctTallyItems.length} Unique Stock Items
+                                </Badge>
+                              </h4>
+                              <p className="text-[11px] text-slate-500">
+                                Map each Tally stock item to an existing ERP inventory item or auto-create it as a new item master.
+                              </p>
                             </div>
-                          )
-                        })}
-                      </div>
+
+                            <div className="flex items-center gap-2">
+                              <div className="relative w-48">
+                                <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <Input
+                                  value={mappingSearchQuery}
+                                  onChange={(e) => setMappingSearchQuery(e.target.value)}
+                                  placeholder="Search items..."
+                                  className="h-7 text-xs pl-7 pr-2 bg-slate-50 border-slate-200 rounded-md"
+                                />
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  const autoMap: Record<string, string> = {}
+                                  distinctTallyItems.forEach(it => {
+                                    if (!it.matchedItem) autoMap[it.normName] = 'auto-create'
+                                  })
+                                  setItemMappings(prev => ({ ...prev, ...autoMap }))
+                                  toast.success('Set all unmapped items to Auto-Create')
+                                }}
+                                className="h-7 text-[11px] font-semibold px-2.5 rounded-md text-purple-700 border-purple-200 bg-purple-50 hover:bg-purple-100"
+                              >
+                                <Sparkle className="w-3.5 h-3.5 mr-1" />
+                                Auto-Create All Unmapped
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-64 overflow-y-auto pr-1">
+                            {filteredDistinctItems.map((itemStat) => {
+                              const customMappedId = itemMappings[itemStat.normName]
+                              const selectedTargetItem = customMappedId && customMappedId !== 'auto-create'
+                                ? items.find(it => it.id === customMappedId)
+                                : itemStat.matchedItem
+
+                              const isAutoCreated = customMappedId === 'auto-create' || (!selectedTargetItem && autoCreateMasters)
+
+                              return (
+                                <div key={itemStat.normName} className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/70 hover:bg-slate-50 flex flex-col justify-between gap-2">
+                                  <div className="space-y-0.5">
+                                    <div className="flex items-center justify-between gap-1">
+                                      <span className="font-bold text-slate-800 text-xs truncate" title={itemStat.rawName}>
+                                        {itemStat.rawName}
+                                      </span>
+                                      {selectedTargetItem ? (
+                                        <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[9px] px-1.5 py-0">
+                                          ✓ Matched
+                                        </Badge>
+                                      ) : isAutoCreated ? (
+                                        <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[9px] px-1.5 py-0">
+                                          ✨ Auto-Create
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="outline" className="text-amber-700 bg-amber-50 border-amber-200 text-[9px] px-1.5 py-0">
+                                          ⚠️ Unmapped
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 font-mono">
+                                      Total Qty: {itemStat.totalQty.toLocaleString()} {itemStat.unit} • {itemStat.voucherCount} voucher(s) • ₹{itemStat.totalAmount.toLocaleString()}
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] font-semibold text-slate-500">Map to ERP Item:</label>
+                                    <Select
+                                      value={customMappedId || (selectedTargetItem?.id) || (isAutoCreated ? 'auto-create' : '')}
+                                      onValueChange={(val) => handleItemMapping(itemStat.rawName, val)}
+                                    >
+                                      <SelectTrigger className="h-7 text-xs bg-white border-slate-200">
+                                        <SelectValue placeholder="Select ERP item" />
+                                      </SelectTrigger>
+                                      <SelectContent className="max-h-60">
+                                        <SelectItem value="auto-create" className="text-purple-600 font-semibold text-xs">
+                                          ✨ Auto-Create &quot;{itemStat.rawName}&quot;
+                                        </SelectItem>
+                                        {items.map(it => (
+                                          <SelectItem key={it.id} value={it.id} className="text-xs">
+                                            {it.name} ({it.category || 'General'}) • {it.unit || 'PCS'}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </>
+                      )}
+
+                      {/* Panel 2: Customers */}
+                      {activeMappingPanel === 'customers' && (
+                        <>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                <Users className="w-4 h-4 text-emerald-600" />
+                                Customer Ledger Mapping &amp; Party Selector
+                                <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200 font-mono">
+                                  {distinctTallyCustomers.length} Sales &amp; Receipt Parties
+                                </Badge>
+                              </h4>
+                              <p className="text-[11px] text-slate-500">
+                                Map each customer ledger in Tally vouchers to an existing ERP customer or auto-create a customer master.
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <div className="relative w-48">
+                                <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <Input
+                                  value={mappingSearchQuery}
+                                  onChange={(e) => setMappingSearchQuery(e.target.value)}
+                                  placeholder="Search customers..."
+                                  className="h-7 text-xs pl-7 pr-2 bg-slate-50 border-slate-200 rounded-md"
+                                />
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  const autoMap: Record<string, string> = {}
+                                  distinctTallyCustomers.forEach(c => {
+                                    if (!c.matchedCustomer) autoMap[c.normName] = 'auto-create'
+                                  })
+                                  setCustomerMappings(prev => ({ ...prev, ...autoMap }))
+                                  toast.success('Set all unmapped customers to Auto-Create')
+                                }}
+                                className="h-7 text-[11px] font-semibold px-2.5 rounded-md text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-emerald-100"
+                              >
+                                <Sparkle className="w-3.5 h-3.5 mr-1" />
+                                Auto-Create All Unmapped
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-64 overflow-y-auto pr-1">
+                            {filteredDistinctCustomers.map((custStat) => {
+                              const customMappedId = customerMappings[custStat.normName]
+                              const selectedTargetCust = customMappedId && customMappedId !== 'auto-create'
+                                ? effectiveCustomers.find(c => c.id === customMappedId)
+                                : custStat.matchedCustomer
+
+                              const isAutoCreated = customMappedId === 'auto-create' || (!selectedTargetCust && autoCreateMasters)
+
+                              return (
+                                <div key={custStat.normName} className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/70 hover:bg-slate-50 flex flex-col justify-between gap-2">
+                                  <div className="space-y-0.5">
+                                    <div className="flex items-center justify-between gap-1">
+                                      <span className="font-bold text-slate-800 text-xs truncate" title={custStat.rawName}>
+                                        {custStat.rawName}
+                                      </span>
+                                      {selectedTargetCust ? (
+                                        <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[9px] px-1.5 py-0">
+                                          ✓ Matched
+                                        </Badge>
+                                      ) : isAutoCreated ? (
+                                        <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[9px] px-1.5 py-0">
+                                          ✨ Auto-Create
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="outline" className="text-amber-700 bg-amber-50 border-amber-200 text-[9px] px-1.5 py-0">
+                                          ⚠️ Unmapped
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 font-mono">
+                                      {custStat.voucherCount} voucher(s) • Total: {formatCurrency(custStat.totalAmount)} {custStat.gstin ? `• GST: ${custStat.gstin}` : ''}
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] font-semibold text-slate-500">Map to ERP Customer:</label>
+                                    <Select
+                                      value={customMappedId || (selectedTargetCust?.id) || (isAutoCreated ? 'auto-create' : '')}
+                                      onValueChange={(val) => handleCustomerMapping(custStat.rawName, val)}
+                                    >
+                                      <SelectTrigger className="h-7 text-xs bg-white border-slate-200">
+                                        <SelectValue placeholder="Select Customer" />
+                                      </SelectTrigger>
+                                      <SelectContent className="max-h-60">
+                                        <SelectItem value="auto-create" className="text-purple-600 font-semibold text-xs">
+                                          ✨ Auto-Create &quot;{custStat.rawName}&quot;
+                                        </SelectItem>
+                                        {effectiveCustomers.map(c => (
+                                          <SelectItem key={c.id} value={c.id} className="text-xs">
+                                            {c.name} {c.phone ? `(${c.phone})` : ''}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </>
+                      )}
+
+                      {/* Panel 3: Suppliers */}
+                      {activeMappingPanel === 'suppliers' && (
+                        <>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                <Buildings className="w-4 h-4 text-blue-600" />
+                                Supplier Ledger Mapping &amp; Party Selector
+                                <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-700 border-blue-200 font-mono">
+                                  {distinctTallySuppliers.length} Purchase &amp; Payment Parties
+                                </Badge>
+                              </h4>
+                              <p className="text-[11px] text-slate-500">
+                                Map each supplier ledger in Tally vouchers to an existing ERP supplier or auto-create a supplier master.
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <div className="relative w-48">
+                                <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <Input
+                                  value={mappingSearchQuery}
+                                  onChange={(e) => setMappingSearchQuery(e.target.value)}
+                                  placeholder="Search suppliers..."
+                                  className="h-7 text-xs pl-7 pr-2 bg-slate-50 border-slate-200 rounded-md"
+                                />
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  const autoMap: Record<string, string> = {}
+                                  distinctTallySuppliers.forEach(s => {
+                                    if (!s.matchedSupplier) autoMap[s.normName] = 'auto-create'
+                                  })
+                                  setSupplierMappings(prev => ({ ...prev, ...autoMap }))
+                                  toast.success('Set all unmapped suppliers to Auto-Create')
+                                }}
+                                className="h-7 text-[11px] font-semibold px-2.5 rounded-md text-blue-700 border-blue-200 bg-blue-50 hover:bg-blue-100"
+                              >
+                                <Sparkle className="w-3.5 h-3.5 mr-1" />
+                                Auto-Create All Unmapped
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-64 overflow-y-auto pr-1">
+                            {filteredDistinctSuppliers.map((suppStat) => {
+                              const customMappedId = supplierMappings[suppStat.normName]
+                              const selectedTargetSupp = customMappedId && customMappedId !== 'auto-create'
+                                ? suppliers.find(s => s.id === customMappedId)
+                                : suppStat.matchedSupplier
+
+                              const isAutoCreated = customMappedId === 'auto-create' || (!selectedTargetSupp && autoCreateMasters)
+
+                              return (
+                                <div key={suppStat.normName} className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/70 hover:bg-slate-50 flex flex-col justify-between gap-2">
+                                  <div className="space-y-0.5">
+                                    <div className="flex items-center justify-between gap-1">
+                                      <span className="font-bold text-slate-800 text-xs truncate" title={suppStat.rawName}>
+                                        {suppStat.rawName}
+                                      </span>
+                                      {selectedTargetSupp ? (
+                                        <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[9px] px-1.5 py-0">
+                                          ✓ Matched
+                                        </Badge>
+                                      ) : isAutoCreated ? (
+                                        <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[9px] px-1.5 py-0">
+                                          ✨ Auto-Create
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="outline" className="text-amber-700 bg-amber-50 border-amber-200 text-[9px] px-1.5 py-0">
+                                          ⚠️ Unmapped
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 font-mono">
+                                      {suppStat.voucherCount} voucher(s) • Total: {formatCurrency(suppStat.totalAmount)} {suppStat.gstin ? `• GST: ${suppStat.gstin}` : ''}
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] font-semibold text-slate-500">Map to ERP Supplier:</label>
+                                    <Select
+                                      value={customMappedId || (selectedTargetSupp?.id) || (isAutoCreated ? 'auto-create' : '')}
+                                      onValueChange={(val) => handleSupplierMapping(suppStat.rawName, val)}
+                                    >
+                                      <SelectTrigger className="h-7 text-xs bg-white border-slate-200">
+                                        <SelectValue placeholder="Select Supplier" />
+                                      </SelectTrigger>
+                                      <SelectContent className="max-h-60">
+                                        <SelectItem value="auto-create" className="text-purple-600 font-semibold text-xs">
+                                          ✨ Auto-Create &quot;{suppStat.rawName}&quot;
+                                        </SelectItem>
+                                        {suppliers.map(s => (
+                                          <SelectItem key={s.id} value={s.id} className="text-xs">
+                                            {s.name} {s.phone ? `(${s.phone})` : ''}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </>
+                      )}
+
+                      {/* Panel 4: Expense Categories */}
+                      {activeMappingPanel === 'expenses' && (
+                        <>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                <Tag className="w-4 h-4 text-amber-600" />
+                                Expense Category Mapping &amp; Ledger Selector
+                                <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 font-mono">
+                                  {distinctTallyExpenses.length} Expense Ledgers
+                                </Badge>
+                              </h4>
+                              <p className="text-[11px] text-slate-500">
+                                Map each expense ledger in Tally to an existing ERP Expense Type or auto-create a category.
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <div className="relative w-48">
+                                <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <Input
+                                  value={mappingSearchQuery}
+                                  onChange={(e) => setMappingSearchQuery(e.target.value)}
+                                  placeholder="Search expenses..."
+                                  className="h-7 text-xs pl-7 pr-2 bg-slate-50 border-slate-200 rounded-md"
+                                />
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  const autoMap: Record<string, string> = {}
+                                  distinctTallyExpenses.forEach(e => {
+                                    if (!e.matchedExpenseType) autoMap[e.normName] = 'auto-create'
+                                  })
+                                  setExpenseMappings(prev => ({ ...prev, ...autoMap }))
+                                  toast.success('Set all unmapped expenses to Auto-Create')
+                                }}
+                                className="h-7 text-[11px] font-semibold px-2.5 rounded-md text-amber-700 border-amber-200 bg-amber-50 hover:bg-amber-100"
+                              >
+                                <Sparkle className="w-3.5 h-3.5 mr-1" />
+                                Auto-Create All Unmapped
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-64 overflow-y-auto pr-1">
+                            {filteredDistinctExpenses.map((expStat) => {
+                              const customMappedId = expenseMappings[expStat.normName]
+                              const selectedTargetExp = customMappedId && customMappedId !== 'auto-create'
+                                ? expenseTypes.find(e => e.id === customMappedId)
+                                : expStat.matchedExpenseType
+
+                              const isAutoCreated = customMappedId === 'auto-create' || (!selectedTargetExp && autoCreateMasters)
+
+                              return (
+                                <div key={expStat.normName} className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/70 hover:bg-slate-50 flex flex-col justify-between gap-2">
+                                  <div className="space-y-0.5">
+                                    <div className="flex items-center justify-between gap-1">
+                                      <span className="font-bold text-slate-800 text-xs truncate" title={expStat.rawName}>
+                                        {expStat.rawName}
+                                      </span>
+                                      {selectedTargetExp ? (
+                                        <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[9px] px-1.5 py-0">
+                                          ✓ Matched
+                                        </Badge>
+                                      ) : isAutoCreated ? (
+                                        <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[9px] px-1.5 py-0">
+                                          ✨ Auto-Create
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="outline" className="text-amber-700 bg-amber-50 border-amber-200 text-[9px] px-1.5 py-0">
+                                          ⚠️ Unmapped
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 font-mono">
+                                      {expStat.voucherCount} voucher(s) • Total: {formatCurrency(expStat.totalAmount)}
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] font-semibold text-slate-500">Map to Expense Type:</label>
+                                    <Select
+                                      value={customMappedId || (selectedTargetExp?.id) || (isAutoCreated ? 'auto-create' : '')}
+                                      onValueChange={(val) => handleExpenseMapping(expStat.rawName, val)}
+                                    >
+                                      <SelectTrigger className="h-7 text-xs bg-white border-slate-200">
+                                        <SelectValue placeholder="Select Expense Category" />
+                                      </SelectTrigger>
+                                      <SelectContent className="max-h-60">
+                                        <SelectItem value="auto-create" className="text-purple-600 font-semibold text-xs">
+                                          ✨ Auto-Create &quot;{expStat.rawName}&quot;
+                                        </SelectItem>
+                                        {expenseTypes.map(e => (
+                                          <SelectItem key={e.id} value={e.id} className="text-xs">
+                                            {e.name}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </>
+                      )}
+
+                      {/* Panel 5: Bank & Cash Accounts */}
+                      {activeMappingPanel === 'counters' && (
+                        <>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                <Bank className="w-4 h-4 text-cyan-600" />
+                                Bank &amp; Cash Account Mapping &amp; Counter Selector
+                                <Badge variant="outline" className="text-[10px] bg-cyan-50 text-cyan-700 border-cyan-200 font-mono">
+                                  {distinctTallyCounters.length} Settlement &amp; Contra Accounts
+                                </Badge>
+                              </h4>
+                              <p className="text-[11px] text-slate-500">
+                                Map each bank or cash ledger in Tally to an existing ERP Cash/Bank Counter or auto-create a counter.
+                              </p>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <div className="relative w-48">
+                                <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                <Input
+                                  value={mappingSearchQuery}
+                                  onChange={(e) => setMappingSearchQuery(e.target.value)}
+                                  placeholder="Search bank/cash accounts..."
+                                  className="h-7 text-xs pl-7 pr-2 bg-slate-50 border-slate-200 rounded-md"
+                                />
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  const autoMap: Record<string, string> = {}
+                                  distinctTallyCounters.forEach(c => {
+                                    if (!c.matchedCounter) autoMap[c.normName] = 'auto-create'
+                                  })
+                                  setCounterMappings(prev => ({ ...prev, ...autoMap }))
+                                  toast.success('Set all unmapped bank/cash accounts to Auto-Create')
+                                }}
+                                className="h-7 text-[11px] font-semibold px-2.5 rounded-md text-cyan-700 border-cyan-200 bg-cyan-50 hover:bg-cyan-100"
+                              >
+                                <Sparkle className="w-3.5 h-3.5 mr-1" />
+                                Auto-Create All Unmapped
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-64 overflow-y-auto pr-1">
+                            {filteredDistinctCounters.map((cntrStat) => {
+                              const customMappedId = counterMappings[cntrStat.normName]
+                              const selectedTargetCntr = customMappedId && customMappedId !== 'auto-create'
+                                ? counters.find(c => c.id === customMappedId)
+                                : cntrStat.matchedCounter
+
+                              const isAutoCreated = customMappedId === 'auto-create' || (!selectedTargetCntr && autoCreateMasters)
+
+                              return (
+                                <div key={cntrStat.normName} className="p-2.5 rounded-lg border border-slate-200 bg-slate-50/70 hover:bg-slate-50 flex flex-col justify-between gap-2">
+                                  <div className="space-y-0.5">
+                                    <div className="flex items-center justify-between gap-1">
+                                      <span className="font-bold text-slate-800 text-xs truncate" title={cntrStat.rawName}>
+                                        {cntrStat.rawName}
+                                      </span>
+                                      {selectedTargetCntr ? (
+                                        <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[9px] px-1.5 py-0">
+                                          ✓ Matched
+                                        </Badge>
+                                      ) : isAutoCreated ? (
+                                        <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[9px] px-1.5 py-0">
+                                          ✨ Auto-Create
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="outline" className="text-amber-700 bg-amber-50 border-amber-200 text-[9px] px-1.5 py-0">
+                                          ⚠️ Unmapped
+                                        </Badge>
+                                      )}
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 font-mono">
+                                      {cntrStat.voucherCount} voucher(s) • Total: {formatCurrency(cntrStat.totalAmount)}
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-1">
+                                    <label className="text-[10px] font-semibold text-slate-500">Map to Cash/Bank Counter:</label>
+                                    <Select
+                                      value={customMappedId || (selectedTargetCntr?.id) || (isAutoCreated ? 'auto-create' : '')}
+                                      onValueChange={(val) => handleCounterMapping(cntrStat.rawName, val)}
+                                    >
+                                      <SelectTrigger className="h-7 text-xs bg-white border-slate-200">
+                                        <SelectValue placeholder="Select Counter" />
+                                      </SelectTrigger>
+                                      <SelectContent className="max-h-60">
+                                        <SelectItem value="auto-create" className="text-purple-600 font-semibold text-xs">
+                                          ✨ Auto-Create &quot;{cntrStat.rawName}&quot;
+                                        </SelectItem>
+                                        {counters.map(c => (
+                                          <SelectItem key={c.id} value={c.id} className="text-xs">
+                                            {c.name} ({c.type})
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
@@ -1927,7 +2778,7 @@ export function TallyIntegrationPage({
                                                 const lineMappedId = itemOverrides[v.id]?.[iIdx] || itemMappings[norm]
                                                 const resolvedItem = lineMappedId && lineMappedId !== 'auto-create'
                                                   ? items.find(it => it.id === lineMappedId)
-                                                  : (inv.matchedItemId ? items.find(it => it.id === inv.matchedItemId) : null)
+                                                  : (inv.matchedItemId ? items.find(it => it.id === inv.matchedItemId) : itemMap.get(norm))
 
                                                 return (
                                                   <div key={iIdx} className="p-2 rounded-lg bg-slate-50 border border-slate-200/80 space-y-1.5 text-[11px]">
@@ -2039,7 +2890,7 @@ export function TallyIntegrationPage({
                                                 <SelectItem value="auto-create">
                                                   ✨ Auto-Create &quot;{v.partyName}&quot;
                                                 </SelectItem>
-                                                {customers.map(c => (
+                                                {effectiveCustomers.map(c => (
                                                   <SelectItem key={c.id} value={c.id}>
                                                     {c.name}
                                                   </SelectItem>
@@ -2101,7 +2952,7 @@ export function TallyIntegrationPage({
                     </Badge>
                     {autoCreateMasters && (
                       <span className="text-[11px] text-slate-400">
-                        (Auto-creating {newMastersSummary.customersCount} Cust, {newMastersSummary.suppliersCount} Supp, {newMastersSummary.expensesCount} Exp, {newMastersSummary.itemsCount} Items)
+                        (Auto-creating {newMastersSummary.customersCount} Cust, {newMastersSummary.suppliersCount} Supp, {newMastersSummary.expensesCount} Exp, {newMastersSummary.itemsCount} Items, {newMastersSummary.countersCount} Counters)
                       </span>
                     )}
                   </div>

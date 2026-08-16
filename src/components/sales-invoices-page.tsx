@@ -803,34 +803,29 @@ export default function SalesInvoicesPage({
     return items.find(i => i.id === itemId)?.name || 'Unknown'
   }
 
-  const customerMap = useMemo(() => new Map(customers.map(customer => [customer.id, customer])), [customers])
-  const isCashCustomerRef = (id?: string) => {
-    if (!id) return false
-    const norm = id.trim().toLowerCase()
-    return norm === 'cust-cash' || norm === 'cash customer' || norm === 'cash'
-  }
+  const effectiveCustomers = useMemo(() => {
+    const hasCash = customers.some(c => c.id === 'cust-cash' || c.name.trim().toLowerCase() === 'cash customer')
+    if (hasCash) return customers
+    const defaultCashCustomer: Customer = {
+      id: 'cust-cash',
+      name: 'Cash Customer',
+      openingBalance: 0,
+      balanceType: 'Debit',
+      phone: '',
+      address: '',
+      stateCode: '19'
+    }
+    return [defaultCashCustomer, ...customers]
+  }, [customers])
+
+  const customerMap = useMemo(() => new Map(effectiveCustomers.map(customer => [customer.id, customer])), [effectiveCustomers])
   const selectedInvoiceCustomer = useMemo(() => {
-    if (
-      isCashCustomerRef(selectedCustomerId) ||
-      ((editingInvoice as any)?.customerNameSnapshot === 'Cash Customer' && (!selectedCustomerId || isCashCustomerRef(selectedCustomerId)))
-    ) {
-      return {
-        id: 'cust-cash',
-        name: 'Cash Customer',
-        openingBalance: 0,
-        balanceType: 'Debit' as const,
-        phone: '',
-        address: '',
-        stateCode: '19',
-        isCash: true
-      } as Customer & { isCash?: boolean }
-    }
-    if (selectedCustomerId) {
-      return customerMap.get(selectedCustomerId) || customers.find(c => c.id === selectedCustomerId || c.name.toLowerCase() === selectedCustomerId.toLowerCase())
-    }
-    return undefined
-  }, [selectedCustomerId, customerMap, customers, editingInvoice])
-  const filteredCustomers = customers.filter((customer) => {
+    const targetId = selectedCustomerId || (editingInvoice ? editingInvoice.customerId : undefined)
+    if (!targetId) return undefined
+    return customerMap.get(targetId) || effectiveCustomers.find(c => c.id === targetId || c.name.toLowerCase() === targetId.toLowerCase())
+  }, [selectedCustomerId, customerMap, effectiveCustomers, editingInvoice])
+
+  const filteredCustomers = effectiveCustomers.filter((customer) => {
     const query = customerSearch.trim().toLowerCase()
     if (!query) return true
     return [customer.name, customer.phone, customer.email, customer.gstin]
@@ -1047,66 +1042,33 @@ export default function SalesInvoicesPage({
                     <div className="erp-party-picker-field">
                       <input type="hidden" name="customerId" value={selectedCustomerId || selectedInvoiceCustomer?.id || ''} />
                       {!customerPickerOpen && selectedInvoiceCustomer ? (
-                        (selectedInvoiceCustomer.id === 'cust-cash' || (selectedInvoiceCustomer as any).isCash) ? (
-                          <div className="flex items-center justify-between p-3.5 bg-emerald-50/80 border-2 border-emerald-500 rounded-2xl shadow-xs">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-extrabold text-base shrink-0 shadow-xs">
-                                💵
+                        <div className="flex items-center justify-between p-3.5 bg-[#5B5FEF]/10 border-2 border-[#5B5FEF] rounded-2xl shadow-sm">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-10 h-10 rounded-xl bg-[#5B5FEF] text-white flex items-center justify-center font-extrabold text-sm shrink-0 shadow-sm">
+                              {selectedInvoiceCustomer.name.substring(0, 2).toUpperCase()}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-sm font-extrabold text-slate-900 truncate">
+                                {selectedInvoiceCustomer.name}
                               </div>
-                              <div className="min-w-0">
-                                <div className="text-sm font-extrabold text-emerald-950 flex items-center gap-2 truncate">
-                                  Cash Customer
-                                  <Badge className="bg-emerald-600 text-white text-[10px] font-bold px-1.5 py-0 border-0">
-                                    Direct Sale
-                                  </Badge>
-                                </div>
-                                <div className="text-xs font-semibold text-emerald-700">
-                                  Counter Cash Sale • Fully Settled
-                                </div>
+                              <div className="text-xs font-bold text-[#5B5FEF]">
+                                Balance: {formatCurrency(selectedInvoiceCustomer.openingBalance || 0)}
                               </div>
                             </div>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setCustomerPickerOpen(true)
-                                setCustomerSearch('')
-                              }}
-                              className="h-8 px-3 text-xs font-bold text-emerald-700 bg-white border-emerald-300 hover:bg-emerald-600 hover:text-white rounded-xl shadow-2xs transition-all shrink-0 ml-2"
-                            >
-                              Change Party
-                            </Button>
                           </div>
-                        ) : (
-                          <div className="flex items-center justify-between p-3.5 bg-[#5B5FEF]/10 border-2 border-[#5B5FEF] rounded-2xl shadow-sm">
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-10 h-10 rounded-xl bg-[#5B5FEF] text-white flex items-center justify-center font-extrabold text-sm shrink-0 shadow-sm">
-                                {selectedInvoiceCustomer.name.substring(0, 2).toUpperCase()}
-                              </div>
-                              <div className="min-w-0">
-                                <div className="text-sm font-extrabold text-slate-900 truncate">
-                                  {selectedInvoiceCustomer.name}
-                                </div>
-                                <div className="text-xs font-bold text-[#5B5FEF]">
-                                  Balance: {formatCurrency(selectedInvoiceCustomer.openingBalance || 0)}
-                                </div>
-                              </div>
-                            </div>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setCustomerPickerOpen(true)
-                                setCustomerSearch('')
-                              }}
-                              className="h-8 px-3 text-xs font-bold text-[#5B5FEF] bg-white border-[#5B5FEF]/30 hover:bg-[#5B5FEF] hover:text-white rounded-xl shadow-2xs transition-all shrink-0 ml-2"
-                            >
-                              Change Party
-                            </Button>
-                          </div>
-                        )
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setCustomerPickerOpen(true)
+                              setCustomerSearch('')
+                            }}
+                            className="h-8 px-3 text-xs font-bold text-[#5B5FEF] bg-white border-[#5B5FEF]/30 hover:bg-[#5B5FEF] hover:text-white rounded-xl shadow-2xs transition-all shrink-0 ml-2"
+                          >
+                            Change Party
+                          </Button>
+                        </div>
                       ) : !customerPickerOpen && !selectedInvoiceCustomer ? (
                         <button
                           type="button"
