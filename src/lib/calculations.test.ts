@@ -13,6 +13,8 @@ import {
   calculateExpenseTaxBreakdown,
   calculateNoteTaxBreakdown,
   calculateExpenseTotals,
+  calculateRateWithGst,
+  calculateBasicRateFromInclusive,
   isInterStateTransaction
 } from './calculations'
 import { convertItemQuantity, getInvoiceQtyForUnit, isUnitCompatible } from './unit-conversion-service'
@@ -913,5 +915,18 @@ describe('calculateInvoiceTotals & Additional Charges Parity (Benchmark #RV12000
     const listTotals = calculateInvoiceListTotals([testInvoice])
     expect(listTotals.totalAmount).toBe(830652.00)
     expect(formatCurrency(totals.totalAmount)).toBe('₹8,30,652.00')
+  })
+
+  it('correctly calculates bidirectional rates (Inclusive <-> Exclusive) with zero drift', () => {
+    const exclusiveRate = 58628.80
+    const gstRate = 18
+
+    // Exclusive -> Inclusive
+    const inclusiveRate = calculateRateWithGst(exclusiveRate, gstRate)
+    expect(inclusiveRate).toBe(69181.98)
+
+    // Inclusive -> Exclusive
+    const backToExclusive = calculateBasicRateFromInclusive(inclusiveRate, gstRate)
+    expect(backToExclusive).toBe(58628.80)
   })
 })

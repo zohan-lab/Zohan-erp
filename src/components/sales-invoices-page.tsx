@@ -376,7 +376,9 @@ export default function SalesInvoicesPage({
           itemRow.enteredUnit = defaultUnit
         } else {
           itemRow.itemId = newItemId
-          itemRow.rate = selectedDef?.salesPrice || selectedDef?.purchasePrice || 0
+          const basicRate = itemRow.basicRate && itemRow.basicRate > 0 ? itemRow.basicRate : selectedDef?.salesPrice || selectedDef?.purchasePrice || 0
+          itemRow.basicRate = basicRate
+          itemRow.rate = calculateRateWithGst(basicRate, getInvoiceItemGstRate(newItemId))
           itemRow.enteredUnit = defaultUnit
         }
       } else if (field === 'enteredUnit' || field === 'entryUnit') {
@@ -399,6 +401,7 @@ export default function SalesInvoicesPage({
       const currentEnteredQty = itemRow.enteredQuantity !== undefined && itemRow.enteredQuantity !== null ? itemRow.enteredQuantity : ((itemRow as any).entryQuantity || 0)
       const currentUnit = itemRow.enteredUnit || (itemRow as any).entryUnit || selectedItemDef?.unit || 'KG'
       const currentRate = itemRow.rate || 0
+      const currentBasicRate = itemRow.basicRate || 0
 
       const norm = normalizeLineItem(selectedItemDef, currentEnteredQty, currentUnit, currentRate)
       itemRow.enteredQuantity = currentEnteredQty
@@ -407,6 +410,7 @@ export default function SalesInvoicesPage({
       itemRow.baseRate = norm.baseRate
       itemRow.enteredRate = currentRate
       itemRow.amount = parseFloat((norm.baseAmount).toFixed(2))
+      itemRow.taxableAmount = parseFloat((currentEnteredQty * currentBasicRate).toFixed(2))
 
       updated[index] = itemRow
       return updated
@@ -762,7 +766,7 @@ export default function SalesInvoicesPage({
   }
 
   const getCustomerName = (customerId: string) => {
-    return customers.find(c => c.id === customerId)?.name || 'Unknown'
+    return customerMap.get(customerId)?.name || customers.find(c => c.id === customerId || c.name.toLowerCase() === customerId.toLowerCase())?.name || customerId || 'Unknown'
   }
 
   const getItemName = (itemId: string) => {
@@ -770,7 +774,9 @@ export default function SalesInvoicesPage({
   }
 
   const customerMap = useMemo(() => new Map(customers.map(customer => [customer.id, customer])), [customers])
-  const selectedInvoiceCustomer = selectedCustomerId ? customerMap.get(selectedCustomerId) : undefined
+  const selectedInvoiceCustomer = selectedCustomerId
+    ? customerMap.get(selectedCustomerId) || customers.find(c => c.id === selectedCustomerId || c.name.toLowerCase() === selectedCustomerId.toLowerCase())
+    : undefined
   const filteredCustomers = customers.filter((customer) => {
     const query = customerSearch.trim().toLowerCase()
     if (!query) return true
@@ -800,12 +806,13 @@ export default function SalesInvoicesPage({
 
 
   const { totalQty: totalInvoiceQty, totalAmount: totalInvoiceAmount } = calculateInvoiceItemsTotals(invoiceItems)
-  const currentCustomer = customers.find(c => c.id === selectedCustomerId)
+  const currentCustomer = selectedInvoiceCustomer
   const taxSummary = useMemo(() => {
     const { basicRateTotal: addCostBasicRate } = calculateAdditionalChargesTotals(additionalCharges)
     return calculateInvoiceTaxBreakdown({
       items: invoiceItems,
       itemsMaster: items,
+      additionalCharges,
       additionalCostBasicRate: addCostBasicRate,
       additionalCostFinal,
       partyState: currentCustomer?.stateCode || currentCustomer?.stateName || currentCustomer?.state,
@@ -814,7 +821,7 @@ export default function SalesInvoicesPage({
     })
   }, [invoiceItems, items, additionalCharges, additionalCostFinal, currentCustomer?.stateCode, currentCustomer?.stateName, currentCustomer?.state, roundOffAdjustment, gstPercentage])
 
-  const finalInvoiceAmountPreview = calculateInvoiceFinalAmount(totalInvoiceAmount, additionalCostFinal, roundOffAdjustment)
+  const finalInvoiceAmountPreview = taxSummary.totalAmount
   const receivedAmountPreview = Math.min(
     Math.max(parseFloat(amountReceived) || 0, 0),
     finalInvoiceAmountPreview
@@ -1518,12 +1525,12 @@ export default function SalesInvoicesPage({
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    const rawTotal = totalInvoiceAmount + additionalCostFinal
+                                    const rawGross = taxSummary.taxableAmount + taxSummary.totalTaxAmount
                                     if (roundOffAdjustment !== 0) {
                                       setRoundOffAdjustment(0)
                                     } else {
-                                      const nearestInt = Math.round(rawTotal)
-                                      const diff = parseFloat((nearestInt - rawTotal).toFixed(2))
+                                      const nearestInt = Math.round(rawGross)
+                                      const diff = parseFloat((nearestInt - rawGross).toFixed(2))
                                       setRoundOffAdjustment(diff)
                                     }
                                   }}
@@ -1562,7 +1569,7 @@ export default function SalesInvoicesPage({
 
                           <div className="erp-final-amount-block mt-auto">
                             <span className="label">Final Invoice Amount</span>
-                            <span className="amount">₹{(totalInvoiceAmount + additionalCostFinal + roundOffAdjustment).toFixed(2)}</span>
+                            <span className="amount">₹{taxSummary.totalAmount.toFixed(2)}</span>
                             <input type="hidden" name="roundOffAdjustment" value={roundOffAdjustment} />
                           </div>
                         </div>

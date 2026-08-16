@@ -843,8 +843,8 @@ describe('Native Tally XML Ingestion Engine', () => {
       customers: [],
       suppliers: [{ id: 'sup-captain', name: 'Captain Steel India Limited', gstin: '19AAACC1234F1Z9', stateCode: '19', paymentCDRules: [], invoiceCloseCDRules: [] }],
       items: [
-        { id: 'item-8mm', name: '8MM TMT BAR', unit: 'TON', purchasePrice: 58628.80, salesPrice: 60000, defaultGstRate: 18, category: 'TMT' },
-        { id: 'item-12mm', name: '12MM TMT BAR', unit: 'TON', purchasePrice: 57188.49, salesPrice: 59000, defaultGstRate: 18, category: 'TMT' }
+        { id: 'item-8mm', name: '8MM TMT BAR', unit: 'TON', purchasePrice: 58628.80, salesPrice: 60000, gstRate: 18, category: 'TMT' },
+        { id: 'item-12mm', name: '12MM TMT BAR', unit: 'TON', purchasePrice: 57188.49, salesPrice: 59000, gstRate: 18, category: 'TMT' }
       ],
       expenseTypes: [],
       counters: []

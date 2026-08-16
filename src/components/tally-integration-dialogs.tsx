@@ -1348,15 +1348,19 @@ export function TallyImportDialog({
           const lineTaxable = inv.amount
           const lineCgst = Math.round(lineTaxable * 0.09 * 100) / 100
           const lineSgst = Math.round(lineTaxable * 0.09 * 100) / 100
+          const grossAmount = Math.round((lineTaxable + lineCgst + lineSgst) * 100) / 100
+          const inclusiveRate = Math.round(inv.rate * 1.18 * 100) / 100
+
           return {
             itemId,
             baseQuantity: inv.quantity,
             enteredQuantity: inv.quantity,
             enteredUnit: inv.unit || 'KG',
             basicRate: inv.rate,
-            baseRate: inv.rate,
-            rate: inv.rate,
-            amount: inv.amount,
+            baseRate: inclusiveRate,
+            enteredRate: inclusiveRate,
+            rate: inclusiveRate,
+            amount: grossAmount,
             taxableAmount: lineTaxable,
             gstRate: 18,
             cgstRate: 9,
@@ -1405,15 +1409,19 @@ export function TallyImportDialog({
             const lineTaxable = inv.amount
             const lineCgst = Math.round(lineTaxable * 0.09 * 100) / 100
             const lineSgst = Math.round(lineTaxable * 0.09 * 100) / 100
+            const grossAmount = Math.round((lineTaxable + lineCgst + lineSgst) * 100) / 100
+            const inclusiveRate = Math.round(inv.rate * 1.18 * 100) / 100
+
             return {
               itemId,
               baseQuantity: inv.quantity,
               enteredQuantity: inv.quantity,
               enteredUnit: inv.unit || 'KG',
               basicRate: inv.rate,
-              baseRate: inv.rate,
-              rate: inv.rate,
-              amount: inv.amount,
+              baseRate: inclusiveRate,
+              enteredRate: inclusiveRate,
+              rate: inclusiveRate,
+              amount: grossAmount,
               taxableAmount: lineTaxable,
               gstRate: 18,
               cgstRate: 9,
