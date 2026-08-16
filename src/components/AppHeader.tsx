@@ -32,6 +32,7 @@ import {
   PaymentVoucher,
   TallyImportResult,
 } from '@/lib/tally-payment-excel'
+import { parseTallyXmlVouchers } from '@/lib/tally-xml-parser'
 import { Payment, CustomerPayment, Supplier, Customer } from '@/lib/types'
 
 interface AppHeaderProps {
@@ -118,42 +119,73 @@ export function AppHeader({
   const [isExporting, setIsExporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // 1. Handle Import Tally Excel
+  // 1. Handle Import Tally Excel / XML
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files || files.length === 0) return
 
     const file = files[0]
-    const validExtensions = ['.xlsx', '.xls', '.csv']
+    const isXml = file.name.toLowerCase().endsWith('.xml')
+    const validExtensions = ['.xml', '.xlsx', '.xls', '.csv']
     const hasValidExt = validExtensions.some(ext => file.name.toLowerCase().endsWith(ext))
 
     if (!hasValidExt) {
-      toast.error('Invalid file format. Please upload an Excel (.xlsx, .xls) or CSV file.')
+      toast.error('Invalid file format. Please upload an XML (.xml), Excel (.xlsx, .xls) or CSV file.')
       if (fileInputRef.current) fileInputRef.current.value = ''
       return
     }
 
     setIsImporting(true)
     try {
-      const arrayBuffer = await file.arrayBuffer()
-      const result: TallyImportResult = parseTallyPayments(arrayBuffer)
+      if (isXml) {
+        const text = await file.text()
+        const xmlResult = parseTallyXmlVouchers(text, { customers, suppliers })
+        if (xmlResult.success && xmlResult.vouchers.length > 0) {
+          const paymentVouchers: PaymentVoucher[] = xmlResult.vouchers
+            .filter(v => v.normalizedType === 'payment' || v.normalizedType === 'receipt')
+            .map((v, idx) => ({
+              id: v.id || `xml-vch-${idx}`,
+              voucherNumber: v.voucherNumber,
+              voucherDate: v.voucherDate,
+              displayDate: v.displayDate,
+              type: v.normalizedType === 'payment' ? 'PAYMENT' : 'RECEIPT',
+              partyLedger: v.partyName,
+              bankCashLedger: v.legs.find(l => l.ledgerName !== v.partyName)?.ledgerName || 'Bank Account',
+              amount: v.totalAmount,
+              status: v.isBalanced ? 'valid' : 'warning',
+              isValid: v.isBalanced
+            }))
 
-      if (result.success && result.data.length > 0) {
-        toast.success(
-          `Imported ${result.data.length} Tally voucher(s) (${result.summary.paymentCount} Payments, ${result.summary.receiptCount} Receipts)`
-        )
-        onImportTally?.(result.data)
-      } else if (result.data.length > 0) {
-        toast.warning(
-          `Imported ${result.data.length} vouchers with ${result.errors.length} issue(s)`
-        )
-        onImportTally?.(result.data)
+          toast.success(
+            `Imported ${xmlResult.summary.totalParsed} Tally XML voucher(s) (${xmlResult.summary.salesCount} Sales, ${xmlResult.summary.purchaseCount} Purchases, ${xmlResult.summary.paymentCount} Payments, ${xmlResult.summary.receiptCount} Receipts)`
+          )
+          if (paymentVouchers.length > 0) {
+            onImportTally?.(paymentVouchers)
+          }
+        } else {
+          toast.error(xmlResult.errors[0] || 'No valid vouchers found in uploaded XML file')
+        }
       } else {
-        toast.error(result.errors[0] || 'No valid Payment/Receipt vouchers found in the uploaded file')
+        const arrayBuffer = await file.arrayBuffer()
+        const result: TallyImportResult = parseTallyPayments(arrayBuffer)
+
+        if (result.success && result.data.length > 0) {
+          toast.success(
+            `Imported ${result.data.length} Tally voucher(s) (${result.summary.paymentCount} Payments, ${result.summary.receiptCount} Receipts)`
+          )
+          onImportTally?.(result.data)
+        } else if (result.data.length > 0) {
+          toast.warning(
+            `Imported ${result.data.length} vouchers with ${result.errors.length} issue(s)`
+          )
+          onImportTally?.(result.data)
+        } else {
+          toast.error(result.errors[0] || 'No valid Payment/Receipt vouchers found in the uploaded file')
+        }
       }
     } catch (err: any) {
       console.error('Tally import error:', err)
-      toast.error(`Import failed: ${err?.message || 'Error processing Excel file'}`)
+      toast.error(`Import failed: ${err?.message || 'Error processing file'}`)
     } finally {
       setIsImporting(false)
       if (fileInputRef.current) {
@@ -241,7 +273,7 @@ export function AppHeader({
       <input
         ref={fileInputRef}
         type="file"
-        accept=".xlsx, .xls, .csv"
+        accept=".xml, .xlsx, .xls, .csv, text/xml, application/xml"
         onChange={handleFileChange}
         className="hidden"
       />

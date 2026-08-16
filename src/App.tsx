@@ -2767,12 +2767,26 @@ function App() {
             onOpenChange={setTallyImportDialogOpen}
             customers={safeCustomers}
             suppliers={safeSuppliers}
-            onCommitImport={(newPayments, newCustomerPayments) => {
+            items={safeItems}
+            expenseTypes={safeExpenseTypes}
+            onCommitImport={(newPayments, newCustomerPayments, _summary, extraEntities) => {
               if (newPayments.length > 0) {
                 syncSetPayments([...payments, ...newPayments])
               }
               if (newCustomerPayments.length > 0) {
                 syncSetCustomerPayments([...customerPayments, ...newCustomerPayments])
+              }
+              if (extraEntities?.salesInvoices && extraEntities.salesInvoices.length > 0) {
+                setSalesInvoices(prev => [...prev, ...extraEntities.salesInvoices!])
+              }
+              if (extraEntities?.purchaseInvoices && extraEntities.purchaseInvoices.length > 0) {
+                setInvoices(prev => [...prev, ...extraEntities.purchaseInvoices!])
+              }
+              if (extraEntities?.creditNotes && extraEntities.creditNotes.length > 0) {
+                setCreditNotes(prev => [...prev, ...extraEntities.creditNotes!])
+              }
+              if (extraEntities?.debitNotes && extraEntities.debitNotes.length > 0) {
+                setDebitNotes(prev => [...prev, ...extraEntities.debitNotes!])
               }
             }}
           />

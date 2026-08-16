@@ -637,15 +637,28 @@ export function TallyExportDialog({
   )
 }
 
+import {
+  parseTallyXmlVouchers,
+  TallyParsedXmlVoucher
+} from '@/lib/tally-xml-parser'
+
 export interface TallyImportDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   customers?: Customer[]
   suppliers?: Supplier[]
+  items?: Item[]
+  expenseTypes?: ExpenseType[]
   onCommitImport?: (
     newPayments: Payment[],
     newCustomerPayments: CustomerPayment[],
-    summary: { importedCount: number; skippedCount: number }
+    summary?: { importedCount: number; skippedCount: number },
+    extraEntities?: {
+      salesInvoices?: SalesInvoice[]
+      purchaseInvoices?: PurchaseInvoice[]
+      creditNotes?: CustomerCreditNote[]
+      debitNotes?: SupplierDebitNote[]
+    }
   ) => void
 }
 
@@ -654,12 +667,14 @@ export function TallyImportDialog({
   onOpenChange,
   customers = [],
   suppliers = [],
+  items = [],
+  expenseTypes = [],
   onCommitImport
 }: TallyImportDialogProps) {
-  const [parsedVouchers, setParsedVouchers] = useState<PaymentVoucher[]>([])
+  const [parsedVouchers, setParsedVouchers] = useState<TallyParsedXmlVoucher[]>([])
   const [isParsing, setIsParsing] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
   const [fileName, setFileName] = useState<string | null>(null)
-  const [skipUnmapped, setSkipUnmapped] = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const supplierMap = useMemo(() => new Map(suppliers.map(s => [s.name.trim().toLowerCase(), s])), [suppliers])
@@ -667,49 +682,118 @@ export function TallyImportDialog({
 
   const processedList = useMemo(() => {
     return parsedVouchers.map(v => {
-      const normParty = v.partyLedger.trim().toLowerCase()
-      let matchedType: 'supplier' | 'customer' | 'unmapped' = 'unmapped'
-      let matchedEntityId: string | undefined
+      const normParty = v.partyName.trim().toLowerCase()
+      let matchedEntityType = v.matchedEntityType || 'unmapped'
+      let matchedEntityId = v.matchedEntityId
 
-      if (supplierMap.has(normParty)) {
-        matchedType = 'supplier'
-        matchedEntityId = supplierMap.get(normParty)?.id
-      } else if (customerMap.has(normParty)) {
-        matchedType = 'customer'
-        matchedEntityId = customerMap.get(normParty)?.id
+      if (matchedEntityType === 'unmapped') {
+        if (customerMap.has(normParty)) {
+          matchedEntityType = 'customer'
+          matchedEntityId = customerMap.get(normParty)?.id
+        } else if (supplierMap.has(normParty)) {
+          matchedEntityType = 'supplier'
+          matchedEntityId = supplierMap.get(normParty)?.id
+        }
       }
 
       return {
         ...v,
-        matchedType,
+        matchedEntityType,
         matchedEntityId
       }
     })
   }, [parsedVouchers, supplierMap, customerMap])
 
-  const matchedCount = processedList.filter(v => v.matchedType !== 'unmapped').length
-  const unmappedCount = processedList.filter(v => v.matchedType === 'unmapped').length
+  const validCount = processedList.filter(v => v.normalizedType !== 'skipped' && v.matchedEntityType !== 'unmapped').length
+  const unmappedCount = processedList.filter(v => v.normalizedType !== 'skipped' && v.matchedEntityType === 'unmapped').length
+  const skippedCount = processedList.filter(v => v.normalizedType === 'skipped').length
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files || files.length === 0) return
-
-    const file = files[0]
+  const processFile = async (file: File) => {
     setFileName(file.name)
     setIsParsing(true)
 
+    const isXml = file.name.toLowerCase().endsWith('.xml')
+    const validExtensions = ['.xml', '.xlsx', '.xls', '.csv']
+    const hasValidExt = validExtensions.some(ext => file.name.toLowerCase().endsWith(ext))
+
+    if (!hasValidExt) {
+      toast.error('Invalid file format. Please upload an XML (.xml), Excel (.xlsx, .xls) or CSV file.')
+      setIsParsing(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      return
+    }
+
     try {
-      const buffer = await file.arrayBuffer()
-      const result: TallyImportResult = parseTallyPayments(buffer)
+      if (isXml) {
+        const text = await file.text()
+        const result = parseTallyXmlVouchers(text, {
+          customers,
+          suppliers,
+          items,
+          expenseTypes
+        })
 
-      setParsedVouchers(result.data)
+        setParsedVouchers(result.vouchers)
 
-      if (result.success && result.data.length > 0) {
-        toast.success(`Parsed ${result.data.length} Tally voucher(s)`)
-      } else if (result.data.length > 0) {
-        toast.warning(`Parsed ${result.data.length} voucher(s) with validation notices`)
+        if (result.success && result.vouchers.length > 0) {
+          toast.success(`Successfully parsed ${result.summary.totalParsed} Tally XML voucher(s)`)
+        } else if (result.vouchers.length > 0) {
+          toast.warning(`Parsed ${result.vouchers.length} voucher(s) with notices: ${result.warnings.join(', ')}`)
+        } else {
+          toast.error(result.errors[0] || 'No valid vouchers found in XML envelope')
+        }
       } else {
-        toast.error(result.errors[0] || 'No valid Payment/Receipt vouchers found in file')
+        const buffer = await file.arrayBuffer()
+        const result: TallyImportResult = parseTallyPayments(buffer)
+
+        const converted: TallyParsedXmlVoucher[] = result.data.map((pv, idx) => {
+          const normParty = pv.partyLedger.trim().toLowerCase()
+          let mType: 'customer' | 'supplier' | 'unmapped' = 'unmapped'
+          let mId: string | undefined
+
+          if (customerMap.has(normParty)) {
+            mType = 'customer'
+            mId = customerMap.get(normParty)?.id
+          } else if (supplierMap.has(normParty)) {
+            mType = 'supplier'
+            mId = supplierMap.get(normParty)?.id
+          }
+
+          const isPay = pv.type === 'PAYMENT'
+          const vDate = pv.voucherDate || new Date().toISOString().slice(0, 10)
+          const dispDate = pv.displayDate || vDate
+          return {
+            id: pv.id || `excel-vch-${idx + 1}`,
+            voucherNumber: pv.voucherNumber,
+            voucherDate: vDate,
+            displayDate: dispDate,
+            rawVoucherType: pv.type,
+            normalizedType: isPay ? 'payment' : 'receipt',
+            partyName: pv.partyLedger,
+            legs: [
+              { ledgerName: pv.partyLedger, amount: pv.amount, drCr: isPay ? 'Dr' : 'Cr', isDeemedPositive: isPay },
+              { ledgerName: pv.bankCashLedger, amount: pv.amount, drCr: isPay ? 'Cr' : 'Dr', isDeemedPositive: !isPay }
+            ],
+            inventory: [],
+            drTotal: pv.amount,
+            crTotal: pv.amount,
+            totalAmount: pv.amount,
+            isBalanced: pv.isValid ?? true,
+            imbalanceDifference: 0,
+            matchedEntityType: mType,
+            matchedEntityId: mId
+          }
+        })
+
+        setParsedVouchers(converted)
+
+        if (result.success && converted.length > 0) {
+          toast.success(`Parsed ${converted.length} Tally voucher(s) from Excel`)
+        } else if (converted.length > 0) {
+          toast.warning(`Parsed ${converted.length} voucher(s) with validation notices`)
+        } else {
+          toast.error(result.errors[0] || 'No valid vouchers found in file')
+        }
       }
     } catch (err: any) {
       toast.error(`Import failed: ${err?.message || 'Error processing file'}`)
@@ -719,32 +803,109 @@ export function TallyImportDialog({
     }
   }
 
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files
+    if (!files || files.length === 0) return
+    await processFile(files[0])
+  }
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const files = e.dataTransfer.files
+    if (files && files.length > 0) {
+      await processFile(files[0])
+    }
+  }
+
   const handleCommit = () => {
     const newPayments: Payment[] = []
     const newCustomerPayments: CustomerPayment[] = []
+    const newSalesInvoices: SalesInvoice[] = []
+    const newPurchaseInvoices: PurchaseInvoice[] = []
+    const newCreditNotes: CustomerCreditNote[] = []
+    const newDebitNotes: SupplierDebitNote[] = []
     let skipped = 0
 
     processedList.forEach((v, idx) => {
-      if (v.matchedType === 'supplier' && v.matchedEntityId) {
+      if (v.normalizedType === 'skipped') {
+        skipped++
+        return
+      }
+
+      if (v.normalizedType === 'payment' && v.matchedEntityType === 'supplier' && v.matchedEntityId) {
         newPayments.push({
           id: `tally-pay-${Date.now()}-${idx}`,
           supplierId: v.matchedEntityId,
-          amount: v.amount,
+          amount: v.totalAmount,
           paymentDate: v.voucherDate || new Date().toISOString().split('T')[0],
           paymentMode: 'Bank',
-          counterName: v.bankCashLedger,
+          counterName: v.legs.find(l => l.ledgerName !== v.partyName)?.ledgerName || 'Bank Account',
           notes: `Imported from Tally Voucher #${v.voucherNumber}`,
           createdAt: Date.now()
         } as any)
-      } else if (v.matchedType === 'customer' && v.matchedEntityId) {
+      } else if (v.normalizedType === 'receipt' && v.matchedEntityType === 'customer' && v.matchedEntityId) {
         newCustomerPayments.push({
           id: `tally-rec-${Date.now()}-${idx}`,
           customerId: v.matchedEntityId,
-          amount: v.amount,
+          amount: v.totalAmount,
           paymentDate: v.voucherDate || new Date().toISOString().split('T')[0],
           paymentMode: 'Bank',
-          counterName: v.bankCashLedger,
+          counterName: v.legs.find(l => l.ledgerName !== v.partyName)?.ledgerName || 'Bank Account',
           notes: `Imported from Tally Voucher #${v.voucherNumber}`,
+          createdAt: Date.now()
+        } as any)
+      } else if (v.normalizedType === 'sales' && v.matchedEntityType === 'customer' && v.matchedEntityId) {
+        newSalesInvoices.push({
+          id: `tally-inv-${Date.now()}-${idx}`,
+          invoiceNumber: v.voucherNumber,
+          customerId: v.matchedEntityId,
+          date: v.voucherDate || new Date().toISOString().split('T')[0],
+          totalAmount: v.totalAmount,
+          taxableAmount: v.legs.find(l => l.ledgerName.toLowerCase().includes('sale'))?.amount || v.totalAmount,
+          status: 'Confirmed',
+          items: v.inventory.map(inv => ({
+            itemId: items.find(it => it.name.toLowerCase() === inv.itemName.toLowerCase())?.id || 'item-gen',
+            baseQuantity: inv.quantity,
+            rate: inv.rate,
+            amount: inv.amount
+          })),
+          createdAt: Date.now()
+        } as any)
+      } else if (v.normalizedType === 'purchase' && v.matchedEntityType === 'supplier' && v.matchedEntityId) {
+        newPurchaseInvoices.push({
+          id: `tally-pur-${Date.now()}-${idx}`,
+          invoiceNumber: v.voucherNumber,
+          supplierId: v.matchedEntityId,
+          invoiceDate: v.voucherDate || new Date().toISOString().split('T')[0],
+          totalAmount: v.totalAmount,
+          taxableAmount: v.legs.find(l => l.ledgerName.toLowerCase().includes('purchase'))?.amount || v.totalAmount,
+          items: v.inventory.map(inv => ({
+            itemId: items.find(it => it.name.toLowerCase() === inv.itemName.toLowerCase())?.id || 'item-gen',
+            baseQuantity: inv.quantity,
+            rate: inv.rate,
+            amount: inv.amount
+          })),
+          createdAt: Date.now()
+        } as any)
+      } else if (v.normalizedType === 'credit_note' && v.matchedEntityType === 'customer' && v.matchedEntityId) {
+        newCreditNotes.push({
+          id: `tally-cn-${Date.now()}-${idx}`,
+          creditNoteNumber: v.voucherNumber,
+          customerId: v.matchedEntityId,
+          date: v.voucherDate || new Date().toISOString().split('T')[0],
+          amount: v.totalAmount,
+          reason: v.narration || 'Imported from Tally Credit Note',
+          createdAt: Date.now()
+        } as any)
+      } else if (v.normalizedType === 'debit_note' && v.matchedEntityType === 'supplier' && v.matchedEntityId) {
+        newDebitNotes.push({
+          id: `tally-dn-${Date.now()}-${idx}`,
+          debitNoteNumber: v.voucherNumber,
+          supplierId: v.matchedEntityId,
+          date: v.voucherDate || new Date().toISOString().split('T')[0],
+          amount: v.totalAmount,
+          reason: v.narration || 'Imported from Tally Debit Note',
           createdAt: Date.now()
         } as any)
       } else {
@@ -752,8 +913,14 @@ export function TallyImportDialog({
       }
     })
 
-    const imported = newPayments.length + newCustomerPayments.length
-    onCommitImport?.(newPayments, newCustomerPayments, { importedCount: imported, skippedCount: skipped })
+    const imported = newPayments.length + newCustomerPayments.length + newSalesInvoices.length + newPurchaseInvoices.length + newCreditNotes.length + newDebitNotes.length
+    
+    onCommitImport?.(newPayments, newCustomerPayments, { importedCount: imported, skippedCount: skipped }, {
+      salesInvoices: newSalesInvoices,
+      purchaseInvoices: newPurchaseInvoices,
+      creditNotes: newCreditNotes,
+      debitNotes: newDebitNotes
+    })
 
     toast.success(`Successfully imported ${imported} voucher(s) into ERP ledger accounts`, {
       description: skipped > 0 ? `${skipped} unmapped/journal vouchers skipped per audit policy` : undefined
@@ -764,33 +931,64 @@ export function TallyImportDialog({
     onOpenChange(false)
   }
 
+  const getVoucherBadge = (type: TallyParsedXmlVoucher['normalizedType'], raw: string) => {
+    switch (type) {
+      case 'sales':
+        return <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[10px] font-bold">Sales</Badge>
+      case 'purchase':
+        return <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px] font-bold">Purchase</Badge>
+      case 'receipt':
+        return <Badge className="bg-violet-100 text-violet-800 border-violet-200 text-[10px] font-bold">Receipt</Badge>
+      case 'payment':
+        return <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px] font-bold">Payment</Badge>
+      case 'credit_note':
+        return <Badge className="bg-rose-100 text-rose-800 border-rose-200 text-[10px] font-bold">Credit Note</Badge>
+      case 'debit_note':
+        return <Badge className="bg-cyan-100 text-cyan-800 border-cyan-200 text-[10px] font-bold">Debit Note</Badge>
+      default:
+        return <Badge variant="outline" className="text-[10px] text-slate-500">{raw}</Badge>
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[650px] p-6 rounded-2xl">
+      <DialogContent className="sm:max-w-[720px] p-6 rounded-2xl">
         <DialogHeader className="space-y-1.5">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
               <span className="p-2 rounded-xl bg-violet-50 text-violet-700 border border-violet-100">
                 <FileArrowUp className="w-5 h-5" weight="duotone" />
               </span>
-              Import Tally Vouchers into ERP
+              Import Tally Vouchers (XML / Excel)
             </DialogTitle>
             <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold">
               Skip-Journal Policy
             </Badge>
           </div>
           <DialogDescription className="text-xs text-slate-500">
-            Upload Tally Excel (.xlsx, .xls) or CSV export to parse payment and receipt vouchers with automatic master ledger matching.
+            Upload Tally Native XML (.xml) or Excel (.xlsx, .xls, .csv) to ingest Sales, Purchases, Receipts, Payments, and Notes with automated master ledger matching.
           </DialogDescription>
         </DialogHeader>
 
         {/* Upload Drop Area */}
-        <div className="border-2 border-dashed border-slate-200 hover:border-violet-400 bg-slate-50/60 p-5 rounded-2xl text-center space-y-3 transition-all">
+        <div
+          onDragOver={e => {
+            e.preventDefault()
+            setIsDragging(true)
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
+          className={cn(
+            'border-2 border-dashed p-5 rounded-2xl text-center space-y-3 transition-all cursor-pointer',
+            isDragging ? 'border-violet-600 bg-violet-50/80 scale-[0.99]' : 'border-slate-200 hover:border-violet-400 bg-slate-50/60'
+          )}
+          onClick={() => fileInputRef.current?.click()}
+        >
           <input
             type="file"
             ref={fileInputRef}
             onChange={handleFileChange}
-            accept=".xlsx, .xls, .csv"
+            accept=".xml, .xlsx, .xls, .csv, text/xml, application/xml"
             className="hidden"
           />
           <div className="mx-auto w-10 h-10 rounded-xl bg-violet-100 text-violet-700 flex items-center justify-center">
@@ -799,14 +997,18 @@ export function TallyImportDialog({
           <div>
             <Button
               size="sm"
-              onClick={() => fileInputRef.current?.click()}
+              type="button"
+              onClick={e => {
+                e.stopPropagation()
+                fileInputRef.current?.click()
+              }}
               disabled={isParsing}
-              className="h-8 text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white rounded-xl"
+              className="h-8 text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white rounded-xl shadow-xs"
             >
-              {isParsing ? 'Parsing Excel File...' : 'Select Tally Excel / CSV File'}
+              {isParsing ? 'Parsing Vouchers...' : 'Select Tally XML / Excel File'}
             </Button>
-            <p className="text-[11px] text-slate-400 mt-1">
-              Supports Tally Prime & ERP 9 standard 8-column voucher export format
+            <p className="text-[11px] text-slate-400 mt-1.5">
+              Drag & Drop or click to upload native Tally XML (<span className="font-mono">.xml</span>) or Excel (<span className="font-mono">.xlsx, .xls, .csv</span>)
             </p>
           </div>
           {fileName && (
@@ -818,48 +1020,59 @@ export function TallyImportDialog({
 
         {/* Preview Table */}
         {processedList.length > 0 && (
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <div className="flex items-center justify-between text-xs">
               <span className="font-bold text-slate-700">Parsed Voucher Preview ({processedList.length})</span>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 <Badge className="bg-emerald-100 text-emerald-800 text-[10px]">
-                  {matchedCount} Matched
+                  {validCount} Matched
                 </Badge>
                 {unmappedCount > 0 && (
                   <Badge variant="outline" className="bg-amber-50 text-amber-800 border-amber-200 text-[10px]">
                     {unmappedCount} Unmapped
                   </Badge>
                 )}
+                {skippedCount > 0 && (
+                  <Badge variant="outline" className="bg-slate-100 text-slate-600 border-slate-200 text-[10px]">
+                    {skippedCount} Skipped (Journal/Memo)
+                  </Badge>
+                )}
               </div>
             </div>
 
-            <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-white">
+            <div className="max-h-56 overflow-y-auto rounded-xl border border-slate-200 bg-white">
               <Table>
-                <TableHeader className="bg-slate-50 sticky top-0">
+                <TableHeader className="bg-slate-50 sticky top-0 z-10">
                   <TableRow>
                     <TableHead className="text-[11px] font-bold text-slate-600">Type</TableHead>
                     <TableHead className="text-[11px] font-bold text-slate-600">Voucher No</TableHead>
+                    <TableHead className="text-[11px] font-bold text-slate-600">Date</TableHead>
                     <TableHead className="text-[11px] font-bold text-slate-600">Party Ledger</TableHead>
                     <TableHead className="text-[11px] font-bold text-slate-600 text-right">Amount (₹)</TableHead>
-                    <TableHead className="text-[11px] font-bold text-slate-600 text-center">ERP Match</TableHead>
+                    <TableHead className="text-[11px] font-bold text-slate-600 text-center">Status / Match</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {processedList.map((v, idx) => (
                     <TableRow key={idx} className="text-xs">
-                      <TableCell className="font-bold text-[10px]">{v.type}</TableCell>
+                      <TableCell>{getVoucherBadge(v.normalizedType, v.rawVoucherType)}</TableCell>
                       <TableCell className="font-mono text-slate-900">{v.voucherNumber}</TableCell>
-                      <TableCell className="font-semibold text-slate-800">{v.partyLedger}</TableCell>
-                      <TableCell className="text-right font-mono font-bold text-slate-900">{formatCurrency(v.amount)}</TableCell>
+                      <TableCell className="font-mono text-slate-500 text-[11px]">{v.displayDate}</TableCell>
+                      <TableCell className="font-semibold text-slate-800 max-w-[140px] truncate" title={v.partyName}>
+                        {v.partyName}
+                      </TableCell>
+                      <TableCell className="text-right font-mono font-bold text-slate-900">
+                        {formatCurrency(v.totalAmount)}
+                      </TableCell>
                       <TableCell className="text-center">
-                        {v.matchedType === 'supplier' && (
-                          <Badge className="bg-blue-100 text-blue-800 text-[10px]">Supplier</Badge>
-                        )}
-                        {v.matchedType === 'customer' && (
-                          <Badge className="bg-emerald-100 text-emerald-800 text-[10px]">Customer</Badge>
-                        )}
-                        {v.matchedType === 'unmapped' && (
-                          <Badge variant="outline" className="text-[10px] text-slate-400">Skip</Badge>
+                        {v.normalizedType === 'skipped' ? (
+                          <Badge variant="outline" className="text-[10px] text-slate-400">Skip Journal</Badge>
+                        ) : v.matchedEntityType === 'supplier' ? (
+                          <Badge className="bg-blue-100 text-blue-800 text-[10px]">Supplier Match</Badge>
+                        ) : v.matchedEntityType === 'customer' ? (
+                          <Badge className="bg-emerald-100 text-emerald-800 text-[10px]">Customer Match</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px] text-amber-700 bg-amber-50 border-amber-200">Unmapped</Badge>
                         )}
                       </TableCell>
                     </TableRow>
@@ -896,10 +1109,10 @@ export function TallyImportDialog({
             <Button
               size="sm"
               onClick={handleCommit}
-              disabled={matchedCount === 0}
+              disabled={validCount === 0}
               className="text-xs h-8 bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
             >
-              Import {matchedCount} Verified Vouchers
+              Import {validCount} Verified Vouchers
             </Button>
           </div>
         </DialogFooter>
