@@ -709,4 +709,69 @@ describe('Native Tally XML Ingestion Engine', () => {
     // Candidate expense category generated
     expect(result.newMasterCandidates.expenseCategories.some(e => e.name === 'Electricity Charges')).toBe(true)
   })
+
+  it('auto-resolves Cash Sales and extracts missing inventory item candidates', () => {
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+<ENVELOPE>
+  <BODY>
+    <IMPORTDATA>
+      <REQUESTDATA>
+        <TALLYMESSAGE>
+          <VOUCHER VCHTYPE="Sales" ACTION="Create">
+            <DATE>20260410</DATE>
+            <VOUCHERNUMBER>SKT/25-26/83</VOUCHERNUMBER>
+            <PARTYLEDGERNAME>Cash</PARTYLEDGERNAME>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Cash</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+              <AMOUNT>-4500.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Sales A/c</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+              <AMOUNT>4500.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLINVENTORYENTRIES.LIST>
+              <STOCKITEMNAME>GP PIPE 1 INCH</STOCKITEMNAME>
+              <BILLEDQTY> 10 PCS</BILLEDQTY>
+              <RATE>450.00/PCS</RATE>
+              <AMOUNT>-4500.00</AMOUNT>
+            </ALLINVENTORYENTRIES.LIST>
+          </VOUCHER>
+        </TALLYMESSAGE>
+      </REQUESTDATA>
+    </IMPORTDATA>
+  </BODY>
+</ENVELOPE>`
+
+    const result = parseTallyXmlVouchers(xml, {
+      customers: [],
+      suppliers: [],
+      items: [],
+      expenseTypes: [],
+      counters: []
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.vouchers).toHaveLength(1)
+
+    const vch = result.vouchers[0]
+    expect(vch.normalizedType).toBe('sales')
+    expect(vch.partyName).toBe('Cash Customer')
+    expect(vch.matchedEntityType).toBe('customer')
+    expect(vch.matchedEntityId).toBe('cust-cash')
+    expect(vch.totalAmount).toBe(4500)
+
+    // Inventory items extracted
+    expect(vch.inventory).toHaveLength(1)
+    expect(vch.inventory[0].itemName).toBe('GP PIPE 1 INCH')
+    expect(vch.inventory[0].quantity).toBe(10)
+    expect(vch.inventory[0].rate).toBe(450)
+    expect(vch.inventory[0].amount).toBe(4500)
+
+    // Item candidate registered
+    expect(result.newMasterCandidates.items).toHaveLength(1)
+    expect(result.newMasterCandidates.items[0].name).toBe('GP PIPE 1 INCH')
+    expect(result.newMasterCandidates.items[0].rate).toBe(450)
+  })
 })

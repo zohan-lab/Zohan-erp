@@ -84,11 +84,20 @@ export interface TallyNewMasterCandidateCounter {
   type: 'Cash' | 'Bank'
 }
 
+export interface TallyNewMasterCandidateItem {
+  name: string
+  unit?: string
+  hsnCode?: string
+  defaultGstRate?: number
+  rate?: number
+}
+
 export interface TallyNewMasterCandidates {
   customers: TallyNewMasterCandidateParty[]
   suppliers: TallyNewMasterCandidateParty[]
   expenseCategories: TallyNewMasterCandidateExpense[]
   counters: TallyNewMasterCandidateCounter[]
+  items: TallyNewMasterCandidateItem[]
 }
 
 export interface TallyXmlImportResult {
@@ -111,6 +120,7 @@ export interface TallyXmlImportResult {
     newSuppliersCount?: number
     newExpensesCount?: number
     newCountersCount?: number
+    newItemsCount?: number
   }
   newMasterCandidates: TallyNewMasterCandidates
   errors: string[]
@@ -242,6 +252,22 @@ export function isLikelyIndirectExpenseLedger(ledgerName: string): boolean {
   // If it clearly contains commercial entity identifiers like 'pvt ltd' or 'steel', it is not an expense ledger
   if (isLikelyCommercialEntity(ledgerName)) return false
   return INDIRECT_EXPENSE_KEYWORDS.some(k => lower.includes(k))
+}
+
+export function isCashLedger(ledgerName: string): boolean {
+  if (!ledgerName) return false
+  const lower = ledgerName.trim().toLowerCase()
+  return (
+    lower === 'cash' ||
+    lower === 'cash a/c' ||
+    lower === 'cash-in-hand' ||
+    lower === 'cash in hand' ||
+    lower === 'cash account' ||
+    lower === 'counter cash' ||
+    lower === 'cash sales' ||
+    lower === 'cash sale' ||
+    lower === 'petty cash'
+  )
 }
 
 function unescapeXml(text: string): string {
@@ -447,6 +473,7 @@ export function parseTallyXmlVouchers(
   const candidateSuppliers = new Map<string, TallyNewMasterCandidateParty>()
   const candidateExpenses = new Map<string, TallyNewMasterCandidateExpense>()
   const candidateCounters = new Map<string, TallyNewMasterCandidateCounter>()
+  const candidateItems = new Map<string, TallyNewMasterCandidateItem>()
 
   let xmlContent = ''
   if (typeof xmlInput === 'string') {
@@ -475,13 +502,15 @@ export function parseTallyXmlVouchers(
         newCustomersCount: 0,
         newSuppliersCount: 0,
         newExpensesCount: 0,
-        newCountersCount: 0
+        newCountersCount: 0,
+        newItemsCount: 0
       },
       newMasterCandidates: {
         customers: [],
         suppliers: [],
         expenseCategories: [],
-        counters: []
+        counters: [],
+        items: []
       },
       errors: ['Uploaded XML file is empty'],
       warnings: []
@@ -693,16 +722,35 @@ export function parseTallyXmlVouchers(
       }
     } else if (normalizedType === 'sales') {
       const drLeg = legs.find(l => l.drCr === 'Dr' && !l.ledgerName.toLowerCase().includes('round off'))
-      const pName = (raw.partyName || (drLeg ? drLeg.ledgerName : (partyName || legs[0]?.ledgerName || 'General Account'))).trim()
-      partyName = pName
+      const pName = (raw.partyName || (drLeg ? drLeg.ledgerName : (partyName || legs[0]?.ledgerName || 'Cash Customer'))).trim()
       const normParty = pName.toLowerCase()
 
-      if (custMap.has(normParty)) {
+      if (isCashLedger(pName)) {
+        // Cash Sales / Walk-in Customer Auto-Resolution
+        const existingCashCust = customers.find(c =>
+          c.id === 'cust-cash' ||
+          c.name.toLowerCase().includes('cash') ||
+          c.name.toLowerCase().includes('walk-in')
+        )
+        partyName = existingCashCust ? existingCashCust.name : 'Cash Customer'
+        matchedEntityType = 'customer'
+        matchedEntityId = existingCashCust ? existingCashCust.id : 'cust-cash'
+        if (!existingCashCust) {
+          candidateCustomers.set('cash customer', {
+            name: 'Cash Customer',
+            gstin: '',
+            address: 'Counter Sale',
+            state: 'West Bengal'
+          })
+        }
+      } else if (custMap.has(normParty)) {
         matchedEntityType = 'customer'
         matchedEntityId = custMap.get(normParty)?.id
+        partyName = pName
       } else if (suppMap.has(normParty)) {
         matchedEntityType = 'supplier'
         matchedEntityId = suppMap.get(normParty)?.id
+        partyName = pName
       } else {
         candidateCustomers.set(normParty, {
           name: pName,
@@ -710,6 +758,7 @@ export function parseTallyXmlVouchers(
           state: 'West Bengal'
         })
         matchedEntityType = 'unmapped'
+        partyName = pName
         skipReason = `Unmapped Master: ${pName}`
       }
     } else if (normalizedType === 'credit_note') {
@@ -779,8 +828,21 @@ export function parseTallyXmlVouchers(
       skipReason = `Non-billing voucher type (${raw.rawVoucherType}) skipped per standard ERP audit policy`
     }
 
-    // Check inventory items matching
+    // Check inventory items matching & extract item candidates
     if (inventory.length > 0) {
+      inventory.forEach(inv => {
+        const normItem = inv.itemName.trim().toLowerCase()
+        if (!itemMap.has(normItem) && !candidateItems.has(normItem)) {
+          candidateItems.set(normItem, {
+            name: inv.itemName.trim(),
+            unit: inv.unit || 'KG',
+            hsnCode: '',
+            defaultGstRate: 18,
+            rate: inv.rate || 0
+          })
+        }
+      })
+
       const unmappedItems = inventory.filter(inv => !itemMap.has(inv.itemName.trim().toLowerCase()))
       if (unmappedItems.length > 0 && !skipReason) {
         skipReason = `Unmapped Item: ${unmappedItems.map(i => i.itemName).join(', ')}`
@@ -817,7 +879,8 @@ export function parseTallyXmlVouchers(
     customers: Array.from(candidateCustomers.values()),
     suppliers: Array.from(candidateSuppliers.values()),
     expenseCategories: Array.from(candidateExpenses.values()),
-    counters: Array.from(candidateCounters.values())
+    counters: Array.from(candidateCounters.values()),
+    items: Array.from(candidateItems.values())
   }
 
   // Summary counts
@@ -852,7 +915,8 @@ export function parseTallyXmlVouchers(
       newCustomersCount: newMasterCandidates.customers.length,
       newSuppliersCount: newMasterCandidates.suppliers.length,
       newExpensesCount: newMasterCandidates.expenseCategories.length,
-      newCountersCount: newMasterCandidates.counters.length
+      newCountersCount: newMasterCandidates.counters.length,
+      newItemsCount: newMasterCandidates.items.length
     },
     newMasterCandidates,
     errors,

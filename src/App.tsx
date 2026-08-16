@@ -2783,6 +2783,9 @@ function App() {
               if (extraEntities?.newCounters && extraEntities.newCounters.length > 0) {
                 syncSetCashBankCounters([...cashBankCounters, ...extraEntities.newCounters])
               }
+              if (extraEntities?.newItems && extraEntities.newItems.length > 0) {
+                syncSetItems([...items, ...extraEntities.newItems])
+              }
               if (newPayments.length > 0) {
                 syncSetPayments([...payments, ...newPayments])
               }

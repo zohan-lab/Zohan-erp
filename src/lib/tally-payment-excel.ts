@@ -17,7 +17,9 @@ import {
   TallyNewMasterCandidateParty,
   TallyNewMasterCandidateExpense,
   TallyNewMasterCandidateCounter,
-  isLikelyIndirectExpenseLedger
+  TallyNewMasterCandidateItem,
+  isLikelyIndirectExpenseLedger,
+  isCashLedger
 } from './tally-xml-parser'
 
 // Re-export all types so callers can import everything from this single module
@@ -1020,6 +1022,7 @@ export function parseTallyAccountingVouchersExcel(
   const candidateSuppliers = new Map<string, TallyNewMasterCandidateParty>()
   const candidateExpenses = new Map<string, TallyNewMasterCandidateExpense>()
   const candidateCounters = new Map<string, TallyNewMasterCandidateCounter>()
+  const candidateItems = new Map<string, TallyNewMasterCandidateItem>()
 
   let workbook: XLSX.WorkBook
   try {
@@ -1050,15 +1053,52 @@ export function parseTallyAccountingVouchersExcel(
         newCustomersCount: 0,
         newSuppliersCount: 0,
         newExpensesCount: 0,
-        newCountersCount: 0
+        newCountersCount: 0,
+        newItemsCount: 0
       },
       newMasterCandidates: {
         customers: [],
         suppliers: [],
         expenseCategories: [],
-        counters: []
+        counters: [],
+        items: []
       },
       errors: [`Failed to parse Excel workbook: ${err?.message || 'Invalid file format'}`],
+      warnings: []
+    }
+  }
+
+  if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+    return {
+      success: false,
+      vouchers: [],
+      summary: {
+        totalParsed: 0,
+        salesCount: 0,
+        purchaseCount: 0,
+        receiptCount: 0,
+        paymentCount: 0,
+        expenseCount: 0,
+        contraCount: 0,
+        creditNoteCount: 0,
+        debitNoteCount: 0,
+        skippedCount: 0,
+        matchedCount: 0,
+        unmappedCount: 0,
+        newCustomersCount: 0,
+        newSuppliersCount: 0,
+        newExpensesCount: 0,
+        newCountersCount: 0,
+        newItemsCount: 0
+      },
+      newMasterCandidates: {
+        customers: [],
+        suppliers: [],
+        expenseCategories: [],
+        counters: [],
+        items: []
+      },
+      errors: ['Workbook does not contain any sheets.'],
       warnings: []
     }
   }
@@ -1084,15 +1124,17 @@ export function parseTallyAccountingVouchersExcel(
         newCustomersCount: 0,
         newSuppliersCount: 0,
         newExpensesCount: 0,
-        newCountersCount: 0
+        newCountersCount: 0,
+        newItemsCount: 0
       },
       newMasterCandidates: {
         customers: [],
         suppliers: [],
         expenseCategories: [],
-        counters: []
+        counters: [],
+        items: []
       },
-      errors: ['The Excel workbook contains no sheets.'],
+      errors: ['First worksheet not found in workbook.'],
       warnings: []
     }
   }
@@ -1124,13 +1166,15 @@ export function parseTallyAccountingVouchersExcel(
         newCustomersCount: 0,
         newSuppliersCount: 0,
         newExpensesCount: 0,
-        newCountersCount: 0
+        newCountersCount: 0,
+        newItemsCount: 0
       },
       newMasterCandidates: {
         customers: [],
         suppliers: [],
         expenseCategories: [],
-        counters: []
+        counters: [],
+        items: []
       },
       errors: ['No data rows found in worksheet.'],
       warnings: []
@@ -1391,16 +1435,34 @@ export function parseTallyAccountingVouchersExcel(
       }
     } else if (normalizedType === 'sales') {
       const drLeg = legs.find(l => l.drCr === 'Dr' && !l.ledgerName.toLowerCase().includes('round off'))
-      const pName = (drLeg ? drLeg.ledgerName : (partyName || legs[0]?.ledgerName || 'General Account')).trim()
-      partyName = pName
+      const pName = (drLeg ? drLeg.ledgerName : (partyName || legs[0]?.ledgerName || 'Cash Customer')).trim()
       const normParty = pName.toLowerCase()
 
-      if (custMap.has(normParty)) {
+      if (isCashLedger(pName)) {
+        const existingCashCust = context?.customers?.find(c =>
+          c.id === 'cust-cash' ||
+          c.name.toLowerCase().includes('cash') ||
+          c.name.toLowerCase().includes('walk-in')
+        )
+        partyName = existingCashCust ? existingCashCust.name : 'Cash Customer'
+        matchedEntityType = 'customer'
+        matchedEntityId = existingCashCust ? existingCashCust.id : 'cust-cash'
+        if (!existingCashCust) {
+          candidateCustomers.set('cash customer', {
+            name: 'Cash Customer',
+            address: partyAddress,
+            pincode: partyPincode,
+            state: 'West Bengal'
+          })
+        }
+      } else if (custMap.has(normParty)) {
         matchedEntityType = 'customer'
         matchedEntityId = custMap.get(normParty)?.id
+        partyName = pName
       } else if (suppMap.has(normParty)) {
         matchedEntityType = 'supplier'
         matchedEntityId = suppMap.get(normParty)?.id
+        partyName = pName
       } else {
         candidateCustomers.set(normParty, {
           name: pName,
@@ -1409,6 +1471,7 @@ export function parseTallyAccountingVouchersExcel(
           state: 'West Bengal'
         })
         matchedEntityType = 'unmapped'
+        partyName = pName
         skipReason = `Unmapped Master: ${pName}`
       }
     } else if (normalizedType === 'credit_note') {
@@ -1481,8 +1544,21 @@ export function parseTallyAccountingVouchersExcel(
       skipReason = `Non-billing voucher type (${rawVoucherType}) skipped per standard ERP audit policy`
     }
 
-    // Check inventory items matching
+    // Check inventory items matching & extract item candidates
     if (inventory.length > 0) {
+      inventory.forEach(inv => {
+        const normItem = inv.itemName.trim().toLowerCase()
+        if (!itemMap.has(normItem) && !candidateItems.has(normItem)) {
+          candidateItems.set(normItem, {
+            name: inv.itemName.trim(),
+            unit: inv.unit || 'KG',
+            hsnCode: '',
+            defaultGstRate: 18,
+            rate: inv.rate || 0
+          })
+        }
+      })
+
       const unmappedItems = inventory.filter(inv => !itemMap.has(inv.itemName.trim().toLowerCase()))
       if (unmappedItems.length > 0 && !skipReason) {
         skipReason = `Unmapped Item: ${unmappedItems.map(i => i.itemName).join(', ')}`
@@ -1519,7 +1595,8 @@ export function parseTallyAccountingVouchersExcel(
     customers: Array.from(candidateCustomers.values()),
     suppliers: Array.from(candidateSuppliers.values()),
     expenseCategories: Array.from(candidateExpenses.values()),
-    counters: Array.from(candidateCounters.values())
+    counters: Array.from(candidateCounters.values()),
+    items: Array.from(candidateItems.values())
   }
 
   // Calculate summary counts
@@ -1554,7 +1631,8 @@ export function parseTallyAccountingVouchersExcel(
       newCustomersCount: newMasterCandidates.customers.length,
       newSuppliersCount: newMasterCandidates.suppliers.length,
       newExpensesCount: newMasterCandidates.expenseCategories.length,
-      newCountersCount: newMasterCandidates.counters.length
+      newCountersCount: newMasterCandidates.counters.length,
+      newItemsCount: newMasterCandidates.items.length
     },
     newMasterCandidates,
     errors,

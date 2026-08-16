@@ -690,6 +690,7 @@ export interface TallyImportDialogProps {
       newSuppliers?: Supplier[]
       newExpenseTypes?: ExpenseType[]
       newCounters?: Counter[]
+      newItems?: Item[]
     }
   ) => void
 }
@@ -855,7 +856,7 @@ export function TallyImportDialog({
 
       // Check inventory item matching
       const unmappedItems = (v.inventory || []).filter(inv => !itemMap.has(inv.itemName.trim().toLowerCase()))
-      const hasUnmappedItem = unmappedItems.length > 0
+      const hasUnmappedItem = !autoCreateMasters && unmappedItems.length > 0
       let unmappedReason = v.skipReason
 
       if (effectiveType !== 'skipped') {
@@ -895,6 +896,7 @@ export function TallyImportDialog({
     const suppSet = new Set<string>()
     const expSet = new Set<string>()
     const cntrSet = new Set<string>()
+    const itemSet = new Set<string>()
 
     processedList.forEach(v => {
       if (v.effectiveType === 'skipped') return
@@ -904,6 +906,10 @@ export function TallyImportDialog({
         if (v.matchedEntityType === 'supplier' && !supplierMap.has(norm)) suppSet.add(v.partyName.trim())
         if (v.matchedEntityType === 'expense' && !expenseTypeMap.has(norm)) expSet.add(v.partyName.trim())
       }
+      (v.inventory || []).forEach(inv => {
+        const normItem = inv.itemName.trim().toLowerCase()
+        if (!itemMap.has(normItem)) itemSet.add(inv.itemName.trim())
+      })
       if (v.effectiveType === 'contra') {
         const fromName = (v.contraDetails?.fromCounterName || '').trim()
         const toName = (v.contraDetails?.toCounterName || '').trim()
@@ -916,9 +922,10 @@ export function TallyImportDialog({
       customersCount: custSet.size,
       suppliersCount: suppSet.size,
       expensesCount: expSet.size,
-      countersCount: cntrSet.size
+      countersCount: cntrSet.size,
+      itemsCount: itemSet.size
     }
-  }, [processedList, customerMap, supplierMap, expenseTypeMap, counterMap])
+  }, [processedList, customerMap, supplierMap, expenseTypeMap, counterMap, itemMap])
 
   // Summary counts
   const totalCount = processedList.length
@@ -1137,15 +1144,17 @@ export function TallyImportDialog({
     const generatedSuppliers: Supplier[] = []
     const generatedExpenseTypes: ExpenseType[] = []
     const generatedCounters: Counter[] = []
+    const generatedItems: Item[] = []
 
     const autoCustMap = new Map<string, string>()
     const autoSuppMap = new Map<string, string>()
     const autoExpMap = new Map<string, string>()
     const autoCntrMap = new Map<string, string>()
+    const autoItemMap = new Map<string, string>()
 
     if (autoCreateMasters) {
       const timestamp = Date.now()
-      let custSeq = 0, suppSeq = 0, expSeq = 0, cntrSeq = 0
+      let custSeq = 0, suppSeq = 0, expSeq = 0, cntrSeq = 0, itemSeq = 0
 
       processedList.forEach(v => {
         if (!v.isIncluded || v.effectiveType === 'skipped') return
@@ -1190,6 +1199,26 @@ export function TallyImportDialog({
             } as ExpenseType)
           }
         }
+
+        // Auto-Create Missing Inventory Items
+        (v.inventory || []).forEach(inv => {
+          const normItem = inv.itemName.trim().toLowerCase()
+          if (!itemMap.has(normItem) && !autoItemMap.has(normItem)) {
+            itemSeq++
+            const newId = `item-auto-${timestamp}-${itemSeq}`
+            autoItemMap.set(normItem, newId)
+            generatedItems.push({
+              id: newId,
+              name: inv.itemName.trim(),
+              unit: inv.unit || 'KG',
+              purchasePrice: inv.rate || 0,
+              salesPrice: inv.rate || 0,
+              gstRate: 18,
+              openingStock: 0,
+              openingValue: 0
+            } as Item)
+          }
+        })
 
         // Check Contra Counters
         if (v.effectiveType === 'contra') {
@@ -1246,6 +1275,7 @@ export function TallyImportDialog({
             paymentMode: 'Bank',
             counterName: v.legs.find(l => l.ledgerName !== v.partyName)?.ledgerName || 'Bank Account',
             notes: `Imported from Tally Voucher #${v.voucherNumber}`,
+            fy: '2025-2026',
             createdAt: Date.now()
           } as any)
         } else {
@@ -1297,50 +1327,85 @@ export function TallyImportDialog({
             paymentMode: 'Bank',
             counterName: v.legs.find(l => l.ledgerName !== v.partyName)?.ledgerName || 'Bank Account',
             notes: `Imported from Tally Voucher #${v.voucherNumber}`,
+            fy: '2025-2026',
             createdAt: Date.now()
           } as any)
         } else {
           skipped++
         }
       } else if (v.effectiveType === 'sales' && v.matchedEntityType === 'customer') {
-        const custId = v.matchedEntityId || autoCustMap.get(normParty) || customerMap.get(normParty)?.id
-        if (custId) {
-          newSalesInvoices.push({
-            id: `tally-inv-${Date.now()}-${idx}`,
-            invoiceNumber: v.voucherNumber,
-            customerId: custId,
-            date: v.voucherDate || new Date().toISOString().split('T')[0],
-            totalAmount: v.totalAmount,
-            taxableAmount: v.legs.find(l => l.ledgerName.toLowerCase().includes('sale'))?.amount || v.totalAmount,
-            status: 'Confirmed',
-            items: v.inventory.map(inv => ({
-              itemId: itemMap.get(inv.itemName.toLowerCase())?.id || 'item-gen',
+        const custId = v.matchedEntityId || autoCustMap.get(normParty) || customerMap.get(normParty)?.id || 'cust-cash'
+        const taxableAmount = v.legs.find(l => l.ledgerName.toLowerCase().includes('sale'))?.amount || (v.inventory.length > 0 ? v.inventory.reduce((s, it) => s + it.amount, 0) : v.totalAmount)
+        const cgstAmount = v.legs.find(l => l.ledgerName.toLowerCase().includes('cgst'))?.amount || 0
+        const sgstAmount = v.legs.find(l => l.ledgerName.toLowerCase().includes('sgst') || l.ledgerName.toLowerCase().includes('utgst'))?.amount || 0
+        const igstAmount = v.legs.find(l => l.ledgerName.toLowerCase().includes('igst'))?.amount || 0
+
+        newSalesInvoices.push({
+          id: `inv-tally-${Date.now()}-${idx}`,
+          invoiceNo: v.voucherNumber,
+          customerId: custId,
+          invoiceDate: v.voucherDate || new Date().toISOString().split('T')[0],
+          invoiceAmount: v.totalAmount,
+          totalAmount: v.totalAmount,
+          taxableAmount,
+          cgstAmount,
+          sgstAmount,
+          igstAmount,
+          items: v.inventory.map(inv => {
+            const norm = inv.itemName.trim().toLowerCase()
+            const itemId = itemMap.get(norm)?.id || autoItemMap.get(norm) || 'item-gen'
+            return {
+              itemId,
               baseQuantity: inv.quantity,
+              enteredQuantity: inv.quantity,
+              baseRate: inv.rate,
               rate: inv.rate,
-              amount: inv.amount
-            })),
-            createdAt: Date.now()
-          } as any)
-        } else {
-          skipped++
-        }
+              amount: inv.amount,
+              taxableAmount: inv.amount,
+              itemNameSnapshot: inv.itemName,
+              itemUnitSnapshot: inv.unit || 'KG'
+            }
+          }),
+          fy: '2025-2026',
+          history: []
+        } as any)
       } else if (v.effectiveType === 'purchase' && v.matchedEntityType === 'supplier') {
         const suppId = v.matchedEntityId || autoSuppMap.get(normParty) || supplierMap.get(normParty)?.id
         if (suppId) {
+          const taxableAmount = v.legs.find(l => l.ledgerName.toLowerCase().includes('purchase'))?.amount || (v.inventory.length > 0 ? v.inventory.reduce((s, it) => s + it.amount, 0) : v.totalAmount)
+          const cgstAmount = v.legs.find(l => l.ledgerName.toLowerCase().includes('cgst'))?.amount || 0
+          const sgstAmount = v.legs.find(l => l.ledgerName.toLowerCase().includes('sgst') || l.ledgerName.toLowerCase().includes('utgst'))?.amount || 0
+          const igstAmount = v.legs.find(l => l.ledgerName.toLowerCase().includes('igst'))?.amount || 0
+
           newPurchaseInvoices.push({
-            id: `tally-pur-${Date.now()}-${idx}`,
-            invoiceNumber: v.voucherNumber,
+            id: `pur-tally-${Date.now()}-${idx}`,
+            invoiceNo: v.voucherNumber,
             supplierId: suppId,
             invoiceDate: v.voucherDate || new Date().toISOString().split('T')[0],
+            invoiceAmount: v.totalAmount,
             totalAmount: v.totalAmount,
-            taxableAmount: v.legs.find(l => l.ledgerName.toLowerCase().includes('purchase'))?.amount || v.totalAmount,
-            items: v.inventory.map(inv => ({
-              itemId: itemMap.get(inv.itemName.toLowerCase())?.id || 'item-gen',
-              baseQuantity: inv.quantity,
-              rate: inv.rate,
-              amount: inv.amount
-            })),
-            createdAt: Date.now()
+            taxableAmount,
+            cgstAmount,
+            sgstAmount,
+            igstAmount,
+            items: v.inventory.map(inv => {
+              const norm = inv.itemName.trim().toLowerCase()
+              const itemId = itemMap.get(norm)?.id || autoItemMap.get(norm) || 'item-gen'
+              return {
+                itemId,
+                baseQuantity: inv.quantity,
+                enteredQuantity: inv.quantity,
+                baseRate: inv.rate,
+                rate: inv.rate,
+                amount: inv.amount,
+                taxableAmount: inv.amount,
+                itemNameSnapshot: inv.itemName,
+                itemUnitSnapshot: inv.unit || 'KG'
+              }
+            }),
+            fy: '2025-2026',
+            createdAt: Date.now(),
+            history: []
           } as any)
         } else {
           skipped++
@@ -1392,14 +1457,16 @@ export function TallyImportDialog({
       newCustomers: generatedCustomers,
       newSuppliers: generatedSuppliers,
       newExpenseTypes: generatedExpenseTypes,
-      newCounters: generatedCounters
+      newCounters: generatedCounters,
+      newItems: generatedItems
     })
 
     const createdSummary = [
       generatedCustomers.length > 0 ? `${generatedCustomers.length} customer(s)` : null,
       generatedSuppliers.length > 0 ? `${generatedSuppliers.length} supplier(s)` : null,
       generatedExpenseTypes.length > 0 ? `${generatedExpenseTypes.length} expense category(ies)` : null,
-      generatedCounters.length > 0 ? `${generatedCounters.length} bank/cash counter(s)` : null
+      generatedCounters.length > 0 ? `${generatedCounters.length} bank/cash counter(s)` : null,
+      generatedItems.length > 0 ? `${generatedItems.length} inventory item(s)` : null
     ].filter(Boolean).join(', ')
 
     toast.success(`Successfully imported ${imported} voucher(s) into ERP accounts`, {
@@ -1532,6 +1599,11 @@ export function TallyImportDialog({
                 {autoCreateMasters && newMastersSummary.countersCount > 0 && (
                   <Badge className="bg-cyan-100 text-cyan-800 border-cyan-200 text-[10px]">
                     +{newMastersSummary.countersCount} Counters
+                  </Badge>
+                )}
+                {autoCreateMasters && newMastersSummary.itemsCount > 0 && (
+                  <Badge className="bg-indigo-100 text-indigo-800 border-indigo-200 text-[10px]">
+                    +{newMastersSummary.itemsCount} Items
                   </Badge>
                 )}
               </div>
