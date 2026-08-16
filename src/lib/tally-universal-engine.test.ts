@@ -8,7 +8,7 @@ import {
   generateTallyXML,
   DEFAULT_TALLY_LEDGER_MAPPING
 } from './tally-universal-engine'
-import { SalesInvoice, PurchaseInvoice, CustomerCreditNote, SupplierDebitNote, ExpenseEntry, Customer, Supplier } from './types'
+import { SalesInvoice, PurchaseInvoice, CustomerCreditNote, SupplierDebitNote, ExpenseEntry, Customer, Supplier, Item, ExpenseType } from './types'
 
 describe('Universal Tally Compound Double-Entry Engine', () => {
   const mockCustomers: Customer[] = [
@@ -19,6 +19,14 @@ describe('Universal Tally Compound Double-Entry Engine', () => {
   const mockSuppliers: Supplier[] = [
     { id: 's1', name: 'Apex Steel Industries', gstin: '19AAACS9999F1Z3', stateCode: '19', paymentCDRules: [], invoiceCloseCDRules: [] },
     { id: 's2', name: 'National Cement Corp', gstin: '20CCCCS1111F1Z4', stateCode: '20', paymentCDRules: [], invoiceCloseCDRules: [] }
+  ]
+
+  const mockItems: Item[] = [
+    { id: 'item-3pct', name: 'Gold Dust (3% Tax Slab)', gstRate: 3, unit: 'GM', purchasePrice: 485.44, salesPrice: 485.44, openingStock: 10 }
+  ]
+
+  const mockExpenseTypes: ExpenseType[] = [
+    { id: 'exp-cat-1786873355957', name: 'Office Maintenance', isGstApplicable: true, defaultGstRate: 18 }
   ]
 
   it('generates perfectly balanced intra-state Sales vouchers with CGST & SGST', () => {
@@ -37,7 +45,7 @@ describe('Universal Tally Compound Double-Entry Engine', () => {
       }
     ]
 
-    const vouchers = generateTallySalesVouchers(salesInvoices, mockCustomers, DEFAULT_TALLY_LEDGER_MAPPING, '19')
+    const vouchers = generateTallySalesVouchers(salesInvoices, mockCustomers, mockItems, DEFAULT_TALLY_LEDGER_MAPPING, '19')
     expect(vouchers).toHaveLength(1)
     const v = vouchers[0]
     expect(v.voucherType).toBe('Sales')
@@ -53,6 +61,53 @@ describe('Universal Tally Compound Double-Entry Engine', () => {
     expect(v.legs[2]).toEqual({ ledgerName: 'Output CGST', amount: 900, drCr: 'Cr' })
     // Leg 4: Cr Output SGST ₹900
     expect(v.legs[3]).toEqual({ ledgerName: 'Output SGST', amount: 900, drCr: 'Cr' })
+  })
+
+  it('accurately computes 3% GST rate with zero false round-off for Invoice #JHHGV', () => {
+    const salesInvoices: SalesInvoice[] = [
+      {
+        id: 'si-jhhgv',
+        customerId: 'c1',
+        invoiceNo: 'JHHGV',
+        invoiceDate: '2026-08-16',
+        invoiceAmount: 500,
+        totalAmount: 500,
+        items: [
+          {
+            itemId: 'item-3pct',
+            enteredQuantity: 1,
+            enteredUnit: 'GM',
+            baseQuantity: 1,
+            rate: 500,
+            amount: 500,
+            gstRate: 3
+          }
+        ],
+        fy: '2026-2027'
+      }
+    ]
+
+    const vouchers = generateTallySalesVouchers(salesInvoices, mockCustomers, mockItems, DEFAULT_TALLY_LEDGER_MAPPING, '19')
+    expect(vouchers).toHaveLength(1)
+    const v = vouchers[0]
+    expect(v.isBalanced).toBe(true)
+    expect(v.imbalanceDifference).toBe(0)
+
+    // Base Taxable: ₹485.44
+    const salesLeg = v.legs.find(l => l.ledgerName === 'Sales Account')
+    expect(salesLeg?.amount).toBe(485.44)
+
+    // CGST 1.5%: ₹7.28
+    const cgstLeg = v.legs.find(l => l.ledgerName === 'Output CGST')
+    expect(cgstLeg?.amount).toBe(7.28)
+
+    // SGST 1.5%: ₹7.28
+    const sgstLeg = v.legs.find(l => l.ledgerName === 'Output SGST')
+    expect(sgstLeg?.amount).toBe(7.28)
+
+    // Round Off: ₹0.00
+    const roundOffLeg = v.legs.find(l => l.ledgerName === 'Round Off')
+    expect(roundOffLeg).toBeUndefined()
   })
 
   it('generates balanced inter-state Purchase vouchers with IGST', () => {
@@ -71,7 +126,7 @@ describe('Universal Tally Compound Double-Entry Engine', () => {
       }
     ]
 
-    const vouchers = generateTallyPurchaseVouchers(purchaseInvoices, mockSuppliers, DEFAULT_TALLY_LEDGER_MAPPING, '19')
+    const vouchers = generateTallyPurchaseVouchers(purchaseInvoices, mockSuppliers, mockItems, DEFAULT_TALLY_LEDGER_MAPPING, '19')
     expect(vouchers).toHaveLength(1)
     const v = vouchers[0]
     expect(v.voucherType).toBe('Purchase')
@@ -122,6 +177,50 @@ describe('Universal Tally Compound Double-Entry Engine', () => {
     expect(v.legs[3]).toEqual({ ledgerName: 'Output SGST', amount: 90, drCr: 'Dr' })
   })
 
+  it('resolves clean expense category display name instead of leaking raw UUIDs', () => {
+    const expenses: ExpenseEntry[] = [
+      {
+        id: 'exp-clean-1',
+        expenseTypeId: 'exp-cat-1786873355957',
+        categoryId: 'exp-cat-1786873355957',
+        supplierName: 'RESHOB',
+        amount: 1000,
+        taxableAmount: 847.46,
+        hasGst: true,
+        gstRate: 18,
+        cgstAmount: 76.27,
+        sgstAmount: 76.27,
+        igstAmount: 0,
+        totalExpenseAmount: 1000,
+        expenseDate: '2026-08-16',
+        fy: '2026-2027'
+      }
+    ]
+
+    const vouchers = generateTallyExpenseVouchers(expenses, mockExpenseTypes, DEFAULT_TALLY_LEDGER_MAPPING, '19')
+    expect(vouchers).toHaveLength(1)
+    const v = vouchers[0]
+    expect(v.isBalanced).toBe(true)
+
+    // Should resolve to 'Office Maintenance - RESHOB' rather than 'exp-cat-1786873355957 - RESHOB'
+    expect(v.legs[0].ledgerName).toBe('Office Maintenance - RESHOB')
+    expect(v.legs[0].amount).toBe(847.46)
+    expect(v.legs[0].drCr).toBe('Dr')
+
+    // Input CGST leg
+    expect(v.legs[1].ledgerName).toBe('Input CGST')
+    expect(v.legs[1].amount).toBe(76.27)
+
+    // Input SGST leg
+    expect(v.legs[2].ledgerName).toBe('Input SGST')
+    expect(v.legs[2].amount).toBe(76.27)
+
+    // Bank Account leg
+    expect(v.legs[3].ledgerName).toBe('Bank Account')
+    expect(v.legs[3].amount).toBe(1000)
+    expect(v.legs[3].drCr).toBe('Cr')
+  })
+
   it('generates GTA 5% RCM dual vouchers (Payment + Journal)', () => {
     const expenses: ExpenseEntry[] = [
       {
@@ -145,7 +244,7 @@ describe('Universal Tally Compound Double-Entry Engine', () => {
       }
     ]
 
-    const vouchers = generateTallyExpenseVouchers(expenses, DEFAULT_TALLY_LEDGER_MAPPING, '19')
+    const vouchers = generateTallyExpenseVouchers(expenses, mockExpenseTypes, DEFAULT_TALLY_LEDGER_MAPPING, '19')
     expect(vouchers).toHaveLength(2)
 
     // Voucher 1: Payment to Transporter
@@ -176,7 +275,7 @@ describe('Universal Tally Compound Double-Entry Engine', () => {
       }
     ]
 
-    const vouchers = generateTallySalesVouchers(salesInvoices, mockCustomers, DEFAULT_TALLY_LEDGER_MAPPING, '19')
+    const vouchers = generateTallySalesVouchers(salesInvoices, mockCustomers, mockItems, DEFAULT_TALLY_LEDGER_MAPPING, '19')
     const xml = generateTallyXML(vouchers, 'SK TRADERS')
 
     expect(xml).toContain('<ENVELOPE>')

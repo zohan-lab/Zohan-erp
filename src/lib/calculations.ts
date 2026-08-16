@@ -2118,7 +2118,11 @@ export function calculateExpenseTaxBreakdown(params: ExpenseTaxBreakdownParams):
     cgstRate = rate / 2
     sgstRate = rate / 2
     cgstAmount = roundCurrency(totalTaxAmount / 2)
-    sgstAmount = roundCurrency(totalTaxAmount - cgstAmount)
+    sgstAmount = roundCurrency(totalTaxAmount / 2)
+    totalTaxAmount = roundCurrency(cgstAmount + sgstAmount)
+    if (isTaxInclusive) {
+      taxableAmount = roundCurrency(totalExpenseAmount - totalTaxAmount)
+    }
   }
 
   return {

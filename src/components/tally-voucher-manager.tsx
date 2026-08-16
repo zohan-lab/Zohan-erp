@@ -87,7 +87,9 @@ import {
   Customer,
   Supplier,
   Payment,
-  CustomerPayment
+  CustomerPayment,
+  Item,
+  ExpenseType
 } from '@/lib/types'
 import { formatCurrency } from '@/lib/calculations'
 import { toast } from 'sonner'
@@ -105,6 +107,8 @@ interface TallyVoucherManagerProps {
   suppliers?: Supplier[]
   payments?: Payment[]
   customerPayments?: CustomerPayment[]
+  items?: Item[]
+  expenseTypes?: ExpenseType[]
   businessName?: string
   companyStateCode?: string
   onImportToERP?: (vouchers: PaymentVoucher[]) => void
@@ -126,6 +130,8 @@ export function TallyVoucherManager({
   suppliers = [],
   payments = [],
   customerPayments = [],
+  items = [],
+  expenseTypes = [],
   businessName = 'SK TRADERS',
   companyStateCode = '19',
   onImportToERP,
@@ -208,12 +214,12 @@ export function TallyVoucherManager({
 
   // Generate Multi-Line Compound Vouchers dynamically
   const compoundSalesVouchers = useMemo(() => {
-    return generateTallySalesVouchers(salesInvoices, customers, ledgerMapping, companyStateCode)
-  }, [salesInvoices, customers, ledgerMapping, companyStateCode])
+    return generateTallySalesVouchers(salesInvoices, customers, items, ledgerMapping, companyStateCode)
+  }, [salesInvoices, customers, items, ledgerMapping, companyStateCode])
 
   const compoundPurchaseVouchers = useMemo(() => {
-    return generateTallyPurchaseVouchers(purchaseInvoices, suppliers, ledgerMapping, companyStateCode)
-  }, [purchaseInvoices, suppliers, ledgerMapping, companyStateCode])
+    return generateTallyPurchaseVouchers(purchaseInvoices, suppliers, items, ledgerMapping, companyStateCode)
+  }, [purchaseInvoices, suppliers, items, ledgerMapping, companyStateCode])
 
   const compoundNotesVouchers = useMemo(() => {
     const cn = generateTallyCreditNoteVouchers(customerCreditNotes, customers, ledgerMapping, companyStateCode)
@@ -222,8 +228,8 @@ export function TallyVoucherManager({
   }, [customerCreditNotes, supplierDebitNotes, customers, suppliers, ledgerMapping, companyStateCode])
 
   const compoundExpenseVouchers = useMemo(() => {
-    return generateTallyExpenseVouchers(expenseEntries, ledgerMapping, companyStateCode)
-  }, [expenseEntries, ledgerMapping, companyStateCode])
+    return generateTallyExpenseVouchers(expenseEntries, expenseTypes, ledgerMapping, companyStateCode)
+  }, [expenseEntries, expenseTypes, ledgerMapping, companyStateCode])
 
   // Save Ledger Mapping
   const handleSaveLedgerMapping = () => {
@@ -704,7 +710,7 @@ export function TallyVoucherManager({
                         ) : (
                           <Badge variant="destructive" className="text-[10px] flex items-center gap-1">
                             <WarningCircle className="w-3 h-3" />
-                            Diff: {formatCurrency(v.imbalanceDifference)}
+                            Diff: {formatCurrency(v.imbalanceDifference || 0)}
                           </Badge>
                         )}
                       </div>

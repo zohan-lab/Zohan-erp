@@ -44,7 +44,9 @@ import {
   Customer,
   Supplier,
   Payment,
-  CustomerPayment
+  CustomerPayment,
+  Item,
+  ExpenseType
 } from '@/lib/types'
 import { formatCurrency } from '@/lib/calculations'
 import {
@@ -100,6 +102,8 @@ export interface TallyExportDialogProps {
   customerPayments?: CustomerPayment[]
   customers?: Customer[]
   suppliers?: Supplier[]
+  items?: Item[]
+  expenseTypes?: ExpenseType[]
   businessName?: string
   companyStateCode?: string
   currentFY?: string
@@ -119,6 +123,8 @@ export function TallyExportDialog({
   customerPayments = [],
   customers = [],
   suppliers = [],
+  items = [],
+  expenseTypes = [],
   businessName = 'SK TRADERS',
   companyStateCode = '19',
   currentFY = '2026-2027'
@@ -170,13 +176,13 @@ export function TallyExportDialog({
   // Generate multi-line compound vouchers
   const salesVouchers = useMemo(() => {
     if (!includeSales) return []
-    return generateTallySalesVouchers(filteredSales, customers, ledgerMapping, companyStateCode)
-  }, [includeSales, filteredSales, customers, ledgerMapping, companyStateCode])
+    return generateTallySalesVouchers(filteredSales, customers, items, ledgerMapping, companyStateCode)
+  }, [includeSales, filteredSales, customers, items, ledgerMapping, companyStateCode])
 
   const purchaseVouchers = useMemo(() => {
     if (!includePurchases) return []
-    return generateTallyPurchaseVouchers(filteredPurchases, suppliers, ledgerMapping, companyStateCode)
-  }, [includePurchases, filteredPurchases, suppliers, ledgerMapping, companyStateCode])
+    return generateTallyPurchaseVouchers(filteredPurchases, suppliers, items, ledgerMapping, companyStateCode)
+  }, [includePurchases, filteredPurchases, suppliers, items, ledgerMapping, companyStateCode])
 
   const noteVouchers = useMemo(() => {
     if (!includeNotes) return []
@@ -187,8 +193,8 @@ export function TallyExportDialog({
 
   const expenseVouchers = useMemo(() => {
     if (!includeExpenses) return []
-    return generateTallyExpenseVouchers(filteredExpenses, ledgerMapping, companyStateCode)
-  }, [includeExpenses, filteredExpenses, ledgerMapping, companyStateCode])
+    return generateTallyExpenseVouchers(filteredExpenses, expenseTypes, ledgerMapping, companyStateCode)
+  }, [includeExpenses, filteredExpenses, expenseTypes, ledgerMapping, companyStateCode])
 
   const paymentVouchers = useMemo(() => {
     if (!includePayments) return []

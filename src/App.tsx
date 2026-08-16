@@ -2755,6 +2755,8 @@ function App() {
             customerPayments={safeCustomerPayments}
             customers={safeCustomers}
             suppliers={safeSuppliers}
+            items={safeItems}
+            expenseTypes={safeExpenseTypes}
             businessName={safeBusinessName}
             companyStateCode={getActiveCompanyStateCode('19')}
             currentFY={safeCurrentFY}

@@ -318,7 +318,8 @@ export default function SalesInvoicesPage({
         rate,
         amount: parseFloat((norm.baseAmount).toFixed(2)),
         baseRate: norm.baseRate,
-        enteredRate: rate
+        enteredRate: rate,
+        gstRate: typeof item?.gstRate === 'number' ? item.gstRate : undefined
       }
 
       const emptyIndex = prev.findIndex(existing => !existing.itemId)
@@ -485,6 +486,9 @@ export default function SalesInvoicesPage({
 
     const sanitizedItems: InvoiceItem[] = invoiceItems.map(item => {
       const itemDef = items.find(i => i.id === item.itemId)
+      const lineGstRate = typeof item.gstRate === 'number'
+        ? item.gstRate
+        : (typeof itemDef?.gstRate === 'number' ? itemDef.gstRate : gstPercentage)
       return {
         itemId: item.itemId,
         enteredQuantity: item.enteredQuantity,
@@ -496,7 +500,9 @@ export default function SalesInvoicesPage({
         baseRate: item.baseRate,
         enteredRate: item.enteredRate,
         itemNameSnapshot: itemDef?.name,
-        itemUnitSnapshot: itemDef?.unit
+        itemUnitSnapshot: itemDef?.unit,
+        gstRate: lineGstRate,
+        taxableAmount: item.taxableAmount
       }
     })
 
@@ -511,13 +517,28 @@ export default function SalesInvoicesPage({
       defaultGstRate: gstPercentage
     })
 
+    const finalItems: InvoiceItem[] = sanitizedItems.map((sItem, idx) => {
+      const lineBreakdown = taxSummary.lineBreakdowns[idx]
+      return {
+        ...sItem,
+        taxableAmount: lineBreakdown ? lineBreakdown.taxableAmount : sItem.taxableAmount,
+        gstRate: lineBreakdown ? lineBreakdown.gstRate : sItem.gstRate,
+        cgstRate: lineBreakdown?.cgstRate,
+        cgstAmount: lineBreakdown?.cgstAmount,
+        sgstRate: lineBreakdown?.sgstRate,
+        sgstAmount: lineBreakdown?.sgstAmount,
+        igstRate: lineBreakdown?.igstRate,
+        igstAmount: lineBreakdown?.igstAmount
+      }
+    })
+
     if (editingInvoice) {
       const updatedInvoice: SalesInvoice = {
         ...editingInvoice,
         customerId,
         invoiceNo,
         invoiceDate: formData.get('invoiceDate') as string,
-        items: sanitizedItems,
+        items: finalItems,
         invoiceAmount: finalInvoiceAmount,
         additionalCost,
         additionalCostBasicRate: additionalCostBasicRate || undefined,
@@ -559,7 +580,7 @@ export default function SalesInvoicesPage({
         customerId,
         invoiceNo,
         invoiceDate: formData.get('invoiceDate') as string,
-        items: sanitizedItems,
+        items: finalItems,
         invoiceAmount: finalInvoiceAmount,
         additionalCost,
         additionalCostBasicRate: additionalCostBasicRate || undefined,
@@ -1482,9 +1503,37 @@ export default function SalesInvoicesPage({
                                     </>
                                   )}
                                   <div className="erp-summary-divider"></div>
-                                  <div className="erp-summary-item discount">
-                                    <span>Round Off</span>
-                                    <span className="value">{roundOffAdjustment >= 0 ? '+' : ''}₹{roundOffAdjustment.toFixed(2)}</span>
+                                  <div className="erp-summary-item discount flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5">
+                                      <span>Round Off</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const rawTotal = totalInvoiceAmount + additionalCostFinal
+                                          if (roundOffAdjustment !== 0) {
+                                            setRoundOffAdjustment(0)
+                                          } else {
+                                            const nearestInt = Math.round(rawTotal)
+                                            const diff = parseFloat((nearestInt - rawTotal).toFixed(2))
+                                            setRoundOffAdjustment(diff)
+                                          }
+                                        }}
+                                        className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-[#5B5FEF] border border-indigo-200 shadow-2xs transition-all cursor-pointer"
+                                        title="Auto calculate round-off to nearest rupee or clear"
+                                      >
+                                        {roundOffAdjustment !== 0 ? 'Clear' : 'Auto Round'}
+                                      </button>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                      <Input
+                                        type="number"
+                                        step="0.01"
+                                        value={roundOffAdjustment || ''}
+                                        onChange={e => setRoundOffAdjustment(parseFloat(e.target.value) || 0)}
+                                        placeholder="0.00"
+                                        className="h-6 w-20 text-right font-mono text-xs px-1.5 py-0 border-slate-200 rounded"
+                                      />
+                                    </div>
                                   </div>
                                   {receivedAmountPreview > 0 && (
                                     <>

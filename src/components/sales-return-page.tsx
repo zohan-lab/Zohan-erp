@@ -1110,7 +1110,26 @@ export default function SalesReturnPage({
                     </div>
 
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground font-medium">Round-Off Adjustment:</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-muted-foreground font-medium">Round-Off Adjustment:</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const rawTotal = itemsSubtotal + additionalCost
+                            if (roundOffAdjustment !== 0) {
+                              setRoundOffAdjustment(0)
+                            } else {
+                              const nearestInt = Math.round(rawTotal)
+                              const diff = parseFloat((nearestInt - rawTotal).toFixed(2))
+                              setRoundOffAdjustment(diff)
+                            }
+                          }}
+                          className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-[#5B5FEF] border border-indigo-200 shadow-2xs transition-all cursor-pointer"
+                          title="Auto calculate round-off to nearest rupee or clear"
+                        >
+                          {roundOffAdjustment !== 0 ? 'Clear' : 'Auto Round'}
+                        </button>
+                      </div>
                       <div className="flex items-center gap-1">
                         <span className="text-xs text-muted-foreground">₹</span>
                         <Input
@@ -1119,6 +1138,7 @@ export default function SalesReturnPage({
                           className="h-8 w-28 text-right font-mono text-sm bg-background"
                           value={roundOffAdjustment || ''}
                           onChange={e => setRoundOffAdjustment(parseFloat(e.target.value) || 0)}
+                          placeholder="0.00"
                         />
                       </div>
                     </div>

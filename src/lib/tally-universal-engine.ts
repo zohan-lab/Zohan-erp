@@ -10,9 +10,11 @@ import {
   Customer,
   Supplier,
   Payment,
-  CustomerPayment
+  CustomerPayment,
+  Item,
+  ExpenseType
 } from './types'
-import { roundCurrency, isInterStateTransaction, getActiveCompanyStateCode } from './calculations'
+import { roundCurrency, isInterStateTransaction, getActiveCompanyStateCode, calculateInvoiceTaxBreakdown, calculateExpenseTaxBreakdown } from './calculations'
 import { getStateName, getStateCode } from './constants/indian-states'
 import { TALLY_COLUMN_HEADERS, TallyExportRow, normalizeTallyDate } from './tally-payment-excel'
 
@@ -49,12 +51,12 @@ export const DEFAULT_TALLY_LEDGER_MAPPING: TallyLedgerMapping = {
   inputCgstLedgerName: 'Input CGST',
   inputSgstLedgerName: 'Input SGST',
   inputIgstLedgerName: 'Input IGST',
-  rcmLiabilityCgstLedgerName: 'Output CGST (RCM)',
-  rcmLiabilitySgstLedgerName: 'Output SGST (RCM)',
-  rcmLiabilityIgstLedgerName: 'Output IGST (RCM)',
-  rcmItcCgstLedgerName: 'Input CGST (RCM)',
-  rcmItcSgstLedgerName: 'Input SGST (RCM)',
-  rcmItcIgstLedgerName: 'Input IGST (RCM)',
+  rcmLiabilityCgstLedgerName: 'RCM Output CGST',
+  rcmLiabilitySgstLedgerName: 'RCM Output SGST',
+  rcmLiabilityIgstLedgerName: 'RCM Output IGST',
+  rcmItcCgstLedgerName: 'RCM Input CGST',
+  rcmItcSgstLedgerName: 'RCM Input SGST',
+  rcmItcIgstLedgerName: 'RCM Input IGST',
   roundOffLedgerName: 'Round Off',
   defaultCashLedgerName: 'Cash',
   defaultBankLedgerName: 'Bank Account'
@@ -71,25 +73,27 @@ export interface TallyCompoundVoucher {
   voucherNumber: string
   voucherDate: string // YYYY-MM-DD
   displayDate: string // DD-MM-YYYY
-  voucherType: 'Sales' | 'Purchase' | 'Credit Note' | 'Debit Note' | 'Payment' | 'Receipt' | 'Journal' | 'Contra'
+  voucherType: 'Sales' | 'Purchase' | 'Credit Note' | 'Debit Note' | 'Payment' | 'Receipt' | 'Journal'
   partyName: string
   partyAddress?: string
   partyPincode?: string
   partyGstin?: string
-  narration: string
+  narration?: string
   legs: TallyCompoundLeg[]
   totalAmount: number
   isBalanced: boolean
-  imbalanceDifference: number
+  imbalanceDifference?: number
 }
 
 function formatDateForTally(dateStr?: string): { iso: string; dmy: string; yyyymmdd: string } {
   if (!dateStr) {
-    const now = new Date()
-    const iso = now.toISOString().split('T')[0]
-    const dmy = `${String(now.getDate()).padStart(2, '0')}-${String(now.getMonth() + 1).padStart(2, '0')}-${now.getFullYear()}`
-    const yyyymmdd = iso.replace(/-/g, '')
-    return { iso, dmy, yyyymmdd }
+    const today = new Date().toISOString().slice(0, 10)
+    const parts = today.split('-')
+    return {
+      iso: today,
+      dmy: `${parts[2]}-${parts[1]}-${parts[0]}`,
+      yyyymmdd: `${parts[0]}${parts[1]}${parts[2]}`
+    }
   }
   const norm = normalizeTallyDate(dateStr)
   if (norm) {
@@ -121,6 +125,7 @@ function validateAndBalanceLegs(legs: TallyCompoundLeg[]): { isBalanced: boolean
 export function generateTallySalesVouchers(
   salesInvoices: SalesInvoice[] = [],
   customers: Customer[] = [],
+  items: Item[] = [],
   mapping: TallyLedgerMapping = DEFAULT_TALLY_LEDGER_MAPPING,
   companyState: string = '19'
 ): TallyCompoundVoucher[] {
@@ -134,13 +139,38 @@ export function generateTallySalesVouchers(
     const { iso, dmy } = formatDateForTally(inv.invoiceDate)
 
     const grossAmount = roundCurrency(inv.totalAmount ?? inv.invoiceAmount)
-    const taxableAmount = roundCurrency(inv.taxableAmount ?? (inv.items ? inv.items.reduce((s, it) => s + (it.taxableAmount || it.amount || 0), 0) : grossAmount))
-    const igst = roundCurrency(inv.igstAmount ?? 0)
-    const cgst = roundCurrency(inv.cgstAmount ?? 0)
-    const sgst = roundCurrency(inv.sgstAmount ?? 0)
+    
+    let taxableAmount = inv.taxableAmount !== undefined ? roundCurrency(inv.taxableAmount) : 0
+    let igst = roundCurrency(inv.igstAmount ?? 0)
+    let cgst = roundCurrency(inv.cgstAmount ?? 0)
+    let sgst = roundCurrency(inv.sgstAmount ?? 0)
+    let roundOff = roundCurrency(grossAmount - (taxableAmount + igst + cgst + sgst))
 
-    const subTotal = roundCurrency(taxableAmount + igst + cgst + sgst)
-    const roundOff = roundCurrency(grossAmount - subTotal)
+    // If missing taxableAmount or has false round-off >= ₹1.00, recompute dynamically using items master
+    if (taxableAmount <= 0 || Math.abs(roundOff) >= 1.00) {
+      if (inv.items && inv.items.length > 0) {
+        const taxSummary = calculateInvoiceTaxBreakdown({
+          items: inv.items,
+          itemsMaster: items,
+          additionalCostBasicRate: inv.additionalCostBasicRate,
+          additionalCostFinal: inv.additionalCost,
+          partyState,
+          companyState,
+          customRoundOff: inv.roundOffAdjustment
+        })
+        taxableAmount = taxSummary.taxableAmount
+        igst = taxSummary.igstAmount
+        cgst = taxSummary.cgstAmount
+        sgst = taxSummary.sgstAmount
+        roundOff = taxSummary.roundOff
+      } else {
+        taxableAmount = grossAmount
+        igst = 0
+        cgst = 0
+        sgst = 0
+        roundOff = 0
+      }
+    }
 
     const legs: TallyCompoundLeg[] = [
       // 1. Dr Customer Ledger (Gross Invoice Value)
@@ -157,7 +187,7 @@ export function generateTallySalesVouchers(
       if (sgst > 0) legs.push({ ledgerName: mapping.outputSgstLedgerName, amount: sgst, drCr: 'Cr' })
     }
 
-    // 4. Round Off
+    // 4. Genuine Round Off (< ₹1.00)
     if (roundOff > 0) {
       legs.push({ ledgerName: mapping.roundOffLedgerName, amount: roundOff, drCr: 'Cr' })
     } else if (roundOff < 0) {
@@ -195,6 +225,7 @@ export function generateTallySalesVouchers(
 export function generateTallyPurchaseVouchers(
   purchaseInvoices: PurchaseInvoice[] = [],
   suppliers: Supplier[] = [],
+  items: Item[] = [],
   mapping: TallyLedgerMapping = DEFAULT_TALLY_LEDGER_MAPPING,
   companyState: string = '19'
 ): TallyCompoundVoucher[] {
@@ -208,13 +239,38 @@ export function generateTallyPurchaseVouchers(
     const { iso, dmy } = formatDateForTally(inv.invoiceDate)
 
     const grossAmount = roundCurrency(inv.totalAmount ?? inv.invoiceAmount)
-    const taxableAmount = roundCurrency(inv.taxableAmount ?? (inv.items ? inv.items.reduce((s, it) => s + (it.taxableAmount || it.amount || 0), 0) : grossAmount))
-    const igst = roundCurrency(inv.igstAmount ?? 0)
-    const cgst = roundCurrency(inv.cgstAmount ?? 0)
-    const sgst = roundCurrency(inv.sgstAmount ?? 0)
+    
+    let taxableAmount = inv.taxableAmount !== undefined ? roundCurrency(inv.taxableAmount) : 0
+    let igst = roundCurrency(inv.igstAmount ?? 0)
+    let cgst = roundCurrency(inv.cgstAmount ?? 0)
+    let sgst = roundCurrency(inv.sgstAmount ?? 0)
+    let roundOff = roundCurrency(grossAmount - (taxableAmount + igst + cgst + sgst))
 
-    const subTotal = roundCurrency(taxableAmount + igst + cgst + sgst)
-    const roundOff = roundCurrency(grossAmount - subTotal)
+    // If missing taxableAmount or has false round-off >= ₹1.00, recompute dynamically using items master
+    if (taxableAmount <= 0 || Math.abs(roundOff) >= 1.00) {
+      if (inv.items && inv.items.length > 0) {
+        const taxSummary = calculateInvoiceTaxBreakdown({
+          items: inv.items,
+          itemsMaster: items,
+          additionalCostBasicRate: inv.additionalCostBasicRate,
+          additionalCostFinal: inv.additionalCost,
+          partyState,
+          companyState,
+          customRoundOff: inv.roundOffAdjustment
+        })
+        taxableAmount = taxSummary.taxableAmount
+        igst = taxSummary.igstAmount
+        cgst = taxSummary.cgstAmount
+        sgst = taxSummary.sgstAmount
+        roundOff = taxSummary.roundOff
+      } else {
+        taxableAmount = grossAmount
+        igst = 0
+        cgst = 0
+        sgst = 0
+        roundOff = 0
+      }
+    }
 
     const legs: TallyCompoundLeg[] = [
       // 1. Cr Supplier Ledger (Gross Payable)
@@ -231,7 +287,7 @@ export function generateTallyPurchaseVouchers(
       if (sgst > 0) legs.push({ ledgerName: mapping.inputSgstLedgerName, amount: sgst, drCr: 'Dr' })
     }
 
-    // 4. Round Off
+    // 4. Genuine Round Off (< ₹1.00)
     if (roundOff > 0) {
       legs.push({ ledgerName: mapping.roundOffLedgerName, amount: roundOff, drCr: 'Dr' })
     } else if (roundOff < 0) {
@@ -390,10 +446,12 @@ export function generateTallyDebitNoteVouchers(
  */
 export function generateTallyExpenseVouchers(
   expenseEntries: ExpenseEntry[] = [],
+  expenseTypes: ExpenseType[] = [],
   mapping: TallyLedgerMapping = DEFAULT_TALLY_LEDGER_MAPPING,
   companyState: string = '19'
 ): TallyCompoundVoucher[] {
   const vouchers: TallyCompoundVoucher[] = []
+  const catMap = new Map(expenseTypes.map(t => [t.id, t]))
 
   expenseEntries.forEach((exp, idx) => {
     const rawGstin = (exp.supplierGstin || (exp as any).vendorGstin || '').trim().toUpperCase()
@@ -401,13 +459,33 @@ export function generateTallyExpenseVouchers(
     const isInterState = isInterStateTransaction(partyState, companyState)
     const { iso, dmy } = formatDateForTally(exp.expenseDate)
 
-    const grossAmount = roundCurrency(exp.totalExpenseAmount ?? exp.amount)
-    const taxableAmount = roundCurrency(exp.taxableAmount ?? grossAmount)
-    const igst = roundCurrency(exp.igstAmount ?? 0)
-    const cgst = roundCurrency(exp.cgstAmount ?? 0)
-    const sgst = roundCurrency(exp.sgstAmount ?? 0)
-    const expenseLedger = exp.supplierName ? `${exp.categoryId || 'Expense'} - ${exp.supplierName}` : (exp.categoryId || 'General Expenses')
+    const cat = catMap.get(exp.expenseTypeId || exp.categoryId || '')
+    const categoryName = cat?.name || exp.categoryName || 'General Expense'
+    const expenseLedger = exp.supplierName ? `${categoryName} - ${exp.supplierName}` : categoryName
     const paymentAccount = mapping.defaultBankLedgerName
+
+    const grossAmount = roundCurrency(exp.totalExpenseAmount ?? exp.amount)
+    let taxableAmount = exp.taxableAmount !== undefined ? roundCurrency(exp.taxableAmount) : grossAmount
+    let igst = roundCurrency(exp.igstAmount ?? 0)
+    let cgst = roundCurrency(exp.cgstAmount ?? 0)
+    let sgst = roundCurrency(exp.sgstAmount ?? 0)
+
+    if (exp.hasGst) {
+      if (cgst === 0 && sgst === 0 && igst === 0) {
+        const tax = calculateExpenseTaxBreakdown({
+          amount: grossAmount,
+          hasGst: true,
+          isTaxInclusive: exp.isTaxInclusive ?? true,
+          gstRate: exp.gstRate ?? 18,
+          supplierStateCode: partyState,
+          companyStateCode: companyState
+        })
+        taxableAmount = tax.taxableAmount
+        igst = tax.igstAmount
+        cgst = tax.cgstAmount
+        sgst = tax.sgstAmount
+      }
+    }
 
     if (exp.isRcm) {
       // GTA RCM Entry:
@@ -482,7 +560,7 @@ export function generateTallyExpenseVouchers(
         voucherType: 'Payment',
         partyName: exp.supplierName || 'Expense Payee',
         partyGstin: rawGstin,
-        narration: `Being expense paid for ${exp.categoryId || 'Services'} to ${exp.supplierName || 'Payee'}`,
+        narration: `Being expense paid for ${categoryName} to ${exp.supplierName || 'Payee'}`,
         legs,
         totalAmount: grossAmount,
         isBalanced,
