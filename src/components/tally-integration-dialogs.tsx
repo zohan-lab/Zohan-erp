@@ -1679,7 +1679,7 @@ export function TallyImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="fixed inset-0 w-screen h-screen max-w-none max-h-none m-0 rounded-none z-50 bg-background flex flex-col p-0 overflow-hidden border-none shadow-none">
+      <DialogContent fullScreen hideClose className="bg-background flex flex-col p-0 overflow-hidden border-none shadow-none">
         <DialogHeader className="px-6 py-3 border-b border-slate-200 bg-white/95 backdrop-blur shrink-0 space-y-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -1719,6 +1719,14 @@ export function TallyImportDialog({
                   Upload New File
                 </Button>
               )}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onOpenChange(false)}
+                className="h-8 w-8 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+              >
+                <X size={18} weight="bold" />
+              </Button>
             </div>
           </div>
         </DialogHeader>

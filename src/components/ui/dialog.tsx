@@ -47,24 +47,33 @@ function DialogOverlay({
 function DialogContent({
   className,
   children,
+  fullScreen,
+  hideClose,
   ...props
-}: ComponentProps<typeof DialogPrimitive.Content>) {
+}: ComponentProps<typeof DialogPrimitive.Content> & { fullScreen?: boolean; hideClose?: boolean }) {
+  const isFullScreen = fullScreen || (typeof className === 'string' && (className.includes('w-screen') || className.includes('inset-0') || className.includes('fullscreen')))
+
   return (
     <DialogPortal data-slot="dialog-portal">
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-responsive-md rounded-lg border modal-spacing-responsive shadow-lg duration-200 sm:max-w-lg modal-content",
+          "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 z-50 duration-200",
+          isFullScreen
+            ? "fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen max-w-none max-h-none m-0 p-0 rounded-none border-none shadow-none flex flex-col overflow-hidden translate-x-0 translate-y-0 transform-none"
+            : "fixed top-[50%] left-[50%] grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-responsive-md rounded-lg border modal-spacing-responsive shadow-lg sm:max-w-lg modal-content",
           className
         )}
         {...props}
       >
         {children}
-        <DialogPrimitive.Close className="absolute top-3 right-3 sm:top-4 sm:right-4 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 flex items-center justify-center border border-slate-200/80 shadow-2xs transition-all focus:outline-none focus:ring-2 focus:ring-[#5B5FEF]/30 z-50 cursor-pointer p-0 shrink-0">
-          <XIcon className="h-4 w-4" />
-          <span className="sr-only">Close</span>
-        </DialogPrimitive.Close>
+        {!hideClose && !isFullScreen && (
+          <DialogPrimitive.Close className="absolute top-3 right-3 sm:top-4 sm:right-4 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 flex items-center justify-center border border-slate-200/80 shadow-2xs transition-all focus:outline-none focus:ring-2 focus:ring-[#5B5FEF]/30 z-50 cursor-pointer p-0 shrink-0">
+            <XIcon className="h-4 w-4" />
+            <span className="sr-only">Close</span>
+          </DialogPrimitive.Close>
+        )}
       </DialogPrimitive.Content>
     </DialogPortal>
   )
