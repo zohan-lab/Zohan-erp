@@ -118,7 +118,8 @@ import {
   Scales,
   Percent,
   Clock,
-  ChartLineUp
+  ChartLineUp,
+  FileArrowUp
 } from '@phosphor-icons/react'
 
 import SupplierCDRulesPage from '@/components/supplier-cd-rules-page'
@@ -252,6 +253,7 @@ import SupplierCreditNotePage from '@/components/supplier-credit-note-page'
 import SalesReturnPage from '@/components/sales-return-page'
 import PurchaseReturnPage from '@/components/purchase-return-page'
 import GstReportsPage from '@/components/gst-reports-page'
+import { TallyIntegrationPage } from '@/components/tally-integration-page'
 import { TallyExportDialog, TallyImportDialog } from '@/components/tally-integration-dialogs'
 import { loadBusinessesFromCloud, saveBusinessToCloud, deleteBusinessFromCloud } from '@/lib/business-sync'
 
@@ -473,6 +475,7 @@ const adminNavGroup: NavGroup = {
   title: 'Admin',
   items: [
     { id: 'user-management', label: 'Agent Access', icon: UserGear },
+    { id: 'tally-integration', label: 'Tally Import & Export', icon: FileArrowUp },
   ]
 }
 
@@ -482,7 +485,12 @@ const permissionOptions: PermissionOption[] = [
     id: item.id,
     label: item.label,
     group: group.title
-  })))
+  }))),
+  ...adminNavGroup.items.map((item) => ({
+    id: item.id,
+    label: item.label,
+    group: adminNavGroup.title
+  }))
 ]
 
 const viewNames: Record<string, string> = {
@@ -514,6 +522,7 @@ const viewNames: Record<string, string> = {
   'cash-bank-voucher': 'Cash/Bank Voucher',
   'cash-bank-ledger': 'Cash & Bank Ledger',
   'user-management': 'Agent Access',
+  'tally-integration': 'Tally Import & Export',
   'customer-credit-notes': 'Credit Note',
   'customer-debit-notes': 'Debit Note',
   'supplier-debit-notes': 'Debit Note',
@@ -745,8 +754,6 @@ function App() {
   const [newBusinessName, setNewBusinessName] = useState('')
   const [newBusinessStartFY, setNewBusinessStartFY] = useState(getCurrentFY())
   const [editBusinessName, setEditBusinessName] = useState('')
-  const [tallyExportDialogOpen, setTallyExportDialogOpen] = useState(false)
-  const [tallyImportDialogOpen, setTallyImportDialogOpen] = useState(false)
 
   const currentActiveBusiness = metadata.businesses.find(b => b.id === metadata.activeCompanyId)
   const activeCompany = currentActiveBusiness?.name || 'SK TRADERS'
@@ -2458,6 +2465,43 @@ function App() {
               }) : undefined}
             />
           )
+        case 'tally-integration':
+          return (
+            <TallyIntegrationPage
+              customers={safeCustomers}
+              setCustomers={syncSetCustomers}
+              suppliers={safeSuppliers}
+              setSuppliers={syncSetSuppliers}
+              items={safeItems}
+              setItems={syncSetItems}
+              expenseTypes={safeExpenseTypes}
+              setExpenseTypes={syncSetExpenseTypes}
+              counters={visibleCashBankCounters}
+              cashBankCounters={cashBankCounters}
+              setCashBankCounters={syncSetCashBankCounters}
+              payments={safePayments}
+              setPayments={syncSetPayments}
+              customerPayments={safeCustomerPayments}
+              setCustomerPayments={syncSetCustomerPayments}
+              salesInvoices={safeSalesInvoices}
+              setSalesInvoices={syncSetSalesInvoices}
+              purchaseInvoices={safeInvoices}
+              setPurchaseInvoices={syncSetInvoices}
+              creditNotes={safeCreditNotes}
+              setCreditNotes={syncSetCreditNotes}
+              debitNotes={safeDebitNotes}
+              setDebitNotes={syncSetDebitNotes}
+              customerDebitNotes={safeCustomerDebitNotes}
+              supplierCreditNotes={safeSupplierCreditNotes}
+              expenseEntries={safeExpenseEntries}
+              setExpenseEntries={syncSetExpenseEntries}
+              cashBankTransactions={cashBankTransactions}
+              setCashBankTransactions={syncSetCashBankTransactions}
+              businessName={safeBusinessName}
+              companyStateCode={getActiveCompanyStateCode('19')}
+              currentFY={safeCurrentFY}
+            />
+          )
         default:
           return null
       }
@@ -2739,80 +2783,8 @@ function App() {
             customerPayments={safeCustomerPayments}
             suppliers={safeSuppliers}
             customers={safeCustomers}
-            onOpenTallyExport={() => setTallyExportDialogOpen(true)}
-            onOpenTallyImport={() => setTallyImportDialogOpen(true)}
-          />
-
-          <TallyExportDialog
-            open={tallyExportDialogOpen}
-            onOpenChange={setTallyExportDialogOpen}
-            salesInvoices={safeSalesInvoices}
-            purchaseInvoices={safeInvoices}
-            customerCreditNotes={safeCreditNotes}
-            customerDebitNotes={safeCustomerDebitNotes}
-            supplierDebitNotes={safeDebitNotes}
-            supplierCreditNotes={safeSupplierCreditNotes}
-            expenseEntries={safeExpenseEntries}
-            payments={safePayments}
-            customerPayments={safeCustomerPayments}
-            customers={safeCustomers}
-            suppliers={safeSuppliers}
-            items={safeItems}
-            expenseTypes={safeExpenseTypes}
-            businessName={safeBusinessName}
-            companyStateCode={getActiveCompanyStateCode('19')}
-            currentFY={safeCurrentFY}
-          />
-
-          <TallyImportDialog
-            open={tallyImportDialogOpen}
-            onOpenChange={setTallyImportDialogOpen}
-            customers={safeCustomers}
-            suppliers={safeSuppliers}
-            items={safeItems}
-            expenseTypes={safeExpenseTypes}
-            counters={visibleCashBankCounters}
-            onCommitImport={(newPayments, newCustomerPayments, _summary, extraEntities) => {
-              if (extraEntities?.newCustomers && extraEntities.newCustomers.length > 0) {
-                syncSetCustomers([...customers, ...extraEntities.newCustomers])
-              }
-              if (extraEntities?.newSuppliers && extraEntities.newSuppliers.length > 0) {
-                syncSetSuppliers([...suppliers, ...extraEntities.newSuppliers])
-              }
-              if (extraEntities?.newExpenseTypes && extraEntities.newExpenseTypes.length > 0) {
-                syncSetExpenseTypes([...expenseTypes, ...extraEntities.newExpenseTypes])
-              }
-              if (extraEntities?.newCounters && extraEntities.newCounters.length > 0) {
-                syncSetCashBankCounters([...cashBankCounters, ...extraEntities.newCounters])
-              }
-              if (extraEntities?.newItems && extraEntities.newItems.length > 0) {
-                syncSetItems([...items, ...extraEntities.newItems])
-              }
-              if (newPayments.length > 0) {
-                syncSetPayments([...payments, ...newPayments])
-              }
-              if (newCustomerPayments.length > 0) {
-                syncSetCustomerPayments([...customerPayments, ...newCustomerPayments])
-              }
-              if (extraEntities?.salesInvoices && extraEntities.salesInvoices.length > 0) {
-                syncSetSalesInvoices([...salesInvoices, ...extraEntities.salesInvoices])
-              }
-              if (extraEntities?.purchaseInvoices && extraEntities.purchaseInvoices.length > 0) {
-                syncSetInvoices([...invoices, ...extraEntities.purchaseInvoices])
-              }
-              if (extraEntities?.creditNotes && extraEntities.creditNotes.length > 0) {
-                syncSetCreditNotes([...creditNotes, ...extraEntities.creditNotes])
-              }
-              if (extraEntities?.debitNotes && extraEntities.debitNotes.length > 0) {
-                syncSetDebitNotes([...debitNotes, ...extraEntities.debitNotes])
-              }
-              if (extraEntities?.expenseEntries && extraEntities.expenseEntries.length > 0) {
-                syncSetExpenseEntries([...expenseEntries, ...extraEntities.expenseEntries])
-              }
-              if (extraEntities?.cashBankTransactions && extraEntities.cashBankTransactions.length > 0) {
-                syncSetCashBankTransactions([...cashBankTransactions, ...extraEntities.cashBankTransactions])
-              }
-            }}
+            onOpenTallyExport={() => setActiveView('tally-integration')}
+            onOpenTallyImport={() => setActiveView('tally-integration')}
           />
 
           <AppDialogs
