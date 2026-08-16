@@ -88,10 +88,13 @@ export default function CustomersPage({
 
     const hasInvoices = salesInvoices.some(inv => inv.customerId === customer.id)
     const hasPayments = customerPayments.some(pay => pay.customerId === customer.id)
+    const hasDebitNotes = customerDebitNotes.some(dn => dn.customerId === customer.id)
+    const hasCreditNotes = creditNotes.some(cn => cn.customerId === customer.id)
+    const hasReturns = salesReturns.some(sr => sr.customerId === customer.id)
 
-    if (hasInvoices || hasPayments) {
+    if (hasInvoices || hasPayments || hasDebitNotes || hasCreditNotes || hasReturns) {
       toast.error(`Cannot delete customer "${customer.name}"`, {
-        description: 'This customer is linked to existing invoices or payments and cannot be deleted.'
+        description: 'This customer is linked to existing sales invoices, payments, credit/debit notes, or sales returns and cannot be deleted.'
       })
       return
     }

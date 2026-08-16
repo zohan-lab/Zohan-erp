@@ -669,6 +669,159 @@ export function exportCustomerAgingToExcel(
   downloadCSV(csv, `Customer_Aging_Report_${businessName.replace(/\s+/g, '_')}_${fy}.csv`)
 }
 
+import { MonthlyGstReport } from './gst-report-calculations'
+import * as XLSX from 'xlsx'
+
+/**
+ * Generates and downloads a complete multi-sheet GST Compliance Workbook (GSTR-3B, GSTR-1, GSTR-2B).
+ */
+export function exportGstReportsToExcel(
+  report: MonthlyGstReport,
+  businessName: string,
+  fy: string
+) {
+  const wb = XLSX.utils.book_new()
+
+  // -------------------------------------------------------------
+  // Sheet 1: GSTR-3B Summary Return
+  // -------------------------------------------------------------
+  const t31 = report.gstr3b.table31
+  const t4 = report.gstr3b.table4
+  const t51 = report.gstr3b.table51
+
+  const s1Data: (string | number)[][] = [
+    [businessName],
+    ['GSTR-3B Monthly Statutory Return'],
+    [`Period: ${report.periodLabel}`, `Financial Year: ${fy}`, `Generated: ${new Date().toLocaleString('en-IN')}`],
+    [],
+    ['TABLE 3.1: DETAILS OF OUTWARD SUPPLIES AND INWARD SUPPLIES LIABLE TO REVERSE CHARGE'],
+    ['Nature of Supplies', 'Total Taxable Value (₹)', 'Integrated Tax (₹)', 'Central Tax (₹)', 'State/UT Tax (₹)', 'Cess (₹)', 'Total Tax (₹)'],
+    ['(a) Outward taxable supplies (other than zero rated, nil rated and exempted)', t31.outwardTaxable.taxableAmount, t31.outwardTaxable.igst, t31.outwardTaxable.cgst, t31.outwardTaxable.sgst, 0, t31.outwardTaxable.totalTax],
+    ['(b) Outward taxable supplies (zero rated)', t31.outwardZeroRated.taxableAmount, t31.outwardZeroRated.igst, t31.outwardZeroRated.cgst, t31.outwardZeroRated.sgst, 0, t31.outwardZeroRated.totalTax],
+    ['(c) Other outward supplies (nil rated, exempted)', t31.otherOutwardNilExempt.taxableAmount, t31.otherOutwardNilExempt.igst, t31.otherOutwardNilExempt.cgst, t31.otherOutwardNilExempt.sgst, 0, t31.otherOutwardNilExempt.totalTax],
+    ['(d) Inward supplies (liable to reverse charge)', t31.inwardRcm.taxableAmount, t31.inwardRcm.igst, t31.inwardRcm.cgst, t31.inwardRcm.sgst, 0, t31.inwardRcm.totalTax],
+    ['(e) Non-GST outward supplies', t31.nonGstOutward.taxableAmount, t31.nonGstOutward.igst, t31.nonGstOutward.cgst, t31.nonGstOutward.sgst, 0, t31.nonGstOutward.totalTax],
+    ['TOTAL TAX LIABILITY (3.1)', t31.totalLiability.taxableAmount, t31.totalLiability.igst, t31.totalLiability.cgst, t31.totalLiability.sgst, 0, t31.totalLiability.totalTax],
+    [],
+    ['TABLE 4: ELIGIBLE INPUT TAX CREDIT (ITC)'],
+    ['Details', 'Integrated Tax (₹)', 'Central Tax (₹)', 'State/UT Tax (₹)', 'Cess (₹)', 'Total ITC (₹)'],
+    ['(A) ITC Available (whether in full or part)', '', '', '', '', ''],
+    ['  (3) Inward supplies liable to reverse charge (GTA / RCM)', t4.itcRcmInward.igst, t4.itcRcmInward.cgst, t4.itcRcmInward.sgst, 0, t4.itcRcmInward.totalTax],
+    ['  (5) All other ITC (Purchases + Eligible Expenses)', t4.itcAllOther.igst, t4.itcAllOther.cgst, t4.itcAllOther.sgst, 0, t4.itcAllOther.totalTax],
+    ['(B) ITC Reversed', '', '', '', '', ''],
+    ['  (2) Others (Purchase Returns + Supplier Debit Notes)', t4.itcReversals.igst, t4.itcReversals.cgst, t4.itcReversals.sgst, 0, t4.itcReversals.totalTax],
+    ['(C) NET ITC AVAILABLE (A) - (B)', t4.netItcAvailable.igst, t4.netItcAvailable.cgst, t4.netItcAvailable.sgst, 0, t4.netItcAvailable.totalTax],
+    ['(D) Ineligible ITC under Section 17(5)', t4.ineligibleItc.igst, t4.ineligibleItc.cgst, t4.ineligibleItc.sgst, 0, t4.ineligibleItc.totalTax],
+    [],
+    ['TABLE 5.1: PAYMENT OF TAX (CASH DISCHARGE REQUIRED)'],
+    ['Tax Head', 'Total Tax Payable (₹)', 'Paid Through ITC (₹)', 'Tax Paid in Cash (₹)'],
+    ['Integrated Tax (IGST)', t51.taxPayable.igst, t51.itcPaid.igst, t51.cashPayable.igst],
+    ['Central Tax (CGST)', t51.taxPayable.cgst, t51.itcPaid.cgst, t51.cashPayable.cgst],
+    ['State/UT Tax (SGST)', t51.taxPayable.sgst, t51.itcPaid.sgst, t51.cashPayable.sgst],
+    ['TOTAL DISCHARGE', t51.taxPayable.totalTax, t51.itcPaid.totalTax, t51.cashPayable.totalTax]
+  ]
+
+  const ws1 = XLSX.utils.aoa_to_sheet(s1Data)
+  XLSX.utils.book_append_sheet(wb, ws1, 'GSTR-3B Summary')
+
+  // -------------------------------------------------------------
+  // Sheet 2: GSTR-1 Outward Supplies & Notes
+  // -------------------------------------------------------------
+  const s2Data: (string | number)[][] = [
+    [businessName],
+    ['GSTR-1 Outward Supplies & Statutory Notes Register'],
+    [`Period: ${report.periodLabel}`, `Financial Year: ${fy}`],
+    [],
+    ['SECTION 1: TABLE 4A - B2B TAX INVOICES (REGISTERED PARTIES)'],
+    ['Recipient GSTIN', 'Receiver Name', 'Invoice Number', 'Invoice Date', 'Invoice Value (₹)', 'Place of Supply', 'Reverse Charge', 'Tax Rate (%)', 'Taxable Value (₹)', 'IGST (₹)', 'CGST (₹)', 'SGST (₹)'],
+    ...report.gstr1.b2b.map(b => [
+      b.gstin,
+      b.partyName,
+      b.invoiceNo,
+      b.invoiceDate,
+      b.invoiceValue,
+      `${b.pos} - ${b.posName}`,
+      b.reverseCharge,
+      b.gstRate,
+      b.taxableValue,
+      b.igst,
+      b.cgst,
+      b.sgst
+    ]),
+    [],
+    ['SECTION 2: TABLE 7 - B2C SUPPLIES (UNREGISTERED PARTIES SUMMARY)'],
+    ['Place of Supply', 'Rate (%)', 'Taxable Value (₹)', 'IGST (₹)', 'CGST (₹)', 'SGST (₹)', 'Total Value (₹)', 'Voucher Count'],
+    ...report.gstr1.b2c.map(c => [
+      `${c.pos} - ${c.posName}`,
+      c.gstRate,
+      c.taxableValue,
+      c.igst,
+      c.cgst,
+      c.sgst,
+      c.totalInvoiceValue,
+      c.count
+    ]),
+    [],
+    ['SECTION 3: TABLE 9B - CREDIT & DEBIT NOTES (REGISTERED / UNREGISTERED)'],
+    ['GSTIN', 'Party Name', 'Note Type', 'Note Number', 'Note Date', 'Original Inv No', 'Original Inv Date', 'Reason', 'POS', 'Tax Rate (%)', 'Taxable Value (₹)', 'IGST (₹)', 'CGST (₹)', 'SGST (₹)', 'Total Note Value (₹)'],
+    ...report.gstr1.notes.map(n => [
+      n.gstin,
+      n.partyName,
+      n.noteTypeName,
+      n.noteNo,
+      n.noteDate,
+      n.originalInvoiceNo,
+      n.originalInvoiceDate,
+      n.reason,
+      `${n.pos} - ${n.posName}`,
+      n.gstRate,
+      n.taxableValue,
+      n.igst,
+      n.cgst,
+      n.sgst,
+      n.totalAmount
+    ])
+  ]
+
+  const ws2 = XLSX.utils.aoa_to_sheet(s2Data)
+  XLSX.utils.book_append_sheet(wb, ws2, 'GSTR-1 Outward & Notes')
+
+  // -------------------------------------------------------------
+  // Sheet 3: GSTR-2B Inward Supplies & ITC Register
+  // -------------------------------------------------------------
+  const s3Data: (string | number)[][] = [
+    [businessName],
+    ['GSTR-2B Inward Supplies & Input Tax Credit (ITC) Register'],
+    [`Period: ${report.periodLabel}`, `Financial Year: ${fy}`],
+    [],
+    ['Voucher Type', 'Voucher Number', 'Voucher Date', 'Supplier / Payee GSTIN', 'Party Name', 'Place of Supply', 'HSN / SAC', 'ITC Classification', 'RCM Applied', 'Taxable Amount (₹)', 'GST Rate (%)', 'IGST (₹)', 'CGST (₹)', 'SGST (₹)', 'Total Amount (₹)', 'ITC Eligible'],
+    ...report.gstr2b.items.map(i => [
+      i.sourceLabel,
+      i.voucherNo,
+      i.voucherDate,
+      i.gstin,
+      i.partyName,
+      `${i.pos} - ${i.posName}`,
+      i.hsnSac,
+      i.itcClassification,
+      i.isRcm ? 'YES' : 'NO',
+      i.taxableAmount,
+      i.gstRate,
+      i.igst,
+      i.cgst,
+      i.sgst,
+      i.totalAmount,
+      i.itcEligible ? 'YES' : 'NO'
+    ])
+  ]
+
+  const ws3 = XLSX.utils.aoa_to_sheet(s3Data)
+  XLSX.utils.book_append_sheet(wb, ws3, 'GSTR-2B Inward ITC')
+
+  const fileName = `GST_Report_${businessName.replace(/\s+/g, '_')}_${report.periodLabel.replace(/\s+/g, '_')}.xlsx`
+  XLSX.writeFile(wb, fileName)
+}
+
 // Re-export Tally Excel Import & Export utilities and types
 export * from './tally-payment-types'
 export * from './tally-payment-excel'

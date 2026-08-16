@@ -125,7 +125,7 @@ import SupplierCDRulesPage from '@/components/supplier-cd-rules-page'
 import CustomerAgingReportPage from '@/components/customer-aging-report-page'
 import DrawingPowerReport from '@/components/drawing-power-report'
 import { toast, Toaster } from 'sonner'
-import { getCurrentFY } from '@/lib/calculations'
+import { getCurrentFY, getActiveCompanyStateCode } from '@/lib/calculations'
 import { cn } from '@/lib/utils'
 import {
   createSingleEntityBackup,
@@ -251,6 +251,7 @@ import SupplierDebitNotePage from '@/components/supplier-debit-note-page'
 import SupplierCreditNotePage from '@/components/supplier-credit-note-page'
 import SalesReturnPage from '@/components/sales-return-page'
 import PurchaseReturnPage from '@/components/purchase-return-page'
+import GstReportsPage from '@/components/gst-reports-page'
 import { loadBusinessesFromCloud, saveBusinessToCloud, deleteBusinessFromCloud } from '@/lib/business-sync'
 
 const tenantDataCollectionKeys: Array<keyof TenantData> = [
@@ -445,6 +446,7 @@ const navGroups: NavGroup[] = [
   {
     title: 'Reports',
     items: [
+      { id: 'gst-reports', label: 'GST Reports (GSTR-1/2B/3B)', icon: FileText },
       { id: 'drawing-power', label: 'Drawing Power Report (DP)', icon: ChartLineUp },
       { id: 'cd-profit-report', label: 'Payment CD & Profit Analytics', icon: Scales },
       { id: 'customer-aging', label: 'Customer Aging & Receivables', icon: Clock },
@@ -492,6 +494,7 @@ const viewNames: Record<string, string> = {
   'sales-invoices': 'Sales Invoices',
   'customer-payments': 'Customer Payments',
   'expense-entries': 'Expense Entries',
+  'gst-reports': 'GST Reports (GSTR-1/2B/3B)',
   'drawing-power': 'Drawing Power Report (DP)',
   'cd-profit-report': 'Payment CD & Profit Analytics',
   'customer-aging': 'Customer Aging & Receivables',
@@ -1990,6 +1993,7 @@ function App() {
               debitNotes={safeDebitNotes}
               supplierCreditNotes={safeSupplierCreditNotes}
               purchaseReturns={safePurchaseReturns}
+              expenseEntries={safeExpenseEntries}
               isLocked={isViewReadOnly('suppliers')}
               activeCompanyId={metadata.activeCompanyId}
             />
@@ -2261,6 +2265,27 @@ function App() {
               salesReturns={safeSalesReturns}
               currentFY={safeCurrentFY}
               businessName={safeBusinessName}
+            />
+          )
+        case 'gst-reports':
+          return (
+            <GstReportsPage
+              salesInvoices={safeSalesInvoices}
+              salesReturns={safeSalesReturns}
+              customerCreditNotes={safeCreditNotes}
+              customerDebitNotes={safeCustomerDebitNotes}
+              purchaseInvoices={safeInvoices}
+              purchaseReturns={safePurchaseReturns}
+              supplierDebitNotes={safeDebitNotes}
+              supplierCreditNotes={safeSupplierCreditNotes}
+              expenseEntries={safeExpenseEntries}
+              customers={safeCustomers}
+              suppliers={safeSuppliers}
+              items={safeItems}
+              currentFY={safeCurrentFY}
+              businessName={safeBusinessName}
+              activeCompanyId={metadata.activeCompanyId}
+              companyStateCode={getActiveCompanyStateCode('19')}
             />
           )
         case 'drawing-power':

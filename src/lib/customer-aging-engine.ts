@@ -114,9 +114,9 @@ export function computeCustomerAging(
 
     const totalSales = custInvoices.reduce((sum, inv) => sum + (inv.invoiceAmount || 0), 0)
     const totalPayments = custPayments.reduce((sum, p) => sum + (p.amount || 0), 0)
-    const totalCreditNotes = custCreditNotes.reduce((sum, cn) => sum + (cn.amount || 0), 0)
+    const totalCreditNotes = custCreditNotes.reduce((sum, cn) => sum + (cn.totalAmount || cn.amount || 0), 0)
     const totalSalesReturns = custSalesReturns.reduce((sum, sr) => sum + (sr.amount || 0), 0)
-    const totalDebitNotes = custDebitNotes.reduce((sum, dn) => sum + (dn.amount || 0), 0)
+    const totalDebitNotes = custDebitNotes.reduce((sum, dn) => sum + (dn.totalAmount || dn.amount || 0), 0)
 
     const totalCredits = totalPayments + totalCreditNotes + totalSalesReturns
     let remainingCredit = totalCredits

@@ -428,6 +428,10 @@ export default function SupplierCreditNotePage({
                                 onSelect={() => {
                                   setOriginalInvoiceNo(inv.invoiceNo)
                                   setOriginalInvoiceDate(inv.invoiceDate)
+                                  const invGstRate = (inv.igstRate && inv.igstRate > 0)
+                                    ? inv.igstRate
+                                    : (((inv.cgstRate || 0) + (inv.sgstRate || 0)) || (inv.items && inv.items[0]?.gstRate) || 18)
+                                  setGstRate(invGstRate)
                                   setInvoiceComboboxOpen(false)
                                 }}
                                 className="text-xs cursor-pointer py-2 px-3 flex items-center justify-between"

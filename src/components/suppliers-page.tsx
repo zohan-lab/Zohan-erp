@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react'
 import { getChangedByLabel } from '@/lib/security-utils'
-import { Supplier, PurchaseInvoice, Payment, PaymentCDRule, InvoiceCloseCDRule, SupplierCDRuleVersion, CDRuleChangeLog, AnnualTarget, SupplierDebitNote, SupplierCreditNote, PurchaseReturn } from '@/lib/types'
+import { Supplier, PurchaseInvoice, Payment, PaymentCDRule, InvoiceCloseCDRule, SupplierCDRuleVersion, CDRuleChangeLog, AnnualTarget, SupplierDebitNote, SupplierCreditNote, PurchaseReturn, ExpenseEntry } from '@/lib/types'
 import { getAvailableUnits } from '@/lib/custom-data-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -52,6 +52,7 @@ interface SuppliersPageProps {
   debitNotes?: SupplierDebitNote[]
   supplierCreditNotes?: SupplierCreditNote[]
   purchaseReturns?: PurchaseReturn[]
+  expenseEntries?: ExpenseEntry[]
   isLocked?: boolean
   activeFY?: string
   activeCompanyId?: string
@@ -65,6 +66,7 @@ export default function SuppliersPage({
   debitNotes = [],
   supplierCreditNotes = [],
   purchaseReturns = [],
+  expenseEntries = [],
   isLocked = false, 
   activeFY,
   activeCompanyId
@@ -152,10 +154,14 @@ export default function SuppliersPage({
 
     const hasInvoices = invoices.some(inv => inv.supplierId === supplier.id)
     const hasPayments = payments.some(pay => pay.supplierId === supplier.id)
+    const hasDebitNotes = debitNotes.some(dn => dn.supplierId === supplier.id)
+    const hasCreditNotes = supplierCreditNotes.some(cn => cn.supplierId === supplier.id)
+    const hasReturns = purchaseReturns.some(pr => pr.supplierId === supplier.id)
+    const hasExpenses = (expenseEntries || []).some(e => e.supplierId === supplier.id || (e.supplierName && e.supplierName.trim().toLowerCase() === supplier.name.trim().toLowerCase()))
 
-    if (hasInvoices || hasPayments) {
+    if (hasInvoices || hasPayments || hasDebitNotes || hasCreditNotes || hasReturns || hasExpenses) {
       toast.error(`Cannot delete supplier "${supplier.name}"`, {
-        description: 'This supplier is linked to existing invoices or payments and cannot be deleted.'
+        description: 'This supplier is linked to existing invoices, payments, debit/credit notes, returns, or expense entries and cannot be deleted.'
       })
       return
     }

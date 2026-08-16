@@ -1216,6 +1216,22 @@ import {
   getStateName,
   DEFAULT_COMPANY_STATE
 } from './constants/indian-states'
+import { getMetadata } from './storage-utils'
+
+/**
+ * Returns the 2-digit GST state code of the active company from metadata / profile, defaulting to '19' (West Bengal).
+ */
+export function getActiveCompanyStateCode(defaultCode: string = '19'): string {
+  try {
+    const meta = getMetadata()
+    const activeBiz = meta.businesses?.find(b => b.id === meta.activeCompanyId)
+    if (activeBiz) {
+      if (activeBiz.stateCode) return getStateCode(activeBiz.stateCode)
+      if (activeBiz.stateName) return getStateCode(activeBiz.stateName)
+    }
+  } catch {}
+  return defaultCode
+}
 
 export function calculateBasicRateFromInclusive(rateWithTax: number, gstPercentage: number): number {
   if (!Number.isFinite(rateWithTax) || rateWithTax <= 0) return 0
@@ -1232,12 +1248,13 @@ export function normalizeStateName(state?: string): string {
 
 /**
  * Checks if transaction is Inter-State (partyStateCode !== companyStateCode -> IGST)
- * or Intra-State (partyStateCode === companyStateCode -> CGST + SGST). Default company state is '19' (West Bengal).
+ * or Intra-State (partyStateCode === companyStateCode -> CGST + SGST). Defaults dynamically to active company's state.
  */
-export function isInterStateTransaction(partyState?: string, companyState: string = '19'): boolean {
+export function isInterStateTransaction(partyState?: string, companyState?: string): boolean {
   if (!partyState || !partyState.trim()) return false // Default to Intra-State if unspecified
+  const resolvedCompanyState = companyState || getActiveCompanyStateCode('19')
   const partyCode = getStateCode(partyState)
-  const companyCode = getStateCode(companyState)
+  const companyCode = getStateCode(resolvedCompanyState)
   return partyCode !== companyCode
 }
 
@@ -1315,7 +1332,7 @@ export function calculateInvoiceTaxBreakdown(params: InvoiceTaxBreakdownParams):
     additionalCostFinal = 0,
     discountsAmount = 0,
     partyState,
-    companyState = '19',
+    companyState = getActiveCompanyStateCode('19'),
     customRoundOff,
     defaultGstRate = 18
   } = params
@@ -2051,7 +2068,7 @@ export function calculateExpenseTaxBreakdown(params: ExpenseTaxBreakdownParams):
     isTaxInclusive = true,
     gstRate = 18,
     supplierStateCode,
-    companyStateCode = '19'
+    companyStateCode = getActiveCompanyStateCode('19')
   } = params
 
   const isInterState = isInterStateTransaction(supplierStateCode, companyStateCode)
@@ -2148,7 +2165,7 @@ export function calculateNoteTaxBreakdown(params: NoteTaxBreakdownParams): NoteT
     isTaxInclusive = true,
     gstRate = 18,
     partyStateCode,
-    companyStateCode = '19'
+    companyStateCode = getActiveCompanyStateCode('19')
   } = params
 
   const isInterState = isInterStateTransaction(partyStateCode, companyStateCode)

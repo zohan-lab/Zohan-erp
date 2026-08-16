@@ -552,8 +552,8 @@ export function getSupplierBalanceDetails(
 
   const totalInvoiced = supInvoices.reduce((s, inv) => s + (inv.invoiceAmount || 0), 0)
   const totalPaid = supPayments.reduce((s, p) => s + (p.amount || 0), 0)
-  const totalDebitNotes = supDebitNotes.reduce((s, dn) => s + (dn.amount || 0), 0)
-  const totalCreditNotes = supCreditNotes.reduce((s, cn) => s + (cn.amount || 0), 0)
+  const totalDebitNotes = supDebitNotes.reduce((s, dn) => s + (dn.totalAmount || dn.amount || 0), 0)
+  const totalCreditNotes = supCreditNotes.reduce((s, cn) => s + (cn.totalAmount || cn.amount || 0), 0)
   const totalReturns = supReturns.reduce((s, pr) => s + (pr.amount || 0), 0)
 
   const rawBal = supplier.openingBalance || 0
@@ -582,8 +582,8 @@ export function getCustomerBalanceDetails(
 
   const totalInvoiced = custInvoices.reduce((s, inv) => s + (inv.invoiceAmount || 0), 0)
   const totalPaid = custPayments.reduce((s, p) => s + (p.amount || 0), 0)
-  const totalDebitNotes = custDebitNotes.reduce((s, dn) => s + (dn.amount || 0), 0)
-  const totalCreditNotes = custCreditNotes.reduce((s, cn) => s + (cn.amount || 0), 0)
+  const totalDebitNotes = custDebitNotes.reduce((s, dn) => s + (dn.totalAmount || dn.amount || 0), 0)
+  const totalCreditNotes = custCreditNotes.reduce((s, cn) => s + (cn.totalAmount || cn.amount || 0), 0)
   const totalReturns = custReturns.reduce((s, sr) => s + (sr.amount || 0), 0)
 
   const opBal = customer.openingBalance || 0
