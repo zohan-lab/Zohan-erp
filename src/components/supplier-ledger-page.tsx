@@ -1,11 +1,11 @@
 import { useState, useMemo } from 'react'
-import { Supplier, PurchaseInvoice, Payment, LedgerEntry, SupplierDebitNote, SupplierCreditNote, PurchaseReturn } from '@/lib/types'
+import { Supplier, PurchaseInvoice, Payment, LedgerEntry, SupplierDebitNote, SupplierCreditNote, PurchaseReturn, Item } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { BookOpen, TrendUp, TrendDown, FilePdf } from '@phosphor-icons/react'
-import { formatCurrency, getFYFromDate, calculateLedger, RawLedgerTransaction } from '@/lib/calculations'
+import { formatCurrency, getFYFromDate, calculateLedger, RawLedgerTransaction, calculateInvoiceTotals } from '@/lib/calculations'
 import { exportSupplierLedgerPDF, SupplierLedgerEntry } from '@/lib/pdf-export'
 import { PeriodDateFilter, PeriodFilterState, defaultPeriodFilterState, isRecordInPeriod, getPreviousFY, getPeriodDateBounds, isRecordBeforePeriod } from '@/components/period-date-filter'
 import { toast } from 'sonner'
@@ -17,6 +17,7 @@ interface SupplierLedgerPageProps {
   debitNotes: SupplierDebitNote[]
   supplierCreditNotes?: SupplierCreditNote[]
   purchaseReturns: PurchaseReturn[]
+  items?: Item[]
   currentFY: string
   businessName?: string
 }
@@ -28,6 +29,7 @@ export default function SupplierLedgerPage({
   debitNotes,
   supplierCreditNotes = [],
   purchaseReturns,
+  items = [],
   currentFY,
   businessName
 }: SupplierLedgerPageProps) {
@@ -56,12 +58,13 @@ export default function SupplierLedgerPage({
 
     invoices.forEach(invoice => {
       if (invoice.supplierId !== selectedSupplierId) return
+      const totals = calculateInvoiceTotals(invoice, items)
       rawTransactions.push({
         date: invoice.invoiceDate,
         description: 'Purchase Invoice',
         invoiceNo: invoice.invoiceNo,
         debit: 0,
-        credit: invoice.invoiceAmount,
+        credit: totals.totalAmount,
         type: 'invoice',
         refId: invoice.id,
         timestamp: invoice.createdAt || new Date(invoice.invoiceDate).getTime(),

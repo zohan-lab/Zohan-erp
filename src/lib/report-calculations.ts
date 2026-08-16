@@ -29,6 +29,7 @@ import {
   getInvoiceQtyForUnit as getNormalizedInvoiceQtyForUnit
 } from './unit-conversion-service'
 import { isBankType } from './cash-bank-types'
+import { calculateInvoiceTotals } from './calculations'
 
 export interface InventoryData {
   itemId: string
@@ -389,7 +390,8 @@ export function calculateCDAtRisk(
       .filter(a => a.invoiceId === invoice.id)
       .reduce((sum, a) => sum + a.allocatedAmount, 0)
 
-    const pendingAmount = invoice.invoiceAmount - allocatedAmount
+    const invoiceTotal = calculateInvoiceTotals(invoice).totalAmount
+    const pendingAmount = invoiceTotal - allocatedAmount
 
     const getInvoiceQtyForUnit = (inv: PurchaseInvoice, targetUnit: string): number => {
       return getNormalizedInvoiceQtyForUnit(inv, targetUnit, itemMap)
@@ -550,7 +552,7 @@ export function getSupplierBalanceDetails(
   const supCreditNotes = (supplierCreditNotes || []).filter(cn => cn.supplierId === supplier.id)
   const supReturns = (purchaseReturns || []).filter(pr => pr.supplierId === supplier.id)
 
-  const totalInvoiced = supInvoices.reduce((s, inv) => s + (inv.invoiceAmount || 0), 0)
+  const totalInvoiced = supInvoices.reduce((s, inv) => s + calculateInvoiceTotals(inv).totalAmount, 0)
   const totalPaid = supPayments.reduce((s, p) => s + (p.amount || 0), 0)
   const totalDebitNotes = supDebitNotes.reduce((s, dn) => s + (dn.totalAmount || dn.amount || 0), 0)
   const totalCreditNotes = supCreditNotes.reduce((s, cn) => s + (cn.totalAmount || cn.amount || 0), 0)
@@ -580,7 +582,7 @@ export function getCustomerBalanceDetails(
   const custCreditNotes = (creditNotes || []).filter(cn => cn.customerId === customer.id)
   const custReturns = (salesReturns || []).filter(sr => sr.customerId === customer.id)
 
-  const totalInvoiced = custInvoices.reduce((s, inv) => s + (inv.invoiceAmount || 0), 0)
+  const totalInvoiced = custInvoices.reduce((s, inv) => s + calculateInvoiceTotals(inv).totalAmount, 0)
   const totalPaid = custPayments.reduce((s, p) => s + (p.amount || 0), 0)
   const totalDebitNotes = custDebitNotes.reduce((s, dn) => s + (dn.totalAmount || dn.amount || 0), 0)
   const totalCreditNotes = custCreditNotes.reduce((s, cn) => s + (cn.totalAmount || cn.amount || 0), 0)
@@ -639,7 +641,7 @@ export function getSupplierYTDInvoiced(
 ): number {
   return purchaseInvoices
     .filter(inv => inv.supplierId === supplierId && (!activeFY || inv.fy === activeFY))
-    .reduce((sum, inv) => sum + (inv.invoiceAmount || 0), 0)
+    .reduce((sum, inv) => sum + calculateInvoiceTotals(inv).totalAmount, 0)
 }
 
 export function getSupplierPendingPayments(

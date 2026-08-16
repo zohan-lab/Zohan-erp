@@ -1,7 +1,7 @@
 import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
 import { useState, useMemo } from 'react'
 import { PeriodDateFilter, PeriodFilterState, defaultPeriodFilterState, isRecordInPeriod } from '@/components/period-date-filter'
-import { SalesInvoice, Customer, Item, InvoiceItem, CustomerPayment, PurchaseInvoice, PurchaseReturn, SalesReturn } from '@/lib/types'
+import { SalesInvoice, Customer, Item, InvoiceItem, CustomerPayment, PurchaseInvoice, PurchaseReturn, SalesReturn, AdditionalCharge } from '@/lib/types'
 import { buildPurchaseLayers, allocateSalesFIFO } from '@/lib/fifo-engine'
 import { calculateItemStockMap } from '@/lib/report-calculations'
 import { normalizeLineItem, getItemConversionFactor, getInvoiceQtyForUnit } from '@/lib/unit-conversion-service'
@@ -17,7 +17,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ArrowLeft, CaretLeft, Plus, Receipt, Trash, X, Info, PencilSimple, FunnelSimple, Warning, DownloadSimple, MagnifyingGlass, Barcode, Package, UserPlus, GearSix, Keyboard, UploadSimple, FileText, Wallet, TrendUp, SlidersHorizontal } from '@phosphor-icons/react'
-import { formatCurrency, formatMT, getFYMonths, getFYFromDate, calculatePaymentAllocations, calculateRateWithGst, calculateBasicRateFromInclusive, calculateRoundOffAdjustment, calculateInvoiceFinalAmount, calculateInvoiceItemsTotals, calculateAdditionalChargesTotals, calculateInvoiceTaxBreakdown, isInterStateTransaction } from '@/lib/calculations'
+import { formatCurrency, formatMT, getFYMonths, getFYFromDate, calculatePaymentAllocations, calculateRateWithGst, calculateBasicRateFromInclusive, calculateRoundOffAdjustment, calculateInvoiceFinalAmount, calculateInvoiceItemsTotals, calculateAdditionalChargesTotals, calculateInvoiceTaxBreakdown, isInterStateTransaction, calculateInvoiceTotals } from '@/lib/calculations'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { startOfMonth, endOfMonth, isWithinInterval, parseISO, format } from 'date-fns'
@@ -52,8 +52,6 @@ interface SalesInvoicesPageProps {
 }
 
 const DEFAULT_INVOICE_TERMS = '1. Goods once sold will not be taken back or exchanged\n2. All disputes are subject to [ENTER_YOUR_CITY_NAME] jurisdiction only'
-
-export type AdditionalCharge = { id: string; remarks: string; basicRate: number; taxMode: 'none' | 'gst'; gstRate: number; finalAmt: number }
 
 export default function SalesInvoicesPage({
   salesInvoices,
@@ -90,39 +88,49 @@ export default function SalesInvoicesPage({
   // We keep these derived values for compatibility with existing calculations
   const additionalCostFinal = additionalCharges.reduce((sum, charge) => sum + (charge.finalAmt || 0), 0)
 
-  const addAnotherCharge = () => {
-    setAdditionalCharges(prev => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        remarks: '',
-        basicRate: 0,
-        taxMode: 'none',
-        gstRate: 18,
-        finalAmt: 0
-      }
-    ])
-  }
-
-  const handleUpdateCharge = (id: string, field: keyof AdditionalCharge, value: string | number) => {
+  const handleUpdateCharge = (id: string, field: keyof AdditionalCharge, value: any) => {
     setAdditionalCharges(prev => prev.map(charge => {
       if (charge.id !== id) return charge
 
       const updated = { ...charge, [field]: value }
 
-      // Recalculate finalAmt if necessary
-      if (field === 'basicRate' || field === 'taxMode' || field === 'gstRate') {
-        const basic = Number(updated.basicRate) || 0
-        if (updated.taxMode === 'gst') {
-          const gst = typeof updated.gstRate === 'number' ? updated.gstRate : 18
-          updated.finalAmt = calculateRateWithGst(basic, gst)
-        } else {
-          updated.finalAmt = basic
-        }
+      if (field === 'basicRate' || field === 'taxMode' || field === 'gstRate' || field === 'sacCode') {
+        const rate = field === 'basicRate' ? parseFloat(value) || 0 : (updated.basicRate || 0);
+        const mode = field === 'taxMode' ? value : (updated.taxMode || 'gst');
+        const gRate = field === 'gstRate' ? parseFloat(value) || 0 : (updated.gstRate ?? gstPercentage);
+
+        const taxable = rate;
+        const taxAmt = mode === 'gst' ? Math.round(taxable * (gRate / 100) * 100) / 100 : 0;
+        const halfTax = Math.round((taxAmt / 2) * 100) / 100;
+
+        updated.taxableAmount = taxable;
+        updated.basicRate = rate;
+        updated.taxMode = mode;
+        updated.gstRate = gRate;
+        updated.cgstAmount = halfTax;
+        updated.sgstAmount = halfTax;
+        updated.igstAmount = 0;
+        updated.finalAmt = Math.round((taxable + taxAmt) * 100) / 100;
       }
 
       return updated
     }))
+  }
+
+  const addAnotherCharge = () => {
+    setAdditionalCharges(prev => [...prev, {
+      id: Math.random().toString(36).substring(7),
+      remarks: '',
+      sacCode: '996511',
+      basicRate: 0,
+      taxableAmount: 0,
+      taxMode: 'gst',
+      gstRate: gstPercentage,
+      cgstAmount: 0,
+      sgstAmount: 0,
+      igstAmount: 0,
+      finalAmt: 0
+    }])
   }
 
   const removeCharge = (id: string) => {
@@ -701,7 +709,27 @@ export default function SalesInvoicesPage({
     setInvoiceItems(invoice.items || [])
     if (invoice.additionalCharges && invoice.additionalCharges.length > 0) {
       setShowAdditionalCharge(true)
-      setAdditionalCharges(invoice.additionalCharges)
+      setAdditionalCharges(invoice.additionalCharges.map(c => {
+        const taxMode = c.taxMode || (c.gstRate && c.gstRate > 0 ? 'gst' : 'none');
+        const gstRate = c.gstRate ?? gstPercentage;
+        const basicRate = c.basicRate ?? c.taxableAmount ?? 0;
+        const taxAmt = taxMode === 'gst' ? Math.round(basicRate * (gstRate / 100) * 100) / 100 : 0;
+        const halfTax = Math.round((taxAmt / 2) * 100) / 100;
+        const finalAmt = c.finalAmt ?? Math.round((basicRate + taxAmt) * 100) / 100;
+
+        return {
+          ...c,
+          taxMode,
+          gstRate,
+          basicRate,
+          taxableAmount: basicRate,
+          cgstAmount: c.cgstAmount ?? halfTax,
+          sgstAmount: c.sgstAmount ?? halfTax,
+          igstAmount: c.igstAmount ?? 0,
+          sacCode: c.sacCode || (c.remarks?.toLowerCase().includes('freight') || c.remarks?.toLowerCase().includes('transport') ? '996511' : undefined),
+          finalAmt
+        };
+      }))
     } else {
       const hasCost = Boolean(invoice.additionalCost || invoice.additionalCostBasicRate || invoice.additionalCostRemarks)
       setShowAdditionalCharge(hasCost)
@@ -709,7 +737,9 @@ export default function SalesInvoicesPage({
         setAdditionalCharges([{
           id: Math.random().toString(36).substring(7),
           remarks: invoice.additionalCostRemarks || '',
+          sacCode: invoice.additionalCostRemarks?.toLowerCase().includes('freight') || invoice.additionalCostRemarks?.toLowerCase().includes('transport') ? '996511' : undefined,
           basicRate: invoice.additionalCostBasicRate || 0,
+          taxableAmount: invoice.additionalCostBasicRate || 0,
           taxMode: invoice.additionalCostBasicRate && invoice.additionalCost && invoice.additionalCost > invoice.additionalCostBasicRate ? 'gst' : 'none',
           gstRate: gstPercentage,
           finalAmt: invoice.additionalCost || 0
@@ -1417,54 +1447,79 @@ export default function SalesInvoicesPage({
                             </button>
                           ) : (
                             <div className="flex flex-col gap-3">
-                              {additionalCharges.map((charge) => (
-                                <div key={charge.id} className="erp-charge-dashed-card">
-                                  <Input
-                                    type="text"
-                                    value={charge.remarks}
-                                    onChange={(e) => handleUpdateCharge(charge.id, 'remarks', e.target.value)}
-                                    placeholder="e.g. Transport Charge"
-                                    className="bg-muted/50 border-muted"
-                                  />
-                                  <div className="erp-charge-row-inputs">
-                                    <div className="relative flex-1">
-                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono text-sm">₹</span>
+                              {additionalCharges.map((charge) => {
+                                const effectiveMode = charge.taxMode || (charge.gstRate && charge.gstRate > 0 ? 'gst' : 'none')
+                                const gstPct = charge.gstRate ?? gstPercentage
+                                const baseAmt = charge.basicRate || 0
+                                const taxAmt = effectiveMode === 'gst' ? Math.round(baseAmt * (gstPct / 100) * 100) / 100 : 0
+                                const finalAmt = charge.finalAmt ?? Math.round((baseAmt + taxAmt) * 100) / 100
+
+                                return (
+                                  <div key={charge.id} className="erp-charge-dashed-card space-y-2">
+                                    <div className="flex gap-2">
                                       <Input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        value={charge.basicRate || ''}
-                                        onChange={(e) => handleUpdateCharge(charge.id, 'basicRate', e.target.value)}
-                                        placeholder="0.00"
-                                        className="pl-7 font-mono text-right"
+                                        type="text"
+                                        value={charge.remarks}
+                                        onChange={(e) => handleUpdateCharge(charge.id, 'remarks', e.target.value)}
+                                        placeholder="e.g. Freight Charges"
+                                        className="bg-muted/50 border-muted flex-1 text-xs"
+                                      />
+                                      <Input
+                                        type="text"
+                                        value={charge.sacCode || ''}
+                                        onChange={(e) => handleUpdateCharge(charge.id, 'sacCode', e.target.value)}
+                                        placeholder="SAC (996511)"
+                                        className="w-28 font-mono text-xs bg-muted/50 border-muted"
                                       />
                                     </div>
-                                    <Select value={charge.taxMode} onValueChange={(value: any) => handleUpdateCharge(charge.id, 'taxMode', value)}>
-                                      <SelectTrigger className="w-[140px]">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="none">No Tax Applicable</SelectItem>
-                                        <SelectItem value="gst">GST Applicable</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                    {charge.taxMode === 'gst' && (
-                                      <Input
-                                        type="number"
-                                        step="0.01"
-                                        min="0"
-                                        value={charge.gstRate || ''}
-                                        onChange={(e) => handleUpdateCharge(charge.id, 'gstRate', e.target.value)}
-                                        placeholder="GST %"
-                                        className="w-20 font-mono text-right"
-                                      />
+                                    <div className="erp-charge-row-inputs">
+                                      <div className="relative flex-1">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono text-sm">₹</span>
+                                        <Input
+                                          type="number"
+                                          step="0.01"
+                                          min="0"
+                                          value={charge.basicRate || ''}
+                                          onChange={(e) => handleUpdateCharge(charge.id, 'basicRate', e.target.value)}
+                                          placeholder="0.00"
+                                          className="pl-7 font-mono text-right text-xs"
+                                        />
+                                      </div>
+                                      <Select value={effectiveMode} onValueChange={(value: any) => handleUpdateCharge(charge.id, 'taxMode', value)}>
+                                        <SelectTrigger className="w-[140px] text-xs">
+                                          <SelectValue placeholder="Tax Mode" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="none">No Tax</SelectItem>
+                                          <SelectItem value="gst">GST Applicable</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                      {effectiveMode === 'gst' && (
+                                        <Input
+                                          type="number"
+                                          step="0.01"
+                                          min="0"
+                                          value={charge.gstRate || ''}
+                                          onChange={(e) => handleUpdateCharge(charge.id, 'gstRate', e.target.value)}
+                                          placeholder="GST %"
+                                          className="w-20 font-mono text-right text-xs"
+                                        />
+                                      )}
+                                      <button type="button" onClick={() => removeCharge(charge.id)} className="flex items-center justify-center shrink-0 text-slate-400 hover:text-red-600">
+                                        <Trash size={16} />
+                                      </button>
+                                    </div>
+                                    {effectiveMode === 'gst' && (
+                                      <div className="flex items-center justify-between text-[11px] font-mono px-2 py-1 bg-slate-50 border border-slate-200 rounded text-slate-600">
+                                        <span>SAC: <strong className="text-slate-900">{charge.sacCode || '996511'}</strong></span>
+                                        <span>Taxable: <strong className="text-slate-900">₹{baseAmt.toFixed(2)}</strong></span>
+                                        <span>GST ({gstPct}%): <strong className="text-blue-700">₹{taxAmt.toFixed(2)}</strong></span>
+                                        <span>Total: <strong className="text-emerald-700 font-bold">₹{finalAmt.toFixed(2)}</strong></span>
+                                      </div>
                                     )}
-                                    <button type="button" onClick={() => removeCharge(charge.id)} className="flex items-center justify-center shrink-0">
-                                      <Trash size={16} />
-                                    </button>
                                   </div>
-                                </div>
-                              ))}
+                                )
+                              })}
                               <div className="pt-1 px-1">
                                 <button type="button" className="erp-text-link" onClick={addAnotherCharge}>
                                   <Plus size={14} weight="bold" /> Add Another Charge
@@ -1883,12 +1938,14 @@ export default function SalesInvoicesPage({
                   </TableRow>
                 ) : (
                   filteredInvoices.map((invoice) => {
+                    const totals = calculateInvoiceTotals(invoice, items)
+
                     return (
                       <TableRow key={invoice.id} className="hover:bg-slate-50/80 border-b border-slate-100">
                         <TableCell className="font-mono font-bold text-slate-900 text-sm">{invoice.invoiceNo}</TableCell>
                         <TableCell className="text-slate-600 text-xs font-medium">{new Date(invoice.invoiceDate).toLocaleDateString('en-IN')}</TableCell>
                         <TableCell className="font-semibold text-slate-800 text-sm">{getCustomerName(invoice.customerId)}</TableCell>
-                        <TableCell className="text-right font-mono font-bold text-slate-900 text-sm">{formatCurrency(invoice.totalAmount ?? invoice.invoiceAmount)}</TableCell>
+                        <TableCell className="text-right font-mono font-bold text-slate-900 text-sm">{formatCurrency(totals.totalAmount)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
                             <Button

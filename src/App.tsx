@@ -2192,6 +2192,7 @@ function App() {
               debitNotes={safeDebitNotes}
               supplierCreditNotes={safeSupplierCreditNotes}
               purchaseReturns={safePurchaseReturns}
+              items={safeItems}
               currentFY={safeCurrentFY}
               businessName={safeBusinessName}
             />
@@ -2205,6 +2206,7 @@ function App() {
               creditNotes={safeCreditNotes}
               customerDebitNotes={safeCustomerDebitNotes}
               salesReturns={safeSalesReturns}
+              items={safeItems}
               currentFY={safeCurrentFY}
             />
           )

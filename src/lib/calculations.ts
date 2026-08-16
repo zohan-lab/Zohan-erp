@@ -257,7 +257,7 @@ export function calculatePaymentAllocations(
       }
 
       const state = supplierState.get(supplierId)!
-      let remainingInvoice = invoice.invoiceAmount
+      let remainingInvoice = calculateInvoiceTotals(invoice).totalAmount
       let loopCounter = 0
       const maxLoops = 10000
 
@@ -556,7 +556,8 @@ export function calculateExpectedDiscounts(
     )
 
     const totalAllocated = invoiceAllocations.reduce((sum, a) => sum + a.allocatedAmount, 0)
-    const isFullyPaid = totalAllocated >= invoice.invoiceAmount
+    const effectiveTotal = calculateInvoiceTotals(invoice).totalAmount
+    const isFullyPaid = totalAllocated >= effectiveTotal
 
     if (isFullyPaid && effectiveInvoiceRules.invoiceCloseCDRules && effectiveInvoiceRules.invoiceCloseCDRules.length > 0) {
       const lastPayment = payments
@@ -1699,16 +1700,22 @@ export function calculateInvoiceTotals(
       customRoundOff: invoice.roundOff !== undefined ? invoice.roundOff : (invoice.roundOffAdjustment || 0)
     })
 
+    const isItemsDriven = (invoice.items && invoice.items.length > 0) || (invoice.additionalCharges && invoice.additionalCharges.length > 0)
+
+    const finalTotal = isItemsDriven && breakdown.totalAmount > 0
+      ? breakdown.totalAmount
+      : (invoice.totalAmount !== undefined && invoice.totalAmount > 0
+          ? invoice.totalAmount
+          : (invoice.invoiceAmount !== undefined && invoice.invoiceAmount > 0 ? invoice.invoiceAmount : breakdown.totalAmount))
+
     return {
-      taxableAmount: invoice.taxableAmount !== undefined && invoice.taxableAmount > 0 ? invoice.taxableAmount : breakdown.taxableAmount,
-      cgstAmount: invoice.cgstAmount !== undefined ? invoice.cgstAmount : breakdown.cgstAmount,
-      sgstAmount: invoice.sgstAmount !== undefined ? invoice.sgstAmount : breakdown.sgstAmount,
-      igstAmount: invoice.igstAmount !== undefined ? invoice.igstAmount : breakdown.igstAmount,
-      totalTaxAmount: (invoice.cgstAmount || 0) + (invoice.sgstAmount || 0) + (invoice.igstAmount || 0) || breakdown.totalTaxAmount,
+      taxableAmount: isItemsDriven && breakdown.taxableAmount > 0 ? breakdown.taxableAmount : (invoice.taxableAmount || breakdown.taxableAmount),
+      cgstAmount: isItemsDriven ? breakdown.cgstAmount : (invoice.cgstAmount ?? breakdown.cgstAmount),
+      sgstAmount: isItemsDriven ? breakdown.sgstAmount : (invoice.sgstAmount ?? breakdown.sgstAmount),
+      igstAmount: isItemsDriven ? breakdown.igstAmount : (invoice.igstAmount ?? breakdown.igstAmount),
+      totalTaxAmount: isItemsDriven ? breakdown.totalTaxAmount : ((invoice.cgstAmount || 0) + (invoice.sgstAmount || 0) + (invoice.igstAmount || 0) || breakdown.totalTaxAmount),
       roundOff: invoice.roundOff !== undefined ? invoice.roundOff : (invoice.roundOffAdjustment !== undefined ? invoice.roundOffAdjustment : breakdown.roundOff),
-      totalAmount: invoice.totalAmount !== undefined && invoice.totalAmount > 0
-        ? invoice.totalAmount
-        : (invoice.invoiceAmount !== undefined && invoice.invoiceAmount > 0 ? invoice.invoiceAmount : breakdown.totalAmount),
+      totalAmount: roundCurrency(finalTotal),
       isInterState: invoice.isInterState !== undefined ? invoice.isInterState : breakdown.isInterState
     }
   }
@@ -1745,7 +1752,10 @@ export function calculateInvoiceListTotals(
 ): { totalQtyMT: number; totalAmount: number } {
   const itemMap = items ? new Map(items.map(i => [i.id, i])) : undefined
   const totalQtyMT = invoices.reduce((sum, inv) => sum + getInvoiceQtyForUnit(inv as any, 'MT', itemMap), 0)
-  const totalAmount = roundCurrency(invoices.reduce((sum, inv) => sum + (inv.totalAmount ?? inv.invoiceAmount ?? 0), 0))
+  const totalAmount = roundCurrency(invoices.reduce((sum, inv) => {
+    const totals = calculateInvoiceTotals(inv as any, items || [])
+    return sum + totals.totalAmount
+  }, 0))
   return { totalQtyMT, totalAmount }
 }
 
@@ -1928,7 +1938,8 @@ export function calculateDetailedPurchaseInvoiceBreakdown(
 ): DetailedPurchaseInvoiceBreakdown {
   const invAllocations = paymentAllocations.filter(a => a.invoiceId === invoice.id)
   const paidAmount = invAllocations.reduce((sum, a) => sum + a.allocatedAmount, 0)
-  const pendingAmount = Math.max(0, invoice.invoiceAmount - paidAmount)
+  const effectiveInvoiceTotal = calculateInvoiceTotals(invoice).totalAmount
+  const pendingAmount = Math.max(0, effectiveInvoiceTotal - paidAmount)
   const status = pendingAmount === 0 ? 'Closed' : paidAmount > 0 ? 'Partially Paid' : 'Open'
 
   const invoiceDiscounts = expectedDiscounts.filter(ed => ed.invoiceId === invoice.id)
@@ -2020,7 +2031,7 @@ export function calculateDetailedPurchaseInvoiceBreakdown(
     }
   })
 
-  const netInvoiceAmount = invoice.invoiceAmount - totalLinkedExpense
+  const netInvoiceAmount = effectiveInvoiceTotal - totalLinkedExpense
 
   return {
     paidAmount,

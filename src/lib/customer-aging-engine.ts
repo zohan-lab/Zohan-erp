@@ -1,4 +1,5 @@
 import { Customer, SalesInvoice, CustomerPayment, CustomerCreditNote, CustomerDebitNote, SalesReturn } from './types'
+import { calculateInvoiceTotals } from './calculations'
 
 export type AgingBracketKey = '0_30' | '31_60' | '61_90' | '90_plus'
 
@@ -112,7 +113,7 @@ export function computeCustomerAging(
     const custSalesReturns = salesReturns.filter((sr) => sr.customerId === customer.id)
     const custDebitNotes = customerDebitNotes.filter((dn) => dn.customerId === customer.id)
 
-    const totalSales = custInvoices.reduce((sum, inv) => sum + (inv.invoiceAmount || 0), 0)
+    const totalSales = custInvoices.reduce((sum, inv) => sum + calculateInvoiceTotals(inv).totalAmount, 0)
     const totalPayments = custPayments.reduce((sum, p) => sum + (p.amount || 0), 0)
     const totalCreditNotes = custCreditNotes.reduce((sum, cn) => sum + (cn.totalAmount || cn.amount || 0), 0)
     const totalSalesReturns = custSalesReturns.reduce((sum, sr) => sum + (sr.amount || 0), 0)
@@ -130,7 +131,7 @@ export function computeCustomerAging(
 
     // 3. FIFO Allocation of Credits against Sales Invoices
     custInvoices.forEach((inv) => {
-      const invTotal = inv.invoiceAmount || 0
+      const invTotal = calculateInvoiceTotals(inv).totalAmount
       const paid = Math.min(invTotal, remainingCredit)
       const pending = Math.max(0, invTotal - paid)
       remainingCredit = Math.max(0, remainingCredit - invTotal)

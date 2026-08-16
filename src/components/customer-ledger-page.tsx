@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Customer, SalesInvoice, CustomerPayment, LedgerEntry, CustomerCreditNote, CustomerDebitNote, SalesReturn } from '@/lib/types'
+import { Customer, SalesInvoice, CustomerPayment, LedgerEntry, CustomerCreditNote, CustomerDebitNote, SalesReturn, Item } from '@/lib/types'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -7,7 +7,7 @@ import { BookOpen, TrendUp, TrendDown, FilePdf } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
 import { exportCustomerLedgerPDF, CustomerLedgerEntry } from '@/lib/pdf-export'
 import { toast } from 'sonner'
-import { formatCurrency, getFYFromDate, calculateLedger, RawLedgerTransaction } from '@/lib/calculations'
+import { formatCurrency, getFYFromDate, calculateLedger, RawLedgerTransaction, calculateInvoiceTotals } from '@/lib/calculations'
 import { PeriodDateFilter, PeriodFilterState, defaultPeriodFilterState, isRecordInPeriod, getPreviousFY, getPeriodDateBounds, isRecordBeforePeriod } from '@/components/period-date-filter'
 
 interface CustomerLedgerPageProps {
@@ -17,6 +17,7 @@ interface CustomerLedgerPageProps {
   creditNotes: CustomerCreditNote[]
   customerDebitNotes?: CustomerDebitNote[]
   salesReturns: SalesReturn[]
+  items?: Item[]
   currentFY: string
   businessName?: string
 }
@@ -28,6 +29,7 @@ export default function CustomerLedgerPage({
   creditNotes,
   customerDebitNotes = [],
   salesReturns,
+  items = [],
   currentFY,
   businessName = 'SK TRADERS'
 }: CustomerLedgerPageProps) {
@@ -56,11 +58,12 @@ export default function CustomerLedgerPage({
 
     salesInvoices.forEach(invoice => {
       if (invoice.customerId !== selectedCustomerId) return
+      const totals = calculateInvoiceTotals(invoice, items)
       rawTransactions.push({
         date: invoice.invoiceDate,
         description: 'Sales Invoice',
         invoiceNo: invoice.invoiceNo,
-        debit: invoice.invoiceAmount,
+        debit: totals.totalAmount,
         credit: 0,
         type: 'invoice',
         refId: invoice.id,

@@ -35,6 +35,7 @@ export interface TallyXmlAdditionalCharge {
   ledgerName: string
   remarks?: string
   sacCode?: string
+  taxMode?: 'none' | 'gst'
   basicRate: number
   taxableAmount: number
   gstRate: number
@@ -940,6 +941,7 @@ export function parseTallyXmlVouchers(
           ledgerName: leg.ledgerName,
           remarks: leg.ledgerName,
           sacCode,
+          taxMode: isTcs ? 'none' : 'gst',
           basicRate: chargeTaxable,
           taxableAmount: chargeTaxable,
           gstRate: chargeGstRate,

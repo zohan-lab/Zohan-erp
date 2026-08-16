@@ -21,16 +21,30 @@ import { convertItemQuantity, getInvoiceQtyForUnit, isUnitCompatible } from './u
 import { Payment, PurchaseInvoice, Supplier, AdditionalCharge } from './types'
 
 function invoice(overrides: Partial<PurchaseInvoice>): PurchaseInvoice {
+  const amount = overrides.invoiceAmount ?? 1000
   return {
     id: 'inv-1',
     supplierId: 'sup-1',
     invoiceNo: 'PI-001',
     invoiceDate: '2026-04-01',
-    invoiceAmount: 1000,
+    invoiceAmount: amount,
+    totalAmount: amount,
+    taxableAmount: Math.round(amount / 1.18 * 100) / 100,
+    cgstAmount: Math.round(amount / 1.18 * 0.09 * 100) / 100,
+    sgstAmount: Math.round(amount / 1.18 * 0.09 * 100) / 100,
     fy: 'FY2026-27',
     createdAt: new Date('2026-04-01T08:00:00Z').getTime(),
     items: [
-      { itemId: 'item-1', enteredQuantity: 10, enteredUnit: 'MT', baseQuantity: 10000, rate: 100, amount: 1000 }
+      {
+        itemId: 'item-1',
+        enteredQuantity: 10,
+        enteredUnit: 'MT',
+        baseQuantity: 10000,
+        rate: amount / 10,
+        basicRate: Math.round(amount / 10 / 1.18 * 100) / 100,
+        amount: amount,
+        taxableAmount: Math.round(amount / 1.18 * 100) / 100
+      }
     ],
     ...overrides
   }
@@ -915,6 +929,81 @@ describe('calculateInvoiceTotals & Additional Charges Parity (Benchmark #RV12000
     const listTotals = calculateInvoiceListTotals([testInvoice])
     expect(listTotals.totalAmount).toBe(830652.00)
     expect(formatCurrency(totals.totalAmount)).toBe('₹8,30,652.00')
+  })
+
+  it('self-heals legacy drifted invoiceAmount (e.g. ₹1,27,909.63) to canonical statutory total (₹8,30,652.00)', () => {
+    // Simulating legacy record where invoiceAmount was stored with only the GST tax amount
+    const legacyDriftedInvoice: PurchaseInvoice = {
+      id: 'pur-legacy-drift',
+      supplierId: 'sup-captain',
+      invoiceNo: 'RV1200012668',
+      invoiceDate: '2025-12-26',
+      invoiceAmount: 127909.63, // Corrupted legacy stored amount
+      totalAmount: 127909.63,
+      additionalCharges: [
+        {
+          id: 'charge-1',
+          remarks: 'Freight Charges',
+          sacCode: '996511',
+          taxMode: 'gst',
+          basicRate: 1200.00,
+          taxableAmount: 1200.00,
+          gstRate: 18,
+          cgstAmount: 108.00,
+          sgstAmount: 108.00,
+          igstAmount: 0,
+          finalAmt: 1416.00
+        }
+      ],
+      items: [
+        {
+          itemId: 'item-10mm',
+          enteredQuantity: 9.06,
+          enteredUnit: 'TON',
+          baseQuantity: 9060,
+          basicRate: 58628.80,
+          rate: 69181.98,
+          amount: 626788.73,
+          taxableAmount: 531176.89,
+          gstRate: 18,
+          cgstRate: 9,
+          cgstAmount: 47805.92,
+          sgstRate: 9,
+          sgstAmount: 47805.92,
+          igstRate: 0,
+          igstAmount: 0
+        },
+        {
+          itemId: 'item-12mm',
+          enteredQuantity: 3.00,
+          enteredUnit: 'TON',
+          baseQuantity: 3000,
+          basicRate: 57188.49,
+          rate: 67482.42,
+          amount: 202447.26,
+          taxableAmount: 171565.48,
+          gstRate: 18,
+          cgstRate: 9,
+          cgstAmount: 15440.89,
+          sgstRate: 9,
+          sgstAmount: 15440.89,
+          igstRate: 0,
+          igstAmount: 0
+        }
+      ],
+      roundOffAdjustment: 0.01,
+      fy: '2025-2026'
+    }
+
+    const calculated = calculateInvoiceTotals(legacyDriftedInvoice)
+    expect(calculated.totalAmount).toBe(830652.00)
+    expect(calculated.taxableAmount).toBe(703942.37)
+    expect(calculated.cgstAmount).toBe(63354.81)
+    expect(calculated.sgstAmount).toBe(63354.81)
+    expect(calculated.roundOff).toBe(0.01)
+
+    const listTotals = calculateInvoiceListTotals([legacyDriftedInvoice])
+    expect(listTotals.totalAmount).toBe(830652.00)
   })
 
   it('correctly calculates bidirectional rates (Inclusive <-> Exclusive) with zero drift', () => {
