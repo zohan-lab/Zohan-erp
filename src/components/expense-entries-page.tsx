@@ -93,12 +93,18 @@ export default function ExpenseEntriesPage({
   const [supplierGstin, setSupplierGstin] = useState('')
   const [supplierStateCode, setSupplierStateCode] = useState('19')
   const [invoiceRefNo, setInvoiceRefNo] = useState('')
-  const [invoiceRefDate, setInvoiceRefDate] = useState('')
+  const [invoiceRefDate, setInvoiceRefDate] = useState(new Date().toISOString().split('T')[0])
   const [hsnSacCode, setHsnSacCode] = useState('')
   const [isTaxInclusive, setIsTaxInclusive] = useState(true)
   const [gstRate, setGstRate] = useState<number>(18)
   const [isItcEligible, setIsItcEligible] = useState(true)
   const [itcType, setItcType] = useState<'Inputs' | 'Capital Goods' | 'Input Services' | 'Ineligible'>('Input Services')
+
+  // Auto-sync Vendor Invoice Date with Voucher Date
+  const handleVoucherDateChange = (newDate: string) => {
+    setExpenseDate(newDate)
+    setInvoiceRefDate(newDate)
+  }
 
   // Manage Categories Master Modal State
   const [manageTypesOpen, setManageTypesOpen] = useState(false)
@@ -149,39 +155,15 @@ export default function ExpenseEntriesPage({
     }
   }
 
-  // Aggregated payee list from verified Suppliers + Prior Expense entries
+  // Payee suggestion list strictly queried from verified Supplier Master (suppliers)
   const payeeSuggestions = useMemo(() => {
-    const map = new Map<string, { id?: string; name: string; gstin?: string; stateCode?: string; source: 'Supplier Master' | 'Previous Payee' }>()
-
-    // Prior Expense Entries
-    expenseEntries.forEach((e) => {
-      const clean = (e.supplierName || '').trim()
-      if (clean && !map.has(clean.toLowerCase())) {
-        map.set(clean.toLowerCase(), {
-          name: clean,
-          gstin: e.supplierGstin,
-          stateCode: e.supplierStateCode,
-          source: 'Previous Payee'
-        })
-      }
-    })
-
-    // Verified Supplier Master (higher priority)
-    suppliers.forEach((s) => {
-      const clean = (s.name || '').trim()
-      if (clean) {
-        map.set(clean.toLowerCase(), {
-          id: s.id,
-          name: clean,
-          gstin: s.gstin,
-          stateCode: s.stateCode,
-          source: 'Supplier Master'
-        })
-      }
-    })
-
-    return Array.from(map.values())
-  }, [suppliers, expenseEntries])
+    return suppliers.map((s) => ({
+      id: s.id,
+      name: s.name.trim(),
+      gstin: s.gstin ? s.gstin.trim() : undefined,
+      stateCode: s.stateCode || (s.gstin ? s.gstin.slice(0, 2) : '19')
+    }))
+  }, [suppliers])
 
   // Matching payees when at least 1 character is typed
   const matchingPayees = useMemo(() => {
@@ -195,8 +177,14 @@ export default function ExpenseEntriesPage({
   const handleSelectPayee = (item: { id?: string; name: string; gstin?: string; stateCode?: string }) => {
     setSupplierName(item.name)
     if (item.id) setSupplierId(item.id)
-    if (item.gstin) handleGstinChange(item.gstin)
-    if (item.stateCode) setSupplierStateCode(item.stateCode)
+    if (item.gstin) {
+      handleGstinChange(item.gstin)
+    } else {
+      setSupplierGstin('')
+    }
+    if (item.stateCode) {
+      setSupplierStateCode(item.stateCode)
+    }
     setPayeeInputFocused(false)
   }
 
@@ -214,9 +202,10 @@ export default function ExpenseEntriesPage({
 
   // Reset Entry Form
   const resetForm = () => {
+    const today = new Date().toISOString().split('T')[0]
     setEditingExpense(null)
     setExpenseTypeId('')
-    setExpenseDate(new Date().toISOString().split('T')[0])
+    setExpenseDate(today)
     setAmount('')
     setSelectedCounterId('')
     setSupplierId('')
@@ -228,7 +217,7 @@ export default function ExpenseEntriesPage({
     setSupplierGstin('')
     setSupplierStateCode('19')
     setInvoiceRefNo('')
-    setInvoiceRefDate('')
+    setInvoiceRefDate(today)
     setHsnSacCode('')
     setIsTaxInclusive(true)
     setGstRate(18)
@@ -239,9 +228,10 @@ export default function ExpenseEntriesPage({
 
   // Edit Expense Entry
   const handleEditExpense = (expense: ExpenseEntry) => {
+    const vDate = expense.expenseDate || expense.date || new Date().toISOString().split('T')[0]
     setEditingExpense(expense)
     setExpenseTypeId(expense.expenseTypeId || expense.categoryId || '')
-    setExpenseDate(expense.expenseDate || expense.date || new Date().toISOString().split('T')[0])
+    setExpenseDate(vDate)
     setAmount(String(expense.amount || ''))
     setSelectedCounterId(expense.counterId || expense.paymentAccountId || '')
     setSupplierId(expense.supplierId || '')
@@ -255,7 +245,7 @@ export default function ExpenseEntriesPage({
     setSupplierGstin(expense.supplierGstin || '')
     setSupplierStateCode(expense.supplierStateCode || '19')
     setInvoiceRefNo(expense.invoiceRefNo || '')
-    setInvoiceRefDate(expense.invoiceRefDate || '')
+    setInvoiceRefDate(expense.invoiceRefDate || vDate)
     setHsnSacCode(expense.hsnSacCode || '')
     setIsTaxInclusive(expense.isTaxInclusive !== false)
     setGstRate(typeof expense.gstRate === 'number' ? expense.gstRate : 18)
@@ -738,7 +728,7 @@ export default function ExpenseEntriesPage({
               <Input
                 type="date"
                 value={expenseDate}
-                onChange={(e) => setExpenseDate(e.target.value)}
+                onChange={(e) => handleVoucherDateChange(e.target.value)}
                 className="h-9 text-xs font-medium"
                 required
               />
@@ -899,11 +889,11 @@ export default function ExpenseEntriesPage({
                     {showPayeeSuggestions && matchingPayees.length > 0 && (
                       <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl shadow-xl border border-slate-200 z-50 overflow-hidden max-h-[220px] overflow-y-auto divide-y divide-slate-100 animate-in fade-in-50 duration-100">
                         <div className="px-2.5 py-1 bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                          Suggested Payees ({matchingPayees.length})
+                          Verified Suppliers ({matchingPayees.length})
                         </div>
-                        {matchingPayees.map((item, idx) => (
+                        {matchingPayees.map((item) => (
                           <div
-                            key={`${item.name}-${idx}`}
+                            key={item.id}
                             onMouseDown={(e) => {
                               e.preventDefault()
                               handleSelectPayee(item)
@@ -912,20 +902,15 @@ export default function ExpenseEntriesPage({
                           >
                             <div className="truncate mr-2">
                               <p className="font-bold text-slate-900 truncate">{item.name}</p>
-                              <p className="text-[10px] text-slate-400 font-mono">
-                                {item.gstin ? `GSTIN: ${item.gstin}` : 'Unregistered'}
-                                {item.stateCode ? ` · ${getStateName(item.stateCode)}` : ''}
+                              <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                {item.name} · {item.gstin ? `GSTIN: ${item.gstin}` : 'Unregistered'} · {getStateName(item.stateCode)}
                               </p>
                             </div>
                             <Badge
                               variant="outline"
-                              className={`text-[9px] font-semibold shrink-0 ${
-                                item.source === 'Supplier Master'
-                                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                                  : 'bg-slate-50 text-slate-600 border-slate-200'
-                              }`}
+                              className="text-[9px] font-semibold shrink-0 bg-indigo-50 text-indigo-700 border-indigo-200"
                             >
-                              {item.source}
+                              Supplier
                             </Badge>
                           </div>
                         ))}
