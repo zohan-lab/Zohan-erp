@@ -386,8 +386,9 @@ export interface SalesInvoice {
   roundOff?: number
   totalAmount?: number
   isInterState?: boolean
-
+  orderDate?: string
   fy: string
+  createdAt?: number
   history?: EditHistoryLog[]
 }
 
@@ -397,9 +398,12 @@ export interface CustomerPayment {
   paymentDate: string
   amount: number
   notes?: string
-  counterId: string
-  counterName: string
+  paymentMode?: string
+  isAdvance?: boolean
+  counterId?: string
+  counterName?: string
   fy: string
+  createdAt?: number
   history?: EditHistoryLog[]
 }
 

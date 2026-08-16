@@ -807,11 +807,29 @@ export function generateTallyXML(
       // Tally XML convention: Dr is negative (-amount), Cr is positive (+amount)
       const xmlAmount = isDebit ? -leg.amount : leg.amount
 
-      xml += '            <ALLLEDGERENTRIES.LIST>\n'
-      xml += `              <LEDGERNAME>${escapeXML(leg.ledgerName)}</LEDGERNAME>\n`
-      xml += `              <ISDEEMEDPOSITIVE>${isDebit ? 'Yes' : 'No'}</ISDEEMEDPOSITIVE>\n`
-      xml += `              <AMOUNT>${xmlAmount.toFixed(2)}</AMOUNT>\n`
-      xml += '            </ALLLEDGERENTRIES.LIST>\n'
+      if (leg.itemName) {
+        const uom = leg.itemRatePer || 'PCS'
+        const qtyStr = leg.billedQty || `1.000 ${uom}`
+        xml += '            <ALLINVENTORYENTRIES.LIST>\n'
+        xml += `              <STOCKITEMNAME>${escapeXML(leg.itemName)}</STOCKITEMNAME>\n`
+        xml += `              <ISDEEMEDPOSITIVE>${isDebit ? 'Yes' : 'No'}</ISDEEMEDPOSITIVE>\n`
+        xml += `              <RATE>${leg.itemRate !== undefined ? Number(leg.itemRate).toFixed(2) : '0.00'}/${escapeXML(uom)}</RATE>\n`
+        xml += `              <AMOUNT>${xmlAmount.toFixed(2)}</AMOUNT>\n`
+        xml += `              <ACTUALQTY>${escapeXML(qtyStr)}</ACTUALQTY>\n`
+        xml += `              <BILLEDQTY>${escapeXML(qtyStr)}</BILLEDQTY>\n`
+        xml += '              <ACCOUNTINGALLOCATIONSLIST.LIST>\n'
+        xml += `                <LEDGERNAME>${escapeXML(leg.ledgerName)}</LEDGERNAME>\n`
+        xml += `                <ISDEEMEDPOSITIVE>${isDebit ? 'Yes' : 'No'}</ISDEEMEDPOSITIVE>\n`
+        xml += `                <AMOUNT>${xmlAmount.toFixed(2)}</AMOUNT>\n`
+        xml += '              </ACCOUNTINGALLOCATIONSLIST.LIST>\n'
+        xml += '            </ALLINVENTORYENTRIES.LIST>\n'
+      } else {
+        xml += '            <ALLLEDGERENTRIES.LIST>\n'
+        xml += `              <LEDGERNAME>${escapeXML(leg.ledgerName)}</LEDGERNAME>\n`
+        xml += `              <ISDEEMEDPOSITIVE>${isDebit ? 'Yes' : 'No'}</ISDEEMEDPOSITIVE>\n`
+        xml += `              <AMOUNT>${xmlAmount.toFixed(2)}</AMOUNT>\n`
+        xml += '            </ALLLEDGERENTRIES.LIST>\n'
+      }
     })
 
     xml += '          </VOUCHER>\n'

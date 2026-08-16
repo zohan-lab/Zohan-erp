@@ -1018,4 +1018,91 @@ describe('calculateInvoiceTotals & Additional Charges Parity (Benchmark #RV12000
     const backToExclusive = calculateBasicRateFromInclusive(inclusiveRate, gstRate)
     expect(backToExclusive).toBe(58628.80)
   })
+
+  it('correctly calculates mixed GST rates (5% and 18%) with invoice-level discount proportionally', () => {
+    const result = calculateInvoiceTaxBreakdown({
+      items: [
+        {
+          itemId: 'item-5',
+          enteredQuantity: 10,
+          basicRate: 1000, // ₹10,000 gross taxable at 5%
+          gstRate: 5
+        },
+        {
+          itemId: 'item-18',
+          enteredQuantity: 10,
+          basicRate: 1000, // ₹10,000 gross taxable at 18%
+          gstRate: 18
+        }
+      ],
+      discountsAmount: 2000, // Total discount ₹2,000 -> ₹1,000 on Item 1, ₹1,000 on Item 2
+      partyState: '19',
+      companyState: '19'
+    })
+
+    // Total gross was 20,000. Discount is 2,000. Net taxable is 18,000.
+    expect(result.taxableAmount).toBe(18000)
+
+    // Line 1: Net Taxable = 9,000 @ 5% -> CGST = 225, SGST = 225
+    expect(result.lineBreakdowns[0].taxableAmount).toBe(9000)
+    expect(result.lineBreakdowns[0].cgstAmount).toBe(225)
+    expect(result.lineBreakdowns[0].sgstAmount).toBe(225)
+
+    // Line 2: Net Taxable = 9,000 @ 18% -> CGST = 810, SGST = 810
+    expect(result.lineBreakdowns[1].taxableAmount).toBe(9000)
+    expect(result.lineBreakdowns[1].cgstAmount).toBe(810)
+    expect(result.lineBreakdowns[1].sgstAmount).toBe(810)
+
+    // Invoice Totals
+    expect(result.cgstAmount).toBe(1035)
+    expect(result.sgstAmount).toBe(1035)
+    expect(result.totalTaxAmount).toBe(2070)
+    expect(result.totalAmount).toBe(20070)
+  })
+
+  it('allocates payments FIFO accounting for SupplierDebitNotes reducing invoice balances', () => {
+    const invoices: PurchaseInvoice[] = [
+      {
+        id: 'inv-1',
+        invoiceNo: 'PUR-001',
+        supplierId: 'supp-1',
+        invoiceDate: '2026-04-01',
+        invoiceAmount: 100000,
+        fy: '2026-2027',
+        createdAt: 1000
+      }
+    ]
+
+    const debitNotes: SupplierDebitNote[] = [
+      {
+        id: 'dn-1',
+        noteNo: 'DN-001',
+        supplierId: 'supp-1',
+        date: '2026-04-02',
+        amount: 30000,
+        invoiceRef: 'inv-1',
+        fy: '2026-2027',
+        createdAt: 2000
+      }
+    ]
+
+    const payments: Payment[] = [
+      {
+        id: 'pay-1',
+        supplierId: 'supp-1',
+        paymentDate: '2026-04-03',
+        amount: 70000,
+        fy: '2026-2027',
+        createdAt: 3000
+      }
+    ]
+
+    const { allocations, paymentAdvanceInfo } = calculatePaymentAllocations(payments, invoices, debitNotes)
+
+    // Original invoice ₹100,000 was reduced to ₹70,000 by Debit Note
+    // Payment of ₹70,000 should allocate exactly ₹70,000 to inv-1 with 0 advance
+    expect(allocations.length).toBe(1)
+    expect(allocations[0].allocatedAmount).toBe(70000)
+    expect(paymentAdvanceInfo.get('pay-1')?.advanceAmount).toBe(0)
+  })
 })

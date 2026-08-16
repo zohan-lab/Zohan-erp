@@ -98,4 +98,43 @@ describe('customer-aging-engine', () => {
     expect(c2Summary.bracket90plus).toBe(300000)
     expect(c2Summary.performanceBadge).toBe('Capital Blocker')
   })
+
+  it('correctly includes opening balance and debit notes in aging calculations', () => {
+    const customers: Customer[] = [
+      {
+        id: 'c3',
+        name: 'Gamma Metals',
+        openingBalance: 50000,
+        balanceType: 'Debit',
+        openingBalanceDate: '2026-04-01'
+      }
+    ]
+
+    const asOfDate = new Date('2026-08-15') // ~136 days from 2026-04-01
+
+    const result = computeCustomerAging(
+      customers,
+      [],
+      [],
+      [],
+      [],
+      asOfDate,
+      [
+        {
+          id: 'cdn-1',
+          noteNo: 'DN-99',
+          customerId: 'c3',
+          date: '2026-08-01', // 14 days old (0_30)
+          amount: 25000,
+          fy: '2026-2027'
+        }
+      ]
+    )
+
+    expect(result.totalOutstanding).toBe(75000)
+    const c3Summary = result.customers[0]
+    expect(c3Summary.totalOutstanding).toBe(75000)
+    expect(c3Summary.bracket90plus).toBe(50000) // Opening balance aged from April
+    expect(c3Summary.bracket0to30).toBe(25000)  // Debit note aged from Aug 1
+  })
 })

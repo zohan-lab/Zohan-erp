@@ -98,20 +98,61 @@ export function computeCustomerAging(
   let totalUnpaidBillCount = 0
 
   customers.forEach((customer) => {
-    // 1. Filter customer invoices and sort chronologically (FIFO)
-    const custInvoices = salesInvoices
-      .filter((inv) => inv.customerId === customer.id)
-      .sort((a, b) => {
-        const dateDiff = new Date(a.invoiceDate).getTime() - new Date(b.invoiceDate).getTime()
-        if (dateDiff !== 0) return dateDiff
-        return (a.invoiceNo || '').localeCompare(b.invoiceNo || '')
-      })
-
-    // 2. Filter customer payments, credit notes, sales returns, debit notes
+    // 1. Filter customer invoices, payments, credit notes, sales returns, debit notes
+    const custInvoices = salesInvoices.filter((inv) => inv.customerId === customer.id)
     const custPayments = customerPayments.filter((p) => p.customerId === customer.id)
     const custCreditNotes = creditNotes.filter((cn) => cn.customerId === customer.id)
     const custSalesReturns = salesReturns.filter((sr) => sr.customerId === customer.id)
     const custDebitNotes = customerDebitNotes.filter((dn) => dn.customerId === customer.id)
+
+    // 2. Build combined chronological debits queue (Opening Balance, Invoices, Debit Notes)
+    type DebitItem = {
+      id: string
+      no: string
+      date: string
+      amount: number
+      isOpening?: boolean
+    }
+
+    const debitsQueue: DebitItem[] = []
+
+    const openingBal = Number(customer.openingBalance) || 0
+    const isOpeningDebit = customer.balanceType !== 'Credit' && openingBal > 0
+    const isOpeningCredit = customer.balanceType === 'Credit' && openingBal > 0
+
+    if (isOpeningDebit) {
+      debitsQueue.push({
+        id: `opening-bal-${customer.id}`,
+        no: 'Opening Balance',
+        date: customer.openingBalanceDate || '2025-04-01',
+        amount: openingBal,
+        isOpening: true
+      })
+    }
+
+    custInvoices.forEach(inv => {
+      debitsQueue.push({
+        id: inv.id,
+        no: inv.invoiceNo,
+        date: inv.invoiceDate,
+        amount: calculateInvoiceTotals(inv).totalAmount
+      })
+    })
+
+    custDebitNotes.forEach(dn => {
+      debitsQueue.push({
+        id: dn.id,
+        no: dn.noteNo || dn.invoiceRef || 'Debit Note',
+        date: dn.date,
+        amount: dn.totalAmount ?? dn.amount ?? 0
+      })
+    })
+
+    debitsQueue.sort((a, b) => {
+      const dateDiff = new Date(a.date).getTime() - new Date(b.date).getTime()
+      if (dateDiff !== 0) return dateDiff
+      return a.no.localeCompare(b.no)
+    })
 
     const totalSales = custInvoices.reduce((sum, inv) => sum + calculateInvoiceTotals(inv).totalAmount, 0)
     const totalPayments = custPayments.reduce((sum, p) => sum + (p.amount || 0), 0)
@@ -119,7 +160,7 @@ export function computeCustomerAging(
     const totalSalesReturns = custSalesReturns.reduce((sum, sr) => sum + (sr.amount || 0), 0)
     const totalDebitNotes = custDebitNotes.reduce((sum, dn) => sum + (dn.totalAmount || dn.amount || 0), 0)
 
-    const totalCredits = totalPayments + totalCreditNotes + totalSalesReturns
+    const totalCredits = totalPayments + totalCreditNotes + totalSalesReturns + (isOpeningCredit ? openingBal : 0)
     let remainingCredit = totalCredits
 
     const billAging: CustomerBillAging[] = []
@@ -129,22 +170,21 @@ export function computeCustomerAging(
     let bracket90plus = 0
     let maxDaysOverdue = 0
 
-    // 3. FIFO Allocation of Credits against Sales Invoices
-    custInvoices.forEach((inv) => {
-      const invTotal = calculateInvoiceTotals(inv).totalAmount
-      const paid = Math.min(invTotal, remainingCredit)
-      const pending = Math.max(0, invTotal - paid)
-      remainingCredit = Math.max(0, remainingCredit - invTotal)
+    // 3. FIFO Allocation of Credits against Debits Queue
+    debitsQueue.forEach((deb) => {
+      const paid = Math.min(deb.amount, remainingCredit)
+      const pending = Math.max(0, deb.amount - paid)
+      remainingCredit = Math.max(0, remainingCredit - deb.amount)
 
       if (pending > 0.01) {
-        const ageDays = getDaysDifference(inv.invoiceDate, asOfDate)
+        const ageDays = getDaysDifference(deb.date, asOfDate)
         const bracket = getAgingBracket(ageDays)
 
         billAging.push({
-          invoiceId: inv.id,
-          invoiceNo: inv.invoiceNo,
-          invoiceDate: inv.invoiceDate,
-          originalAmount: invTotal,
+          invoiceId: deb.id,
+          invoiceNo: deb.no,
+          invoiceDate: deb.date,
+          originalAmount: deb.amount,
           paidAmount: paid,
           pendingAmount: pending,
           ageDays,

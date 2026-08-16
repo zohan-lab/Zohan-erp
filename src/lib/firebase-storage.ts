@@ -8,6 +8,7 @@ import {
   collection,
   getDocs,
   deleteDoc,
+  writeBatch,
   type Unsubscribe
 } from 'firebase/firestore'
 import { db, isRemoteStorageEnabled, isFirebaseConfigured } from './firebase-client'
@@ -237,31 +238,64 @@ export async function saveRemoteTenantData(
 
   try {
     const deviceId = getDeviceId()
-    const promises: Promise<void>[] = []
-    
+    const nowIso = new Date().toISOString()
+
+    // 1. For each collection, find existing remote documents to prune deleted items
     for (const key of TENANT_COLLECTION_KEYS) {
-      const arr = payload[key]
-      if (Array.isArray(arr)) {
-        for (const item of arr) {
-          if (item && item.id) {
-            const docRef = doc(db, 'tenants', companyId, key, item.id)
-            promises.push(setDoc(docRef, {
+      const colRef = collection(db!, 'tenants', companyId, key)
+      const existingSnap = await getDocs(colRef)
+      const memoryItems = (payload[key] || []) as any[]
+      const memoryItemMap = new Map(memoryItems.map(item => [item.id, item]))
+
+      // Operations queue: { type: 'set' | 'delete', ref, data? }
+      const ops: Array<{ type: 'set' | 'delete'; ref: any; data?: any }> = []
+
+      // Delete items present in remote Firestore but deleted locally
+      existingSnap.docs.forEach(docSnap => {
+        if (!memoryItemMap.has(docSnap.id)) {
+          ops.push({ type: 'delete', ref: docSnap.ref })
+        }
+      })
+
+      // Set/Update memory items
+      memoryItems.forEach(item => {
+        if (item && item.id) {
+          const docRef = doc(db!, 'tenants', companyId, key, item.id)
+          ops.push({
+            type: 'set',
+            ref: docRef,
+            data: {
               ...stripUndefined(item),
               deviceId
-            }))
-          }
+            }
+          })
         }
+      })
+
+      // Execute ops in batches of 400 (Firestore max is 500)
+      const BATCH_SIZE = 400
+      for (let i = 0; i < ops.length; i += BATCH_SIZE) {
+        const chunk = ops.slice(i, i + BATCH_SIZE)
+        const batch = writeBatch(db!)
+        chunk.forEach(op => {
+          if (op.type === 'delete') {
+            batch.delete(op.ref)
+          } else if (op.type === 'set') {
+            batch.set(op.ref, op.data)
+          }
+        })
+        await withTimeout(batch.commit())
       }
     }
-    
-    await withTimeout(Promise.all(promises))
-    
+
+    const nextRevision = (expectedRevision || 0) + 1
+
     return {
       company_id: companyId,
       tenant_key: tenantKey,
       payload,
-      revision: 1,
-      updated_at: new Date().toISOString(),
+      revision: nextRevision,
+      updated_at: nowIso,
       device_id: deviceId
     }
   } catch (error) {

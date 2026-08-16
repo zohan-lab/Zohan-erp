@@ -81,7 +81,9 @@ import {
   Item,
   ExpenseEntry,
   ExpenseType,
-  LedgerEntry
+  LedgerEntry,
+  SupplierDebitNote,
+  SupplierCreditNote
 } from './types'
 import { getItemActiveUnitAndQty } from './fifo-engine'
 
@@ -192,7 +194,9 @@ function getMTBookingRuleSource(
 
 export function calculatePaymentAllocations(
   payments: Payment[],
-  invoices: PurchaseInvoice[]
+  invoices: PurchaseInvoice[],
+  debitNotes: SupplierDebitNote[] = [],
+  creditNotes: SupplierCreditNote[] = []
 ): { allocations: PaymentAllocation[]; paymentAdvanceInfo: Map<string, PaymentAdvanceInfo> } {
   const allocations: PaymentAllocation[] = []
   const paymentAdvanceInfo = new Map<string, PaymentAdvanceInfo>()
@@ -201,6 +205,8 @@ export function calculatePaymentAllocations(
   type Entry =
     | { type: 'invoice'; date: Date; timestamp: number; data: PurchaseInvoice }
     | { type: 'payment'; date: Date; timestamp: number; data: Payment }
+    | { type: 'debitNote'; date: Date; timestamp: number; data: SupplierDebitNote }
+    | { type: 'creditNote'; date: Date; timestamp: number; data: SupplierCreditNote }
 
   const entries: Entry[] = [
     ...invoices.map(inv => {
@@ -222,6 +228,26 @@ export function calculatePaymentAllocations(
         timestamp,
         data: pay
       }
+    }),
+    ...debitNotes.map(dn => {
+      const dateTimestamp = new Date(dn.date).getTime()
+      const timestamp = dn.createdAt || dateTimestamp
+      return {
+        type: 'debitNote' as const,
+        date: new Date(dn.date),
+        timestamp,
+        data: dn
+      }
+    }),
+    ...creditNotes.map(cn => {
+      const dateTimestamp = new Date(cn.date).getTime()
+      const timestamp = cn.createdAt || dateTimestamp
+      return {
+        type: 'creditNote' as const,
+        date: new Date(cn.date),
+        timestamp,
+        data: cn
+      }
     })
   ]
 
@@ -236,9 +262,13 @@ export function calculatePaymentAllocations(
     const timeDiff = a.timestamp - b.timestamp
     if (timeDiff !== 0) return timeDiff
 
-    if (a.type === 'invoice' && b.type === 'payment') return -1
-    if (a.type === 'payment' && b.type === 'invoice') return 1
-    return 0
+    const typePriority: Record<string, number> = {
+      invoice: 1,
+      creditNote: 2,
+      debitNote: 3,
+      payment: 4
+    }
+    return (typePriority[a.type] || 5) - (typePriority[b.type] || 5)
   })
 
   const supplierState = new Map<string, {
@@ -300,6 +330,54 @@ export function calculatePaymentAllocations(
         state.totalOutstanding += remainingInvoice
       }
 
+    } else if (entry.type === 'debitNote') {
+      const dn = entry.data
+      const supplierId = dn.supplierId
+      if (!supplierState.has(supplierId)) {
+        supplierState.set(supplierId, { pendingInvoices: [], advancePayments: [], totalOutstanding: 0 })
+      }
+      const state = supplierState.get(supplierId)!
+      let remainingDn = dn.totalAmount ?? dn.amount ?? 0
+
+      // If linked to specific invoice, reduce that invoice balance first
+      if (dn.invoiceRef || dn.originalInvoiceNo) {
+        const targetInv = state.pendingInvoices.find(
+          pi => pi.invoice.id === dn.invoiceRef || pi.invoice.invoiceNo === dn.originalInvoiceNo || pi.invoice.invoiceNo === dn.invoiceRef
+        )
+        if (targetInv && targetInv.balance > 0) {
+          const reduction = Math.min(remainingDn, targetInv.balance)
+          targetInv.balance -= reduction
+          state.totalOutstanding = Math.max(0, state.totalOutstanding - reduction)
+          remainingDn -= reduction
+        }
+      }
+
+      // Otherwise reduce FIFO across pending invoices
+      let loopCounter = 0
+      while (state.pendingInvoices.length > 0 && remainingDn > 0 && loopCounter < 10000) {
+        loopCounter++
+        const pendingInvoice = state.pendingInvoices[0]
+        if (!pendingInvoice || pendingInvoice.balance <= 0) {
+          state.pendingInvoices.shift()
+          continue
+        }
+        const reduction = Math.min(remainingDn, pendingInvoice.balance)
+        pendingInvoice.balance -= reduction
+        state.totalOutstanding = Math.max(0, state.totalOutstanding - reduction)
+        remainingDn -= reduction
+        if (pendingInvoice.balance <= 0) {
+          state.pendingInvoices.shift()
+        }
+      }
+    } else if (entry.type === 'creditNote') {
+      const cn = entry.data
+      const supplierId = cn.supplierId
+      if (!supplierState.has(supplierId)) {
+        supplierState.set(supplierId, { pendingInvoices: [], advancePayments: [], totalOutstanding: 0 })
+      }
+      const state = supplierState.get(supplierId)!
+      const cnAmount = cn.totalAmount ?? cn.amount ?? 0
+      state.totalOutstanding += cnAmount
     } else {
       const payment = entry.data
       const supplierId = payment.supplierId
@@ -340,7 +418,7 @@ export function calculatePaymentAllocations(
 
         remainingPayment -= allocationAmount
         pendingInvoice.balance -= allocationAmount
-        state.totalOutstanding -= allocationAmount
+        state.totalOutstanding = Math.max(0, state.totalOutstanding - allocationAmount)
         allocatedToExistingInvoices += allocationAmount
 
         if (pendingInvoice.balance <= 0) {
@@ -1348,13 +1426,8 @@ export function calculateInvoiceTaxBreakdown(params: InvoiceTaxBreakdownParams):
 
   const isInterState = isInterStateTransaction(partyState, companyState)
   const itemMap = new Map(itemsMaster.map(i => [i.id, i]))
-
-  let sumRowTaxable = 0
-  let sumRowCgst = 0
-  let sumRowSgst = 0
-  let sumRowIgst = 0
-
-  const lineBreakdowns: LineItemTaxBreakdown[] = items.map(line => {
+  // 1. Calculate un-discounted gross taxable for each line
+  const lineGrossData = items.map(line => {
     const itemDef = line.itemId ? itemMap.get(line.itemId) : undefined
     const qty = line.enteredQuantity ?? line.baseQuantity ?? 0
     const lineDiscount = line.discountAmount || 0
@@ -1376,9 +1449,34 @@ export function calculateInvoiceTaxBreakdown(params: InvoiceTaxBreakdownParams):
       }
     }
 
-    const rowTaxable = typeof (line as any).taxableAmount === 'number' && (line as any).taxableAmount > 0
+    const rowGrossTaxable = typeof (line as any).taxableAmount === 'number' && (line as any).taxableAmount > 0
       ? (line as any).taxableAmount
       : Math.max(0, roundCurrency((qty * (basicRate || 0)) - lineDiscount))
+
+    return {
+      line,
+      itemDef,
+      qty,
+      lineRate,
+      basicRate,
+      rowGrossTaxable
+    }
+  })
+
+  const totalGrossLineTaxable = lineGrossData.reduce((sum, d) => sum + d.rowGrossTaxable, 0)
+  const invoiceDiscount = discountsAmount || 0
+
+  let sumRowTaxable = 0
+  let sumRowCgst = 0
+  let sumRowSgst = 0
+  let sumRowIgst = 0
+
+  const lineBreakdowns: LineItemTaxBreakdown[] = lineGrossData.map(d => {
+    // Proportional invoice-level discount share per line
+    const discountShare = (totalGrossLineTaxable > 0 && invoiceDiscount > 0)
+      ? roundCurrency((d.rowGrossTaxable / totalGrossLineTaxable) * invoiceDiscount)
+      : 0
+    const rowTaxable = Math.max(0, roundCurrency(d.rowGrossTaxable - discountShare))
     sumRowTaxable += rowTaxable
 
     let rowCgst = 0
@@ -1388,20 +1486,20 @@ export function calculateInvoiceTaxBreakdown(params: InvoiceTaxBreakdownParams):
     let sgstRate = 0
     let igstRate = 0
 
-    if (lineRate > 0) {
+    if (d.lineRate > 0) {
       if (isInterState) {
-        igstRate = lineRate
-        rowIgst = typeof (line as any).igstAmount === 'number' && (line as any).igstAmount > 0
-          ? (line as any).igstAmount
+        igstRate = d.lineRate
+        rowIgst = typeof (d.line as any).igstAmount === 'number' && (d.line as any).igstAmount > 0 && invoiceDiscount === 0
+          ? (d.line as any).igstAmount
           : Math.round(rowTaxable * (igstRate / 100) * 100) / 100
       } else {
-        cgstRate = lineRate / 2
-        sgstRate = lineRate / 2
-        rowCgst = typeof (line as any).cgstAmount === 'number' && (line as any).cgstAmount > 0
-          ? (line as any).cgstAmount
+        cgstRate = d.lineRate / 2
+        sgstRate = d.lineRate / 2
+        rowCgst = typeof (d.line as any).cgstAmount === 'number' && (d.line as any).cgstAmount > 0 && invoiceDiscount === 0
+          ? (d.line as any).cgstAmount
           : Math.round(rowTaxable * (cgstRate / 100) * 100) / 100
-        rowSgst = typeof (line as any).sgstAmount === 'number' && (line as any).sgstAmount > 0
-          ? (line as any).sgstAmount
+        rowSgst = typeof (d.line as any).sgstAmount === 'number' && (d.line as any).sgstAmount > 0 && invoiceDiscount === 0
+          ? (d.line as any).sgstAmount
           : Math.round(rowTaxable * (sgstRate / 100) * 100) / 100
       }
     }
@@ -1413,11 +1511,11 @@ export function calculateInvoiceTaxBreakdown(params: InvoiceTaxBreakdownParams):
     const rowTotal = roundCurrency(rowTaxable + rowCgst + rowSgst + rowIgst)
 
     return {
-      itemId: line.itemId,
-      quantity: qty,
-      basicRate,
+      itemId: d.line.itemId,
+      quantity: d.qty,
+      basicRate: d.basicRate,
       taxableAmount: rowTaxable,
-      gstRate: lineRate,
+      gstRate: d.lineRate,
       cgstRate,
       cgstAmount: rowCgst,
       sgstRate,
@@ -1473,23 +1571,11 @@ export function calculateInvoiceTaxBreakdown(params: InvoiceTaxBreakdownParams):
     }
   }
 
-  // Invoice-level discount reduction
-  let discountCgst = 0
-  let discountSgst = 0
-  let discountIgst = 0
-
-  if (discountsAmount && discountsAmount > 0 && sumRowTaxable > 0) {
-    const discountRatio = Math.min(1, discountsAmount / sumRowTaxable)
-    discountCgst = roundCurrency(sumRowCgst * discountRatio)
-    discountSgst = roundCurrency(sumRowSgst * discountRatio)
-    discountIgst = roundCurrency(sumRowIgst * discountRatio)
-  }
-
   // Net Taxable & Taxes
-  const totalTaxable = roundCurrency(Math.max(0, sumRowTaxable + additionalTaxable - (discountsAmount || 0)))
-  const totalCgst = roundCurrency(Math.max(0, sumRowCgst + additionalCgst - discountCgst))
-  const totalSgst = roundCurrency(Math.max(0, sumRowSgst + additionalSgst - discountSgst))
-  const totalIgst = roundCurrency(Math.max(0, sumRowIgst + additionalIgst - discountIgst))
+  const totalTaxable = roundCurrency(sumRowTaxable + additionalTaxable)
+  const totalCgst = roundCurrency(sumRowCgst + additionalCgst)
+  const totalSgst = roundCurrency(sumRowSgst + additionalSgst)
+  const totalIgst = roundCurrency(sumRowIgst + additionalIgst)
   const totalTaxAmount = roundCurrency(totalCgst + totalSgst + totalIgst)
 
   // Overall effective display rates

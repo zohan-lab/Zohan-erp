@@ -17,22 +17,34 @@ import { amountToWords } from './number-to-words'
 import { getStateCode, getStateName } from './constants/indian-states'
 import { getMetadata } from './storage-utils'
 
-function getActiveCompanyState(customState?: string): { stateName: string; stateCode: string } {
-  if (customState && customState.trim()) {
-    const code = getStateCode(customState)
-    const name = getStateName(customState)
-    return { stateName: name, stateCode: code }
-  }
+function getActiveCompanyInfo(customState?: string, customGstin?: string, customPhone?: string): { stateName: string; stateCode: string; gstin: string; phone: string } {
+  let gstin = customGstin || ''
+  let phone = customPhone || ''
+  let stateCode = '19'
+  let stateName = 'West Bengal'
+
   try {
     const meta = getMetadata()
     const activeBiz = meta.businesses.find(b => b.id === meta.activeCompanyId)
     if (activeBiz) {
-      const code = activeBiz.stateCode || (activeBiz.stateName ? getStateCode(activeBiz.stateName) : '19')
-      const name = activeBiz.stateName || getStateName(code) || 'West Bengal'
-      return { stateName: name, stateCode: code }
+      if (!gstin && activeBiz.gstin) gstin = activeBiz.gstin
+      if (!phone && activeBiz.phone) phone = activeBiz.phone
+      stateCode = activeBiz.stateCode || (activeBiz.stateName ? getStateCode(activeBiz.stateName) : '19')
+      stateName = activeBiz.stateName || getStateName(stateCode) || 'West Bengal'
     }
   } catch {}
-  return { stateName: 'West Bengal', stateCode: '19' }
+
+  if (customState && customState.trim()) {
+    stateCode = getStateCode(customState)
+    stateName = getStateName(customState)
+  }
+
+  return { stateName, stateCode, gstin: gstin || '19AABCS1429B1Z', phone: phone || '9083876218' }
+}
+
+function getActiveCompanyState(customState?: string): { stateName: string; stateCode: string } {
+  const info = getActiveCompanyInfo(customState)
+  return { stateName: info.stateName, stateCode: info.stateCode }
 }
 
 function formatAmountForPDF(amount: number): string {
@@ -962,6 +974,7 @@ export interface StyledInvoiceOptions {
   partyState?: string
   partyGstin?: string
   businessName: string
+  companyGstin?: string
   state?: string
   phone?: string
   items?: InvoiceItem[]
@@ -1032,9 +1045,9 @@ function exportStyledInvoicePDF(options: StyledInvoiceOptions) {
   doc.rect(margin, startY + 35, contentWidth / 2, 30);
   doc.rect(margin + contentWidth / 2, startY + 35, contentWidth / 2, 30);
 
-  const companyStateObj = getActiveCompanyState(options.state)
-  const companyStateName = companyStateObj.stateName
-  const companyStateCode = companyStateObj.stateCode
+  const companyInfo = getActiveCompanyInfo(options.state, options.companyGstin, options.phone)
+  const companyStateName = companyInfo.stateName
+  const companyStateCode = companyInfo.stateCode
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
@@ -1042,8 +1055,8 @@ function exportStyledInvoicePDF(options: StyledInvoiceOptions) {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.text(companyStateName, margin + 2, startY + 10);
-  doc.text(`Mobile: ${options.phone || '9083876218'}`, margin + 2, startY + 14);
-  doc.text(`GSTIN/UIN: 19AABCS1429B1Z`, margin + 2, startY + 18);
+  doc.text(`Mobile: ${companyInfo.phone}`, margin + 2, startY + 14);
+  doc.text(`GSTIN/UIN: ${companyInfo.gstin}`, margin + 2, startY + 18);
   doc.text(`State Name: ${companyStateName}, Code : ${companyStateCode}`, margin + 2, startY + 22);
 
   drawInvoiceTextBlock(doc, 'Invoice No.', options.invoiceNo, margin + contentWidth / 2 + 2, startY + 4, 30);

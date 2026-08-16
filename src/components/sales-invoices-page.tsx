@@ -430,10 +430,19 @@ export default function SalesInvoicesPage({
   }
 
   const handleRoundOff = () => {
-    const { totalAmount: totalAmt } = calculateInvoiceItemsTotals(invoiceItems)
-    const { adjustment } = calculateRoundOffAdjustment(totalAmt, additionalCostFinal)
-    setRoundOffAdjustment(adjustment)
-    toast.success(`Round-off adjustment: ${adjustment >= 0 ? '+' : ''}${formatCurrency(adjustment)}`)
+    const customer = customers.find(c => c.id === selectedCustomerId)
+    const { basicRateTotal: addCostBasic, finalAmtTotal: addCostFinal } = calculateAdditionalChargesTotals(additionalCharges)
+    const taxSummary = calculateInvoiceTaxBreakdown({
+      items: invoiceItems,
+      itemsMaster: items,
+      additionalCharges,
+      additionalCostBasicRate: addCostBasic || 0,
+      additionalCostFinal: addCostFinal || 0,
+      partyState: customer?.stateCode || customer?.stateName || customer?.state,
+      defaultGstRate: gstPercentage
+    })
+    setRoundOffAdjustment(taxSummary.roundOff)
+    toast.success(`Round-off adjustment: ${taxSummary.roundOff >= 0 ? '+' : ''}${formatCurrency(taxSummary.roundOff)}`)
   }
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
