@@ -22,9 +22,9 @@ export const isFirebaseConfigured = Boolean(
   firebaseConfig.appId
 )
 
-export const isRemoteStorageEnabled = remoteStorageFlag === 'true'
+export const isRemoteStorageEnabled = remoteStorageFlag !== 'false'
 export const isFirebaseAuthEnabled = firebaseAuthFlag === 'true'
-export const isLocalCacheDisabled = disableLocalCacheFlag === 'true'
+export const isLocalCacheDisabled = true
 
 // Initialize Firebase only once (Vite HMR safety)
 const firebaseApp = isFirebaseConfigured

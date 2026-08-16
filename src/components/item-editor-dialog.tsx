@@ -44,6 +44,7 @@ export function ItemEditorDialog({
   const [category, setCategory] = useState('')
   const [gstRate, setGstRate] = useState('18')
   const [gstDropdownOpen, setGstDropdownOpen] = useState(false)
+  const [hsnCode, setHsnCode] = useState('')
   const [purchasePrice, setPurchasePrice] = useState('')
   const [salesPrice, setSalesPrice] = useState('')
   const [unit, setUnit] = useState('NONE')
@@ -85,6 +86,7 @@ export function ItemEditorDialog({
     setName(item?.name || '')
     setCategory(item?.category || '')
     setGstRate(typeof item?.gstRate === 'number' ? item.gstRate.toString() : '18')
+    setHsnCode(item?.hsnCode || '')
     setPurchasePrice(item?.purchasePrice?.toString() || '')
     setSalesPrice(item?.salesPrice?.toString() || '')
     const initialUnit = item?.unit || 'NONE'
@@ -209,6 +211,7 @@ export function ItemEditorDialog({
       alternativeUnitRatio: altRatio,
       conversionFactor,
       category: category.trim() || undefined,
+      hsnCode: hsnCode.trim() || undefined,
       purchasePrice: parsedPurchasePrice || undefined,
       salesPrice: parseFloat(salesPrice) || undefined,
       gstRate: typeof parsedGstRate === 'number' && Number.isFinite(parsedGstRate) ? parsedGstRate : undefined,
@@ -328,7 +331,7 @@ export function ItemEditorDialog({
                 </div>
               </div>
 
-              {/* ROW 3: GST Rates % & Opening Stocks */}
+              {/* ROW 3: GST Rates % & HSN / SAC Code */}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="sharedItemGstRate" className="font-semibold text-slate-700">
@@ -388,20 +391,35 @@ export function ItemEditorDialog({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="sharedItemOpeningStock" className="font-semibold text-slate-700">
-                    Opening Stocks
+                  <Label htmlFor="sharedItemHsnCode" className="font-semibold text-slate-700">
+                    HSN / SAC Code
                   </Label>
                   <Input
-                    id="sharedItemOpeningStock"
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    value={openingStock}
-                    onChange={(event) => setOpeningStock(event.target.value)}
-                    placeholder={`ex: 150 ${unit}`}
-                    className="h-11 font-mono border-slate-300"
+                    id="sharedItemHsnCode"
+                    type="text"
+                    value={hsnCode}
+                    onChange={(event) => setHsnCode(event.target.value)}
+                    placeholder="7214"
+                    className="h-11 font-mono border-slate-300 uppercase"
                   />
                 </div>
+              </div>
+
+              {/* ROW 4: Opening Stocks */}
+              <div className="space-y-2">
+                <Label htmlFor="sharedItemOpeningStock" className="font-semibold text-slate-700">
+                  Opening Stocks
+                </Label>
+                <Input
+                  id="sharedItemOpeningStock"
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  value={openingStock}
+                  onChange={(event) => setOpeningStock(event.target.value)}
+                  placeholder={`ex: 150 ${unit}`}
+                  className="h-11 font-mono border-slate-300"
+                />
               </div>
 
               {(parseFloat(openingStock) || 0) > 0 && (

@@ -668,4 +668,31 @@ describe('calculateInvoiceTaxBreakdown & isInterStateTransaction', () => {
     expect(result.totalTaxAmount).toBe(17550)
     expect(result.totalAmount).toBe(115050) // 97,500 + 17,550
   })
+
+  it('strictly calculates 0% GST (zero tax) for items with gstRate = 0 (Exempted)', () => {
+    const result = calculateInvoiceTaxBreakdown({
+      items: [
+        {
+          itemId: 'item-exempt-1',
+          enteredQuantity: 5,
+          basicRate: 2000,
+          gstRate: 0 // Explicitly 0% exempt
+        }
+      ],
+      partyState: '19', // Intra-state West Bengal
+      companyState: '19'
+    })
+
+    expect(result.taxableAmount).toBe(10000)
+    expect(result.cgstRate).toBe(0)
+    expect(result.cgstAmount).toBe(0)
+    expect(result.sgstRate).toBe(0)
+    expect(result.sgstAmount).toBe(0)
+    expect(result.igstAmount).toBe(0)
+    expect(result.totalTaxAmount).toBe(0)
+    expect(result.totalAmount).toBe(10000)
+    expect(result.lineBreakdowns[0].gstRate).toBe(0)
+    expect(result.lineBreakdowns[0].cgstAmount).toBe(0)
+    expect(result.lineBreakdowns[0].sgstAmount).toBe(0)
+  })
 })

@@ -14,7 +14,26 @@ import {
 import { formatCurrency, formatMT, calculateInvoiceTaxBreakdown } from './calculations'
 import { getInvoiceQtyForUnit } from './unit-conversion-service'
 import { amountToWords } from './number-to-words'
+import { getStateCode, getStateName } from './constants/indian-states'
+import { getMetadata } from './storage-utils'
 
+function getActiveCompanyState(customState?: string): { stateName: string; stateCode: string } {
+  if (customState && customState.trim()) {
+    const code = getStateCode(customState)
+    const name = getStateName(customState)
+    return { stateName: name, stateCode: code }
+  }
+  try {
+    const meta = getMetadata()
+    const activeBiz = meta.businesses.find(b => b.id === meta.activeCompanyId)
+    if (activeBiz) {
+      const code = activeBiz.stateCode || (activeBiz.stateName ? getStateCode(activeBiz.stateName) : '19')
+      const name = activeBiz.stateName || getStateName(code) || 'West Bengal'
+      return { stateName: name, stateCode: code }
+    }
+  } catch {}
+  return { stateName: 'West Bengal', stateCode: '19' }
+}
 
 function formatAmountForPDF(amount: number): string {
   const formatted = amount.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
@@ -1013,15 +1032,19 @@ function exportStyledInvoicePDF(options: StyledInvoiceOptions) {
   doc.rect(margin, startY + 35, contentWidth / 2, 30);
   doc.rect(margin + contentWidth / 2, startY + 35, contentWidth / 2, 30);
 
+  const companyStateObj = getActiveCompanyState(options.state)
+  const companyStateName = companyStateObj.stateName
+  const companyStateCode = companyStateObj.stateCode
+
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
   doc.text(options.businessName.toUpperCase(), margin + 2, startY + 5);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.text(options.state || 'West Bengal', margin + 2, startY + 10);
+  doc.text(companyStateName, margin + 2, startY + 10);
   doc.text(`Mobile: ${options.phone || '9083876218'}`, margin + 2, startY + 14);
   doc.text(`GSTIN/UIN: 19AABCS1429B1Z`, margin + 2, startY + 18);
-  doc.text(`State Name: ${options.state || 'West Bengal'}, Code : 19`, margin + 2, startY + 22);
+  doc.text(`State Name: ${companyStateName}, Code : ${companyStateCode}`, margin + 2, startY + 22);
 
   drawInvoiceTextBlock(doc, 'Invoice No.', options.invoiceNo, margin + contentWidth / 2 + 2, startY + 4, 30);
   drawInvoiceTextBlock(doc, 'Dated', invoiceDate, margin + contentWidth / 2 + 35, startY + 4, 30);
@@ -1046,7 +1069,7 @@ function exportStyledInvoicePDF(options: StyledInvoiceOptions) {
   if (options.partyGstin) {
     doc.text(`GSTIN/UIN: ${options.partyGstin}`, margin + 2, startY + 57);
   } else {
-    doc.text(`State Name: ${options.partyState || options.state || 'West Bengal'}`, margin + 2, startY + 57);
+    doc.text(`State Name: ${options.partyState || companyStateName}`, margin + 2, startY + 57);
   }
 
   doc.setFont('helvetica', 'bold');
@@ -1065,7 +1088,7 @@ function exportStyledInvoicePDF(options: StyledInvoiceOptions) {
     itemsMaster: Array.from(options.itemMap.values()),
     additionalCostFinal: options.additionalCost,
     partyState: options.partyState,
-    companyState: options.state || '19',
+    companyState: companyStateCode,
     customRoundOff: options.roundOff ?? options.roundOffAdjustment
   })
 
@@ -1083,7 +1106,7 @@ function exportStyledInvoicePDF(options: StyledInvoiceOptions) {
     const itemData = options.itemMap.get(item.itemId);
     const lineInfo = taxSummary.lineBreakdowns[index];
     const desc = item.itemNameSnapshot || itemData?.name || 'Item';
-    const hsn = (itemData as any)?.hsnCode || '7214';
+    const hsn = itemData?.hsnCode || '7214';
     const unit = item.enteredUnit || itemData?.unit || 'KG';
     const qty = item.enteredQuantity || item.baseQuantity || 0;
     const basicRate = lineInfo?.basicRate ?? item.basicRate ?? (qty > 0 ? item.amount / qty : 0);

@@ -48,6 +48,8 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { motion, AnimatePresence } from 'framer-motion'
+import { useNetworkStatus } from '@/hooks/use-network-status'
+import { NetworkBlocker } from '@/components/network-blocker'
 import { useKeyboardShortcuts, ShortcutAction } from '@/hooks/use-keyboard-shortcuts'
 import { KeyboardShortcutsDialog } from '@/components/keyboard-shortcuts-dialog'
 import {
@@ -516,6 +518,7 @@ const viewNames: Record<string, string> = {
 }
 
 function App() {
+  const { isOnline, checkConnection } = useNetworkStatus()
   const useServerAuth = canUseFirebaseAuth()
   const [metadata, setMetadata] = useState<AppMetadata>(() => {
     const meta = getMetadata()
@@ -569,44 +572,15 @@ function App() {
           hydratedCompanyIdRef.current === metadata.activeCompanyId
         ) {
           const companyId = metadata.activeCompanyId
-          const deviceId = localStorage.getItem('app_device_id') || 'unknown'
 
           next.forEach((item) => {
             if (!item || !item.id) return
             const prevItem = prev.find((p) => p.id === item.id)
             if (!prevItem || !areObjectsSemanticallyEqual(item, prevItem)) {
-              console.log(`💾 Action-driven sync setDoc: tenants/${companyId}/${collectionKey}/${item.id}`)
               void saveEntityRemote(companyId, collectionKey, item)
             }
           })
         }
-
-        const partitionKey = tenantKey
-        const tenantData: TenantData = {
-          suppliers: collectionKey === 'suppliers' ? next : suppliers,
-          customers: collectionKey === 'customers' ? next : customers,
-          items: collectionKey === 'items' ? next : items,
-          invoices: collectionKey === 'invoices' ? next : invoices,
-          payments: collectionKey === 'payments' ? next : payments,
-          receivedDiscounts: collectionKey === 'receivedDiscounts' ? next : receivedDiscounts,
-          salesInvoices: collectionKey === 'salesInvoices' ? next : salesInvoices,
-          customerPayments: collectionKey === 'customerPayments' ? next : customerPayments,
-          expenseTypes: collectionKey === 'expenseTypes' ? next : expenseTypes,
-          expenseEntries: collectionKey === 'expenseEntries' ? next : expenseEntries,
-          fixedSchemes: collectionKey === 'fixedSchemes' ? next : fixedSchemes,
-          mtBookings: collectionKey === 'mtBookings' ? next : mtBookings,
-          discountLedgerEntries: collectionKey === 'discountLedgerEntries' ? next : discountLedgerEntries,
-          cashBankCounters: collectionKey === 'cashBankCounters' ? next : cashBankCounters,
-          cashBankTransactions: collectionKey === 'cashBankTransactions' ? next : cashBankTransactions,
-          creditNotes: collectionKey === 'creditNotes' ? next : creditNotes,
-          debitNotes: collectionKey === 'debitNotes' ? next : debitNotes,
-          customerDebitNotes: collectionKey === 'customerDebitNotes' ? next : customerDebitNotes,
-          supplierCreditNotes: collectionKey === 'supplierCreditNotes' ? next : supplierCreditNotes,
-          salesReturns: collectionKey === 'salesReturns' ? next : salesReturns,
-          purchaseReturns: collectionKey === 'purchaseReturns' ? next : purchaseReturns,
-          userAccounts
-        }
-        writeTenantCache(metadata.activeCompanyId, partitionKey, tenantData, null)
 
         return next
       })
@@ -1077,8 +1051,6 @@ function App() {
 
     const partitionKey = tenantKey
     const companyId = metadata.activeCompanyId
-    const cachedSnapshot = readTenantCache(companyId, partitionKey)
-    const storedData = isLocalCacheDisabled ? null : localStorage.getItem(partitionKey)
 
     const applyTenantData = (parsedData: Partial<TenantData>) => {
       if (cancelled || currentFetchId !== switchSessionIdRef.current) return
@@ -1106,7 +1078,6 @@ function App() {
         purchaseReturns: parsedData.purchaseReturns || [],
         userAccounts: parsedData.userAccounts || getUserAccounts() || []
       }
-      lastSavedDataRef.current[partitionKey] = JSON.stringify(normalizedData)
       setSuppliers(normalizedData.suppliers)
       setCustomers(normalizedData.customers)
       setItems(normalizedData.items)
@@ -1134,46 +1105,22 @@ function App() {
       }
     }
 
-    if (storedData) {
-      try {
-        const parsedData: TenantData = JSON.parse(storedData)
-        applyTenantData(parsedData)
-      } catch (error) {
-        console.error('Failed to load tenant data:', error)
-      }
-    } else if (cachedSnapshot?.payload) {
-      remoteRevisionRef.current[partitionKey] = cachedSnapshot.revision
-      applyTenantData(cachedSnapshot.payload)
-    }
-
     const loadRemote = async () => {
       try {
-        const restoredKeysStr = localStorage.getItem('restored_keys')
-        const restoredKeys = restoredKeysStr ? JSON.parse(restoredKeysStr) : {}
-        const isRestored = restoredKeys[partitionKey] === true
-
         if (canUseRemoteStorage()) {
-          if (isRestored) {
-            console.log(`Skipping remote load for ${partitionKey} because it was recently restored locally. Data will be pushed to remote.`)
-            delete restoredKeys[partitionKey]
-            localStorage.setItem('restored_keys', JSON.stringify(restoredKeys))
-            remoteRevisionRef.current[partitionKey] = null
-            lastSavedDataRef.current[partitionKey] = ''
-          } else {
-            const remoteSnapshot = await loadRemoteTenantData(companyId, partitionKey)
-            if (currentFetchId !== switchSessionIdRef.current) return
-            if (remoteSnapshot && !cancelled) {
-              remoteRevisionRef.current[partitionKey] = remoteSnapshot.revision
-              writeTenantCache(companyId, partitionKey, remoteSnapshot.payload, remoteSnapshot.revision)
-              applyTenantData(remoteSnapshot.payload)
-              appendAuditLog('remote_tenant_loaded', undefined, partitionKey)
-            } else if (remoteSnapshot === null && !cancelled) {
-              if (!storedData && !cachedSnapshot?.payload) {
-                applyTenantData({})
-              }
-            }
+          const remoteSnapshot = await loadRemoteTenantData(companyId, partitionKey)
+          if (currentFetchId !== switchSessionIdRef.current) return
+          if (remoteSnapshot && !cancelled) {
+            remoteRevisionRef.current[partitionKey] = remoteSnapshot.revision
+            applyTenantData(remoteSnapshot.payload)
+            appendAuditLog('remote_tenant_loaded', undefined, partitionKey)
+          } else if (remoteSnapshot === null && !cancelled) {
+            applyTenantData({})
           }
+        } else {
+          applyTenantData({})
         }
+
         if (!cancelled && currentFetchId === switchSessionIdRef.current) {
           hydratedCompanyIdRef.current = companyId
           isTenantLoadingRef.current = false
@@ -1184,19 +1131,10 @@ function App() {
         isTenantLoadingRef.current = false
         const message = error instanceof RemoteStorageUnavailableError
           ? error.message
-          : 'Unable to load saved company data from Firebase.'
+          : 'Unable to load company data from Firebase Cloud.'
         toast.error(message)
-        if (!isLocalCacheDisabled && (storedData || cachedSnapshot?.payload)) {
-          if (cachedSnapshot?.payload && !storedData) {
-            remoteRevisionRef.current[partitionKey] = cachedSnapshot.revision
-            applyTenantData(cachedSnapshot.payload)
-          }
-          hydratedCompanyIdRef.current = companyId
-          setTenantHydrated(true)
-        } else {
-          hydratedCompanyIdRef.current = null
-          setTenantHydrated(false)
-        }
+        hydratedCompanyIdRef.current = companyId
+        setTenantHydrated(true)
       }
     }
 
@@ -2570,20 +2508,25 @@ function App() {
 
   if (!authHydrated) {
     return (
-      <div className="min-h-dvh bg-background text-foreground flex items-center justify-center p-6">
-        <Toaster position="top-right" richColors />
-        <div className="rounded-[1.5rem] border border-white/60 bg-background px-6 py-5 shadow-[var(--neo-shadow)] text-sm font-semibold text-muted-foreground">
-          Checking secure session...
+      <>
+        <NetworkBlocker isOnline={isOnline} onRetry={checkConnection} />
+        <div className="min-h-dvh bg-background text-foreground flex items-center justify-center p-6">
+          <Toaster position="top-right" richColors />
+          <div className="rounded-[1.5rem] border border-white/60 bg-background px-6 py-5 shadow-[var(--neo-shadow)] text-sm font-semibold text-muted-foreground">
+            Checking secure session...
+          </div>
         </div>
-      </div>
+      </>
     )
   }
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-dvh bg-background text-foreground flex items-center justify-center p-6">
-        <Toaster position="top-right" richColors />
-        <form
+      <>
+        <NetworkBlocker isOnline={isOnline} onRetry={checkConnection} />
+        <div className="min-h-dvh bg-background text-foreground flex items-center justify-center p-6">
+          <Toaster position="top-right" richColors />
+          <form
           onSubmit={handleAuthSubmit}
           className="w-full max-w-md rounded-[1.5rem] border border-white/60 bg-background p-6 shadow-[var(--neo-shadow)] space-y-5"
         >
@@ -2667,11 +2610,13 @@ function App() {
           </Button>
         </form>
       </div>
-    )
-  }
+    </>
+  )
+}
 
   return (
     <>
+      <NetworkBlocker isOnline={isOnline} onRetry={checkConnection} />
       <Toaster position="top-right" richColors />
       <AnimatePresence>
         {mobileSidebarOpen && (

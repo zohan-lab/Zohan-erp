@@ -193,10 +193,8 @@ export function getTenantData(companyId: string, _fy?: string): TenantData {
   return parsedData
 }
 
-export function saveTenantData(companyId: string, fyOrData: string | TenantData, data?: TenantData): void {
-  const key = getTenantKey(companyId)
-  const payload = typeof fyOrData === 'object' ? fyOrData : (data || ({} as TenantData))
-  localStorage.setItem(key, JSON.stringify(payload))
+export function saveTenantData(_companyId: string, _fyOrData: string | TenantData, _data?: TenantData): void {
+  // Pure online mode: no-op for LocalStorage business persistence
 }
 
 export function generateFYOptions(): string[] {

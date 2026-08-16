@@ -348,14 +348,6 @@ export function calculatePaymentAllocations(
       const advanceAmount = remainingPayment
       const wasAdvance = advanceAmount > 0
 
-      console.log(`Payment ${payment.id} (${payment.paymentDate}):`, {
-        paymentAmount: payment.amount,
-        outstandingAtPaymentTime,
-        allocatedToExistingInvoices,
-        advanceAmount,
-        advancePercentage: (advanceAmount / payment.amount) * 100
-      })
-
       paymentAdvanceInfo.set(payment.id, {
         paymentId: payment.id,
         advanceAmount: advanceAmount,

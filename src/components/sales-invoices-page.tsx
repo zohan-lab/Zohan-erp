@@ -114,7 +114,7 @@ export default function SalesInvoicesPage({
       if (field === 'basicRate' || field === 'taxMode' || field === 'gstRate') {
         const basic = Number(updated.basicRate) || 0
         if (updated.taxMode === 'gst') {
-          const gst = Number(updated.gstRate) || 18
+          const gst = typeof updated.gstRate === 'number' ? updated.gstRate : 18
           updated.finalAmt = calculateRateWithGst(basic, gst)
         } else {
           updated.finalAmt = basic
@@ -1126,7 +1126,7 @@ export default function SalesInvoicesPage({
                                         ))}
                                       </SelectContent>
                                     </Select>
-                                    <Input value="-" disabled className="erp-reference-cell-input text-center" />
+                                    <Input value={items.find(i => i.id === item.itemId)?.hsnCode || '7214'} disabled className="erp-reference-cell-input text-center font-mono" />
                                     <div className="flex flex-col gap-0.5">
                                        <div className="flex items-center gap-1">
                                          <Input
@@ -1159,18 +1159,25 @@ export default function SalesInvoicesPage({
                                        </div>
                                        {(() => {
                                          const sel = items.find(i => i.id === item.itemId)
-                                         const activeUnit = item.enteredUnit || (item as any).entryUnit || sel?.unit
-                                         if (sel && activeUnit && activeUnit !== sel.unit) {
-                                           const factor = getItemConversionFactor(sel, activeUnit)
-                                           const baseQty = item.baseQuantity ?? ((item.enteredQuantity || 0) * factor)
-                                           const baseRate = factor > 0 ? (item.rate || 0) / factor : 0
-                                           return (
-                                             <span className="text-[10px] font-mono font-bold text-indigo-700 bg-indigo-50 px-1 py-0.5 rounded text-right">
-                                               Base: {baseQty.toLocaleString('en-IN')} {sel.unit} (@ ₹{baseRate.toFixed(2)}/{sel.unit})
-                                             </span>
-                                           )
-                                         }
-                                         return null
+                                         if (!sel) return null
+                                         const activeUnit = item.enteredUnit || (item as any).entryUnit || sel.unit
+                                         const currentStock = stockMap.get(item.itemId)?.currentStock ?? sel.openingStock ?? 0
+                                         const isShortage = currentStock <= 0 || (item.baseQuantity || item.enteredQuantity || 0) > currentStock
+                                         
+                                         return (
+                                           <div className="flex flex-col gap-0.5">
+                                             {activeUnit !== sel.unit && (
+                                               <span className="text-[10px] font-mono font-bold text-indigo-700 bg-indigo-50 px-1 py-0.5 rounded text-right">
+                                                 Base: {(item.baseQuantity ?? ((item.enteredQuantity || 0) * getItemConversionFactor(sel, activeUnit))).toLocaleString('en-IN')} {sel.unit}
+                                               </span>
+                                             )}
+                                             {isShortage && (
+                                               <span className="text-[9px] font-sans font-semibold text-amber-700 bg-amber-50 border border-amber-200/80 px-1 py-0.5 rounded text-right flex items-center justify-end gap-1">
+                                                 <span>⚠️</span> Avail: {currentStock.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {sel.unit}
+                                               </span>
+                                             )}
+                                           </div>
+                                         )
                                        })()}
                                      </div>
                                     <Input
@@ -1612,8 +1619,23 @@ export default function SalesInvoicesPage({
                                 >
                                   <TableCell className="font-medium">{item.name}</TableCell>
                                   <TableCell>{item.itemCode || '-'}</TableCell>
-                                  <TableCell className="text-right font-mono font-semibold text-blue-700">
-                                    {(stockMap.get(item.id)?.currentStock ?? item.openingStock ?? 0).toLocaleString('en-IN', { maximumFractionDigits: 3 })} {item.unit}
+                                  <TableCell className="text-right font-mono font-semibold">
+                                    {(() => {
+                                      const currentStock = stockMap.get(item.id)?.currentStock ?? item.openingStock ?? 0
+                                      const isNegative = currentStock <= 0
+                                      return (
+                                        <div className="flex flex-col items-end">
+                                          <span className={isNegative ? 'text-amber-600 font-bold' : 'text-blue-700'}>
+                                            {currentStock.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {item.unit}
+                                          </span>
+                                          {isNegative && (
+                                            <span className="inline-flex items-center gap-0.5 text-[9px] px-1 py-0.2 rounded bg-amber-50 text-amber-700 border border-amber-200 font-sans font-bold">
+                                              Negative Stock
+                                            </span>
+                                          )}
+                                        </div>
+                                      )
+                                    })()}
                                   </TableCell>
                                   <TableCell className="text-right font-mono">{item.salesPrice ? formatCurrency(item.salesPrice) : '-'}</TableCell>
                                   <TableCell className="text-right font-mono">{item.purchasePrice ? formatCurrency(item.purchasePrice) : '-'}</TableCell>

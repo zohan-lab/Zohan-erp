@@ -256,8 +256,10 @@ export default function SalesReturnPage({
       if (field === 'itemId') {
         const defaultUnit = selectedDef?.alternativeUnit && selectedDef.alternativeUnit !== 'NONE' ? selectedDef.alternativeUnit : (selectedDef?.unit || 'KG')
         updated.enteredUnit = defaultUnit
+        const itemGstPct = typeof selectedDef?.gstRate === 'number' ? selectedDef.gstRate : gstPercentage
         if (selectedDef && selectedDef.salesPrice) {
           updated.rate = selectedDef.salesPrice
+          updated.basicRate = calculateBasicRateFromInclusive(selectedDef.salesPrice, itemGstPct)
         }
       }
 
@@ -273,12 +275,12 @@ export default function SalesReturnPage({
         updated.baseQuantity = toBaseQuantity(selectedDef, numVal, activeUnit)
       } else if (field === 'basicRate') {
         const basicRate = Number(value) || 0
-        const itemGstPct = selectedDef?.gstRate || gstPercentage
+        const itemGstPct = typeof selectedDef?.gstRate === 'number' ? selectedDef.gstRate : gstPercentage
         updated.basicRate = basicRate
         updated.rate = calculateRateWithGst(basicRate, itemGstPct)
       } else if (field === 'rate') {
         const rateWithTax = Number(value) || 0
-        const itemGstPct = selectedDef?.gstRate || gstPercentage
+        const itemGstPct = typeof selectedDef?.gstRate === 'number' ? selectedDef.gstRate : gstPercentage
         updated.rate = rateWithTax
         updated.basicRate = calculateBasicRateFromInclusive(rateWithTax, itemGstPct)
       }
@@ -1005,7 +1007,7 @@ export default function SalesReturnPage({
                             className="erp-reference-cell-input font-mono text-right font-bold text-blue-900 bg-blue-50/50 border-blue-200"
                           />
                           <Input value="-" disabled className="erp-reference-cell-input text-center" />
-                          <Input value={`GST @ ${selectedItem?.gstRate || gstPercentage}%`} disabled className="erp-reference-cell-input text-center" />
+                          <Input value={`GST @ ${typeof selectedItem?.gstRate === 'number' ? selectedItem.gstRate : gstPercentage}%`} disabled className="erp-reference-cell-input text-center" />
                           <Input value={formatCurrency(lineItem.amount || 0)} disabled className="erp-reference-cell-input font-mono text-right" />
                           <Button
                             type="button"

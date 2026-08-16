@@ -160,7 +160,7 @@ export function InvoicePreviewDialog({
                   const lineInfo = taxSummary.lineBreakdowns[index]
                   const unit = line.enteredUnit || item?.unit || 'KG'
                   const qty = line.enteredQuantity || line.baseQuantity || 0
-                  const hsn = (item as any)?.hsnCode || '7214'
+                  const hsn = item?.hsnCode || '7214'
                   const basicRate = lineInfo?.basicRate ?? line.basicRate ?? (qty > 0 ? line.amount / qty : 0)
                   const rowTaxable = lineInfo?.taxableAmount ?? (qty * basicRate)
                   const gstPct = lineInfo?.gstRate ?? item?.gstRate ?? 18

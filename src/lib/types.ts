@@ -34,6 +34,7 @@ export interface Item {
   salesPrice?: number
   gstRate?: number
   itemCode?: string
+  hsnCode?: string
 }
 
 export interface Supplier {
