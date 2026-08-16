@@ -252,6 +252,7 @@ import SupplierCreditNotePage from '@/components/supplier-credit-note-page'
 import SalesReturnPage from '@/components/sales-return-page'
 import PurchaseReturnPage from '@/components/purchase-return-page'
 import GstReportsPage from '@/components/gst-reports-page'
+import { TallyExportDialog, TallyImportDialog } from '@/components/tally-integration-dialogs'
 import { loadBusinessesFromCloud, saveBusinessToCloud, deleteBusinessFromCloud } from '@/lib/business-sync'
 
 const tenantDataCollectionKeys: Array<keyof TenantData> = [
@@ -744,6 +745,8 @@ function App() {
   const [newBusinessName, setNewBusinessName] = useState('')
   const [newBusinessStartFY, setNewBusinessStartFY] = useState(getCurrentFY())
   const [editBusinessName, setEditBusinessName] = useState('')
+  const [tallyExportDialogOpen, setTallyExportDialogOpen] = useState(false)
+  const [tallyImportDialogOpen, setTallyImportDialogOpen] = useState(false)
 
   const currentActiveBusiness = metadata.businesses.find(b => b.id === metadata.activeCompanyId)
   const activeCompany = currentActiveBusiness?.name || 'SK TRADERS'
@@ -2734,6 +2737,42 @@ function App() {
             customerPayments={safeCustomerPayments}
             suppliers={safeSuppliers}
             customers={safeCustomers}
+            onOpenTallyExport={() => setTallyExportDialogOpen(true)}
+            onOpenTallyImport={() => setTallyImportDialogOpen(true)}
+          />
+
+          <TallyExportDialog
+            open={tallyExportDialogOpen}
+            onOpenChange={setTallyExportDialogOpen}
+            salesInvoices={safeSalesInvoices}
+            purchaseInvoices={safeInvoices}
+            customerCreditNotes={safeCreditNotes}
+            customerDebitNotes={safeCustomerDebitNotes}
+            supplierDebitNotes={safeDebitNotes}
+            supplierCreditNotes={safeSupplierCreditNotes}
+            expenseEntries={safeExpenseEntries}
+            payments={safePayments}
+            customerPayments={safeCustomerPayments}
+            customers={safeCustomers}
+            suppliers={safeSuppliers}
+            businessName={safeBusinessName}
+            companyStateCode={getActiveCompanyStateCode('19')}
+            currentFY={safeCurrentFY}
+          />
+
+          <TallyImportDialog
+            open={tallyImportDialogOpen}
+            onOpenChange={setTallyImportDialogOpen}
+            customers={safeCustomers}
+            suppliers={safeSuppliers}
+            onCommitImport={(newPayments, newCustomerPayments) => {
+              if (newPayments.length > 0) {
+                syncSetPayments([...payments, ...newPayments])
+              }
+              if (newCustomerPayments.length > 0) {
+                syncSetCustomerPayments([...customerPayments, ...newCustomerPayments])
+              }
+            }}
           />
 
           <AppDialogs

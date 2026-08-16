@@ -57,6 +57,8 @@ interface AppHeaderProps {
   vouchers?: PaymentVoucher[]
   onImportTally?: (vouchers: PaymentVoucher[]) => void
   onExportTally?: () => void
+  onOpenTallyExport?: () => void
+  onOpenTallyImport?: () => void
 }
 
 // Map view IDs to human-readable titles
@@ -102,6 +104,8 @@ export function AppHeader({
   vouchers,
   onImportTally,
   onExportTally,
+  onOpenTallyExport,
+  onOpenTallyImport,
 }: AppHeaderProps) {
   const viewMeta = VIEW_TITLES[activeView] ?? {
     title: activeView.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
@@ -316,7 +320,13 @@ export function AppHeader({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => {
+              if (onOpenTallyImport) {
+                onOpenTallyImport()
+              } else {
+                fileInputRef.current?.click()
+              }
+            }}
             disabled={isImporting}
             className="h-8 px-2 sm:px-2.5 text-xs font-semibold text-slate-700 hover:text-[#5B5FEF] hover:bg-[#5B5FEF]/8 border-[#E8EAEF] rounded-xl shadow-2xs transition-all gap-1 cursor-pointer"
             title="Import Tally Excel Vouchers"
@@ -333,7 +343,13 @@ export function AppHeader({
           <Button
             variant="outline"
             size="sm"
-            onClick={handleExportTally}
+            onClick={() => {
+              if (onOpenTallyExport) {
+                onOpenTallyExport()
+              } else {
+                handleExportTally()
+              }
+            }}
             disabled={isExporting}
             className="h-8 px-2 sm:px-2.5 text-xs font-semibold text-slate-700 hover:text-emerald-700 hover:bg-emerald-50 border-[#E8EAEF] rounded-xl shadow-2xs transition-all gap-1 cursor-pointer"
             title="Export Tally Excel Vouchers"
