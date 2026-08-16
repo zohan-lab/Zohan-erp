@@ -604,5 +604,8 @@ describe('Official 14-Column Tally Prime AccountingVouchers.xlsx Schema & Strict
     expect(expVch?.normalizedType).toBe('expense')
     expect(expVch?.matchedEntityId).toBe('exp-bank-charges')
     expect(expVch?.totalAmount).toBe(2469)
+
+    expect(result.newMasterCandidates).toBeDefined()
+    expect(result.newMasterCandidates.counters.length).toBeGreaterThanOrEqual(2)
   })
 })

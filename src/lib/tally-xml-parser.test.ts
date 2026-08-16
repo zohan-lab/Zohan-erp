@@ -512,6 +512,111 @@ describe('Native Tally XML Ingestion Engine', () => {
       expect(vch172?.partyName).toBe('Captain Steel India Limited')
       expect(vch172?.matchedEntityId).toBe('s-captain')
       expect(vch172?.totalAmount).toBe(1600000)
+
+      // Check Candidate Masters extraction from real Transactions.xml
+      expect(result.newMasterCandidates).toBeDefined()
+      expect(result.newMasterCandidates.customers.length).toBeGreaterThan(0)
+      expect(result.newMasterCandidates.counters.length).toBeGreaterThan(0)
+      expect(result.summary.newCustomersCount).toBe(result.newMasterCandidates.customers.length)
     }
+  })
+
+  it('aggregates candidate masters cleanly for unmapped parties and accounts', () => {
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+<ENVELOPE>
+  <BODY>
+    <IMPORTDATA>
+      <REQUESTDATA>
+        <TALLYMESSAGE>
+          <VOUCHER VCHTYPE="Sales" ACTION="Create">
+            <DATE>20260401</DATE>
+            <VOUCHERNUMBER>S-01</VOUCHERNUMBER>
+            <PARTYLEDGERNAME>Brand New Customer Ltd</PARTYLEDGERNAME>
+            <PARTYGSTIN>19ABCDE1234F1Z5</PARTYGSTIN>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Brand New Customer Ltd</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+              <AMOUNT>-10000.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Sales A/c</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+              <AMOUNT>10000.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+          </VOUCHER>
+          <VOUCHER VCHTYPE="Purchase" ACTION="Create">
+            <DATE>20260402</DATE>
+            <VOUCHERNUMBER>P-01</VOUCHERNUMBER>
+            <PARTYLEDGERNAME>Brand New Supplier LLP</PARTYLEDGERNAME>
+            <PARTYGSTIN>19XYZPQ9876R1Z2</PARTYGSTIN>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Purchase A/c</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+              <AMOUNT>-25000.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Brand New Supplier LLP</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+              <AMOUNT>25000.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+          </VOUCHER>
+          <VOUCHER VCHTYPE="Payment" ACTION="Create">
+            <DATE>20260403</DATE>
+            <VOUCHERNUMBER>EXP-01</VOUCHERNUMBER>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Office Tea &amp; Refreshments</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+              <AMOUNT>-1500.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Cash Counter Main</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+              <AMOUNT>1500.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+          </VOUCHER>
+          <VOUCHER VCHTYPE="Contra" ACTION="Create">
+            <DATE>20260404</DATE>
+            <VOUCHERNUMBER>CT-01</VOUCHERNUMBER>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>HDFC Current A/c</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+              <AMOUNT>20000.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Axis Bank OD</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+              <AMOUNT>-20000.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+          </VOUCHER>
+        </TALLYMESSAGE>
+      </REQUESTDATA>
+    </IMPORTDATA>
+  </BODY>
+</ENVELOPE>`
+
+    const result = parseTallyXmlVouchers(xml, {
+      customers: [],
+      suppliers: [],
+      expenseTypes: [],
+      counters: []
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.newMasterCandidates.customers).toHaveLength(1)
+    expect(result.newMasterCandidates.customers[0].name).toBe('Brand New Customer Ltd')
+    expect(result.newMasterCandidates.customers[0].gstin).toBe('19ABCDE1234F1Z5')
+
+    expect(result.newMasterCandidates.suppliers).toHaveLength(1)
+    expect(result.newMasterCandidates.suppliers[0].name).toBe('Brand New Supplier LLP')
+    expect(result.newMasterCandidates.suppliers[0].gstin).toBe('19XYZPQ9876R1Z2')
+
+    expect(result.newMasterCandidates.expenseCategories).toHaveLength(1)
+    expect(result.newMasterCandidates.expenseCategories[0].name).toBe('Office Tea & Refreshments')
+
+    expect(result.newMasterCandidates.counters.length).toBeGreaterThanOrEqual(2)
+    const counterNames = result.newMasterCandidates.counters.map(c => c.name)
+    expect(counterNames).toContain('HDFC Current A/c')
+    expect(counterNames).toContain('Axis Bank OD')
+    expect(counterNames).toContain('Cash Counter Main')
   })
 })

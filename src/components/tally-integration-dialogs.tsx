@@ -10,6 +10,8 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -641,7 +643,8 @@ export function TallyExportDialog({
 import {
   parseTallyXmlVouchers,
   decodeXmlFileBuffer,
-  TallyParsedXmlVoucher
+  TallyParsedXmlVoucher,
+  TallyNewMasterCandidates
 } from '@/lib/tally-xml-parser'
 import { Counter, CashBankTransaction } from '@/lib/cash-bank-types'
 
@@ -664,6 +667,10 @@ export interface TallyImportDialogProps {
       debitNotes?: SupplierDebitNote[]
       expenseEntries?: ExpenseEntry[]
       cashBankTransactions?: CashBankTransaction[]
+      newCustomers?: Customer[]
+      newSuppliers?: Supplier[]
+      newExpenseTypes?: ExpenseType[]
+      newCounters?: Counter[]
     }
   ) => void
 }
@@ -679,6 +686,8 @@ export function TallyImportDialog({
   onCommitImport
 }: TallyImportDialogProps) {
   const [parsedVouchers, setParsedVouchers] = useState<TallyParsedXmlVoucher[]>([])
+  const [candidateMasters, setCandidateMasters] = useState<TallyNewMasterCandidates | null>(null)
+  const [autoCreateMasters, setAutoCreateMasters] = useState(true)
   const [isParsing, setIsParsing] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [fileName, setFileName] = useState<string | null>(null)
@@ -703,6 +712,7 @@ export function TallyImportDialog({
       let matchedEntityId = v.matchedEntityId
       let contraDetails = v.contraDetails
       let expenseDetails = v.expenseDetails
+      let isAutoCreated = false
 
       if (v.normalizedType === 'contra') {
         const fromName = v.contraDetails?.fromCounterName || v.legs.find(l => l.drCr === 'Cr')?.ledgerName || ''
@@ -718,28 +728,67 @@ export function TallyImportDialog({
           amount: v.totalAmount
         }
 
-        if (counters.length > 0) {
-          if (fromId && toId) {
-            matchedEntityType = 'counter'
-            matchedEntityId = toId
-          } else {
-            matchedEntityType = 'unmapped'
-          }
-        } else {
+        if (fromId && toId) {
           matchedEntityType = 'counter'
+          matchedEntityId = toId
+        } else if (autoCreateMasters) {
+          matchedEntityType = 'counter'
+          matchedEntityId = toId || 'auto-counter'
+          isAutoCreated = true
+        } else {
+          matchedEntityType = 'unmapped'
         }
       } else if (v.normalizedType === 'expense') {
         if (expenseTypeMap.has(normParty)) {
           matchedEntityType = 'expense'
           matchedEntityId = expenseTypeMap.get(normParty)?.id
+        } else if (autoCreateMasters) {
+          matchedEntityType = 'expense'
+          isAutoCreated = true
         }
-      } else if (matchedEntityType === 'unmapped') {
+      } else if (v.normalizedType === 'sales' || v.normalizedType === 'credit_note') {
         if (customerMap.has(normParty)) {
           matchedEntityType = 'customer'
           matchedEntityId = customerMap.get(normParty)?.id
         } else if (supplierMap.has(normParty)) {
           matchedEntityType = 'supplier'
           matchedEntityId = supplierMap.get(normParty)?.id
+        } else if (autoCreateMasters) {
+          matchedEntityType = 'customer'
+          isAutoCreated = true
+        }
+      } else if (v.normalizedType === 'purchase' || v.normalizedType === 'debit_note') {
+        if (supplierMap.has(normParty)) {
+          matchedEntityType = 'supplier'
+          matchedEntityId = supplierMap.get(normParty)?.id
+        } else if (customerMap.has(normParty)) {
+          matchedEntityType = 'customer'
+          matchedEntityId = customerMap.get(normParty)?.id
+        } else if (autoCreateMasters) {
+          matchedEntityType = 'supplier'
+          isAutoCreated = true
+        }
+      } else if (v.normalizedType === 'payment') {
+        if (supplierMap.has(normParty)) {
+          matchedEntityType = 'supplier'
+          matchedEntityId = supplierMap.get(normParty)?.id
+        } else if (expenseTypeMap.has(normParty)) {
+          matchedEntityType = 'expense'
+          matchedEntityId = expenseTypeMap.get(normParty)?.id
+        } else if (autoCreateMasters) {
+          matchedEntityType = 'supplier'
+          isAutoCreated = true
+        }
+      } else if (v.normalizedType === 'receipt') {
+        if (customerMap.has(normParty)) {
+          matchedEntityType = 'customer'
+          matchedEntityId = customerMap.get(normParty)?.id
+        } else if (supplierMap.has(normParty)) {
+          matchedEntityType = 'supplier'
+          matchedEntityId = supplierMap.get(normParty)?.id
+        } else if (autoCreateMasters) {
+          matchedEntityType = 'customer'
+          isAutoCreated = true
         }
       }
 
@@ -755,6 +804,8 @@ export function TallyImportDialog({
           unmappedReason = `Unmapped Master: ${v.partyName}`
         } else if (hasUnmappedItem) {
           unmappedReason = `Unmapped Item: ${unmappedItems.map(i => i.itemName).join(', ')}`
+        } else if (isAutoCreated) {
+          unmappedReason = undefined
         }
       }
 
@@ -764,12 +815,44 @@ export function TallyImportDialog({
         matchedEntityId,
         contraDetails,
         expenseDetails,
+        isAutoCreated,
         hasUnmappedItem,
         unmappedItemNames: unmappedItems.map(i => i.itemName),
         skipReason: unmappedReason
       }
     })
-  }, [parsedVouchers, supplierMap, customerMap, counterMap, expenseTypeMap, itemMap, counters.length])
+  }, [parsedVouchers, supplierMap, customerMap, counterMap, expenseTypeMap, itemMap, counters.length, autoCreateMasters])
+
+  // Count candidates for display
+  const newMastersSummary = useMemo(() => {
+    const custSet = new Set<string>()
+    const suppSet = new Set<string>()
+    const expSet = new Set<string>()
+    const cntrSet = new Set<string>()
+
+    processedList.forEach(v => {
+      if (v.normalizedType === 'skipped') return
+      const norm = v.partyName.trim().toLowerCase()
+      if (v.isAutoCreated) {
+        if (v.matchedEntityType === 'customer' && !customerMap.has(norm)) custSet.add(v.partyName.trim())
+        if (v.matchedEntityType === 'supplier' && !supplierMap.has(norm)) suppSet.add(v.partyName.trim())
+        if (v.matchedEntityType === 'expense' && !expenseTypeMap.has(norm)) expSet.add(v.partyName.trim())
+      }
+      if (v.normalizedType === 'contra') {
+        const fromName = (v.contraDetails?.fromCounterName || '').trim()
+        const toName = (v.contraDetails?.toCounterName || '').trim()
+        if (fromName && !counterMap.has(fromName.toLowerCase())) cntrSet.add(fromName)
+        if (toName && !counterMap.has(toName.toLowerCase())) cntrSet.add(toName)
+      }
+    })
+
+    return {
+      customersCount: custSet.size,
+      suppliersCount: suppSet.size,
+      expensesCount: expSet.size,
+      countersCount: cntrSet.size
+    }
+  }, [processedList, customerMap, supplierMap, expenseTypeMap, counterMap])
 
   const validCount = processedList.filter(v => v.normalizedType !== 'skipped' && v.matchedEntityType !== 'unmapped' && !v.hasUnmappedItem).length
   const unmappedCount = processedList.filter(v => v.normalizedType !== 'skipped' && (v.matchedEntityType === 'unmapped' || v.hasUnmappedItem)).length
@@ -803,6 +886,7 @@ export function TallyImportDialog({
         })
 
         setParsedVouchers(result.vouchers)
+        setCandidateMasters(result.newMasterCandidates)
 
         if (result.success && result.vouchers.length > 0) {
           toast.success(`Successfully parsed ${result.summary.totalParsed} Tally XML voucher(s)`)
@@ -822,6 +906,7 @@ export function TallyImportDialog({
         } as any)
 
         setParsedVouchers(result.vouchers)
+        setCandidateMasters(result.newMasterCandidates)
 
         if (result.success && result.vouchers.length > 0) {
           toast.success(`Parsed ${result.vouchers.length} Tally voucher(s) from Excel`)
@@ -863,6 +948,99 @@ export function TallyImportDialog({
     const newDebitNotes: SupplierDebitNote[] = []
     const newExpenseEntries: ExpenseEntry[] = []
     const newCashBankTransactions: CashBankTransaction[] = []
+
+    const generatedCustomers: Customer[] = []
+    const generatedSuppliers: Supplier[] = []
+    const generatedExpenseTypes: ExpenseType[] = []
+    const generatedCounters: Counter[] = []
+
+    const autoCustMap = new Map<string, string>()
+    const autoSuppMap = new Map<string, string>()
+    const autoExpMap = new Map<string, string>()
+    const autoCntrMap = new Map<string, string>()
+
+    if (autoCreateMasters) {
+      const timestamp = Date.now()
+      let custSeq = 0, suppSeq = 0, expSeq = 0, cntrSeq = 0
+
+      processedList.forEach(v => {
+        if (v.normalizedType === 'skipped') return
+        const norm = v.partyName.trim().toLowerCase()
+
+        if (v.isAutoCreated) {
+          if (v.matchedEntityType === 'customer' && !customerMap.has(norm) && !autoCustMap.has(norm)) {
+            custSeq++
+            const newId = `cust-auto-${timestamp}-${custSeq}`
+            autoCustMap.set(norm, newId)
+            generatedCustomers.push({
+              id: newId,
+              name: v.partyName.trim(),
+              gstin: v.partyGstin || '',
+              address: '',
+              stateCode: '19',
+              createdAt: timestamp
+            } as Customer)
+          } else if (v.matchedEntityType === 'supplier' && !supplierMap.has(norm) && !autoSuppMap.has(norm)) {
+            suppSeq++
+            const newId = `supp-auto-${timestamp}-${suppSeq}`
+            autoSuppMap.set(norm, newId)
+            generatedSuppliers.push({
+              id: newId,
+              name: v.partyName.trim(),
+              gstin: v.partyGstin || '',
+              address: '',
+              stateCode: '19',
+              paymentCDRules: [],
+              invoiceCloseCDRules: [],
+              createdAt: timestamp
+            } as Supplier)
+          } else if (v.matchedEntityType === 'expense' && !expenseTypeMap.has(norm) && !autoExpMap.has(norm)) {
+            expSeq++
+            const newId = `exp-auto-${timestamp}-${expSeq}`
+            autoExpMap.set(norm, newId)
+            generatedExpenseTypes.push({
+              id: newId,
+              name: v.partyName.trim(),
+              linkType: 'netprofit',
+              costLinkingType: 'net_profit'
+            } as ExpenseType)
+          }
+        }
+
+        // Check Contra Counters
+        if (v.normalizedType === 'contra') {
+          const fromName = (v.contraDetails?.fromCounterName || '').trim()
+          const toName = (v.contraDetails?.toCounterName || '').trim()
+
+          if (fromName && !counterMap.has(fromName.toLowerCase()) && !autoCntrMap.has(fromName.toLowerCase())) {
+            cntrSeq++
+            const newId = `cntr-auto-${timestamp}-${cntrSeq}`
+            autoCntrMap.set(fromName.toLowerCase(), newId)
+            generatedCounters.push({
+              id: newId,
+              name: fromName,
+              type: fromName.toLowerCase().includes('cash') ? 'Cash' : 'Bank',
+              openingBalance: 0,
+              currentBalance: 0
+            } as Counter)
+          }
+
+          if (toName && !counterMap.has(toName.toLowerCase()) && !autoCntrMap.has(toName.toLowerCase())) {
+            cntrSeq++
+            const newId = `cntr-auto-${timestamp}-${cntrSeq}`
+            autoCntrMap.set(toName.toLowerCase(), newId)
+            generatedCounters.push({
+              id: newId,
+              name: toName,
+              type: toName.toLowerCase().includes('cash') ? 'Cash' : 'Bank',
+              openingBalance: 0,
+              currentBalance: 0
+            } as Counter)
+          }
+        }
+      })
+    }
+
     let skipped = 0
 
     processedList.forEach((v, idx) => {
@@ -871,26 +1049,34 @@ export function TallyImportDialog({
         return
       }
 
-      if (v.normalizedType === 'payment' && v.matchedEntityType === 'supplier' && v.matchedEntityId) {
-        newPayments.push({
-          id: `tally-pay-${Date.now()}-${idx}`,
-          supplierId: v.matchedEntityId,
-          amount: v.totalAmount,
-          paymentDate: v.voucherDate || new Date().toISOString().split('T')[0],
-          paymentMode: 'Bank',
-          counterName: v.legs.find(l => l.ledgerName !== v.partyName)?.ledgerName || 'Bank Account',
-          notes: `Imported from Tally Voucher #${v.voucherNumber}`,
-          createdAt: Date.now()
-        } as any)
+      const normParty = v.partyName.trim().toLowerCase()
+
+      if (v.normalizedType === 'payment' && v.matchedEntityType === 'supplier') {
+        const suppId = v.matchedEntityId || autoSuppMap.get(normParty) || supplierMap.get(normParty)?.id
+        if (suppId) {
+          newPayments.push({
+            id: `tally-pay-${Date.now()}-${idx}`,
+            supplierId: suppId,
+            amount: v.totalAmount,
+            paymentDate: v.voucherDate || new Date().toISOString().split('T')[0],
+            paymentMode: 'Bank',
+            counterName: v.legs.find(l => l.ledgerName !== v.partyName)?.ledgerName || 'Bank Account',
+            notes: `Imported from Tally Voucher #${v.voucherNumber}`,
+            createdAt: Date.now()
+          } as any)
+        } else {
+          skipped++
+        }
       } else if (v.normalizedType === 'expense') {
         const crLeg = v.legs.find(l => l.drCr === 'Cr')
+        const expCatId = v.expenseDetails?.categoryId || v.matchedEntityId || autoExpMap.get(normParty) || expenseTypeMap.get(normParty)?.id || 'exp-cat-general'
         newExpenseEntries.push({
           id: `tally-exp-${Date.now()}-${idx}`,
           date: v.voucherDate || new Date().toISOString().split('T')[0],
           expenseDate: v.voucherDate || new Date().toISOString().split('T')[0],
-          categoryId: v.expenseDetails?.categoryId || v.matchedEntityId || 'exp-cat-general',
+          categoryId: expCatId,
           categoryName: v.expenseDetails?.categoryName || v.partyName,
-          expenseTypeId: v.expenseDetails?.categoryId || v.matchedEntityId || 'exp-cat-general',
+          expenseTypeId: expCatId,
           amount: v.totalAmount,
           paymentAccountId: crLeg?.ledgerName,
           paymentAccountName: crLeg?.ledgerName || 'Bank Account',
@@ -902,8 +1088,8 @@ export function TallyImportDialog({
       } else if (v.normalizedType === 'contra') {
         const fromName = v.contraDetails?.fromCounterName || 'Source Counter'
         const toName = v.contraDetails?.toCounterName || 'Destination Counter'
-        const fromId = v.contraDetails?.fromCounterId || counterMap.get(fromName.trim().toLowerCase())?.id || 'counter-src'
-        const toId = v.contraDetails?.toCounterId || counterMap.get(toName.trim().toLowerCase())?.id || 'counter-dst'
+        const fromId = v.contraDetails?.fromCounterId || autoCntrMap.get(fromName.toLowerCase()) || counterMap.get(fromName.trim().toLowerCase())?.id || 'counter-src'
+        const toId = v.contraDetails?.toCounterId || autoCntrMap.get(toName.toLowerCase()) || counterMap.get(toName.trim().toLowerCase())?.id || 'counter-dst'
 
         newCashBankTransactions.push({
           id: `tally-contra-${Date.now()}-${idx}`,
@@ -916,70 +1102,95 @@ export function TallyImportDialog({
           toCounterName: toName,
           narration: v.narration || `Tally Contra Transfer #${v.voucherNumber}`
         })
-      } else if (v.normalizedType === 'receipt' && v.matchedEntityType === 'customer' && v.matchedEntityId) {
-        newCustomerPayments.push({
-          id: `tally-rec-${Date.now()}-${idx}`,
-          customerId: v.matchedEntityId,
-          amount: v.totalAmount,
-          paymentDate: v.voucherDate || new Date().toISOString().split('T')[0],
-          paymentMode: 'Bank',
-          counterName: v.legs.find(l => l.ledgerName !== v.partyName)?.ledgerName || 'Bank Account',
-          notes: `Imported from Tally Voucher #${v.voucherNumber}`,
-          createdAt: Date.now()
-        } as any)
-      } else if (v.normalizedType === 'sales' && v.matchedEntityType === 'customer' && v.matchedEntityId) {
-        newSalesInvoices.push({
-          id: `tally-inv-${Date.now()}-${idx}`,
-          invoiceNumber: v.voucherNumber,
-          customerId: v.matchedEntityId,
-          date: v.voucherDate || new Date().toISOString().split('T')[0],
-          totalAmount: v.totalAmount,
-          taxableAmount: v.legs.find(l => l.ledgerName.toLowerCase().includes('sale'))?.amount || v.totalAmount,
-          status: 'Confirmed',
-          items: v.inventory.map(inv => ({
-            itemId: itemMap.get(inv.itemName.toLowerCase())?.id || 'item-gen',
-            baseQuantity: inv.quantity,
-            rate: inv.rate,
-            amount: inv.amount
-          })),
-          createdAt: Date.now()
-        } as any)
-      } else if (v.normalizedType === 'purchase' && v.matchedEntityType === 'supplier' && v.matchedEntityId) {
-        newPurchaseInvoices.push({
-          id: `tally-pur-${Date.now()}-${idx}`,
-          invoiceNumber: v.voucherNumber,
-          supplierId: v.matchedEntityId,
-          invoiceDate: v.voucherDate || new Date().toISOString().split('T')[0],
-          totalAmount: v.totalAmount,
-          taxableAmount: v.legs.find(l => l.ledgerName.toLowerCase().includes('purchase'))?.amount || v.totalAmount,
-          items: v.inventory.map(inv => ({
-            itemId: itemMap.get(inv.itemName.toLowerCase())?.id || 'item-gen',
-            baseQuantity: inv.quantity,
-            rate: inv.rate,
-            amount: inv.amount
-          })),
-          createdAt: Date.now()
-        } as any)
-      } else if (v.normalizedType === 'credit_note' && v.matchedEntityType === 'customer' && v.matchedEntityId) {
-        newCreditNotes.push({
-          id: `tally-cn-${Date.now()}-${idx}`,
-          creditNoteNumber: v.voucherNumber,
-          customerId: v.matchedEntityId,
-          date: v.voucherDate || new Date().toISOString().split('T')[0],
-          amount: v.totalAmount,
-          reason: v.narration || 'Imported from Tally Credit Note',
-          createdAt: Date.now()
-        } as any)
-      } else if (v.normalizedType === 'debit_note' && v.matchedEntityType === 'supplier' && v.matchedEntityId) {
-        newDebitNotes.push({
-          id: `tally-dn-${Date.now()}-${idx}`,
-          debitNoteNumber: v.voucherNumber,
-          supplierId: v.matchedEntityId,
-          date: v.voucherDate || new Date().toISOString().split('T')[0],
-          amount: v.totalAmount,
-          reason: v.narration || 'Imported from Tally Debit Note',
-          createdAt: Date.now()
-        } as any)
+      } else if (v.normalizedType === 'receipt' && v.matchedEntityType === 'customer') {
+        const custId = v.matchedEntityId || autoCustMap.get(normParty) || customerMap.get(normParty)?.id
+        if (custId) {
+          newCustomerPayments.push({
+            id: `tally-rec-${Date.now()}-${idx}`,
+            customerId: custId,
+            amount: v.totalAmount,
+            paymentDate: v.voucherDate || new Date().toISOString().split('T')[0],
+            paymentMode: 'Bank',
+            counterName: v.legs.find(l => l.ledgerName !== v.partyName)?.ledgerName || 'Bank Account',
+            notes: `Imported from Tally Voucher #${v.voucherNumber}`,
+            createdAt: Date.now()
+          } as any)
+        } else {
+          skipped++
+        }
+      } else if (v.normalizedType === 'sales' && v.matchedEntityType === 'customer') {
+        const custId = v.matchedEntityId || autoCustMap.get(normParty) || customerMap.get(normParty)?.id
+        if (custId) {
+          newSalesInvoices.push({
+            id: `tally-inv-${Date.now()}-${idx}`,
+            invoiceNumber: v.voucherNumber,
+            customerId: custId,
+            date: v.voucherDate || new Date().toISOString().split('T')[0],
+            totalAmount: v.totalAmount,
+            taxableAmount: v.legs.find(l => l.ledgerName.toLowerCase().includes('sale'))?.amount || v.totalAmount,
+            status: 'Confirmed',
+            items: v.inventory.map(inv => ({
+              itemId: itemMap.get(inv.itemName.toLowerCase())?.id || 'item-gen',
+              baseQuantity: inv.quantity,
+              rate: inv.rate,
+              amount: inv.amount
+            })),
+            createdAt: Date.now()
+          } as any)
+        } else {
+          skipped++
+        }
+      } else if (v.normalizedType === 'purchase' && v.matchedEntityType === 'supplier') {
+        const suppId = v.matchedEntityId || autoSuppMap.get(normParty) || supplierMap.get(normParty)?.id
+        if (suppId) {
+          newPurchaseInvoices.push({
+            id: `tally-pur-${Date.now()}-${idx}`,
+            invoiceNumber: v.voucherNumber,
+            supplierId: suppId,
+            invoiceDate: v.voucherDate || new Date().toISOString().split('T')[0],
+            totalAmount: v.totalAmount,
+            taxableAmount: v.legs.find(l => l.ledgerName.toLowerCase().includes('purchase'))?.amount || v.totalAmount,
+            items: v.inventory.map(inv => ({
+              itemId: itemMap.get(inv.itemName.toLowerCase())?.id || 'item-gen',
+              baseQuantity: inv.quantity,
+              rate: inv.rate,
+              amount: inv.amount
+            })),
+            createdAt: Date.now()
+          } as any)
+        } else {
+          skipped++
+        }
+      } else if (v.normalizedType === 'credit_note' && v.matchedEntityType === 'customer') {
+        const custId = v.matchedEntityId || autoCustMap.get(normParty) || customerMap.get(normParty)?.id
+        if (custId) {
+          newCreditNotes.push({
+            id: `tally-cn-${Date.now()}-${idx}`,
+            creditNoteNumber: v.voucherNumber,
+            customerId: custId,
+            date: v.voucherDate || new Date().toISOString().split('T')[0],
+            amount: v.totalAmount,
+            reason: v.narration || 'Imported from Tally Credit Note',
+            createdAt: Date.now()
+          } as any)
+        } else {
+          skipped++
+        }
+      } else if (v.normalizedType === 'debit_note' && v.matchedEntityType === 'supplier') {
+        const suppId = v.matchedEntityId || autoSuppMap.get(normParty) || supplierMap.get(normParty)?.id
+        if (suppId) {
+          newDebitNotes.push({
+            id: `tally-dn-${Date.now()}-${idx}`,
+            debitNoteNumber: v.voucherNumber,
+            supplierId: suppId,
+            date: v.voucherDate || new Date().toISOString().split('T')[0],
+            amount: v.totalAmount,
+            reason: v.narration || 'Imported from Tally Debit Note',
+            createdAt: Date.now()
+          } as any)
+        } else {
+          skipped++
+        }
       } else {
         skipped++
       }
@@ -993,14 +1204,26 @@ export function TallyImportDialog({
       creditNotes: newCreditNotes,
       debitNotes: newDebitNotes,
       expenseEntries: newExpenseEntries,
-      cashBankTransactions: newCashBankTransactions
+      cashBankTransactions: newCashBankTransactions,
+      newCustomers: generatedCustomers,
+      newSuppliers: generatedSuppliers,
+      newExpenseTypes: generatedExpenseTypes,
+      newCounters: generatedCounters
     })
 
+    const createdSummary = [
+      generatedCustomers.length > 0 ? `${generatedCustomers.length} customer(s)` : null,
+      generatedSuppliers.length > 0 ? `${generatedSuppliers.length} supplier(s)` : null,
+      generatedExpenseTypes.length > 0 ? `${generatedExpenseTypes.length} expense category(ies)` : null,
+      generatedCounters.length > 0 ? `${generatedCounters.length} bank/cash counter(s)` : null
+    ].filter(Boolean).join(', ')
+
     toast.success(`Successfully imported ${imported} voucher(s) into ERP accounts`, {
-      description: skipped > 0 ? `${skipped} unmapped/journal vouchers skipped per strict master policy` : undefined
+      description: createdSummary ? `Auto-created: ${createdSummary}` : (skipped > 0 ? `${skipped} unmapped/journal vouchers skipped` : undefined)
     })
 
     setParsedVouchers([])
+    setCandidateMasters(null)
     setFileName(null)
     onOpenChange(false)
   }
@@ -1030,7 +1253,7 @@ export function TallyImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[720px] p-6 rounded-2xl">
+      <DialogContent className="sm:max-w-[760px] p-6 rounded-2xl">
         <DialogHeader className="space-y-1.5">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
@@ -1044,7 +1267,7 @@ export function TallyImportDialog({
             </Badge>
           </div>
           <DialogDescription className="text-xs text-slate-500">
-            Upload Tally Native XML (.xml) or Excel (.xlsx, .xls, .csv) to ingest Sales, Purchases, Receipts, Payments, and Notes with automated master ledger matching.
+            Upload Tally Native XML (.xml) or Excel (.xlsx, .xls, .csv) to ingest Sales, Purchases, Receipts, Payments, Contra Transfers, and Notes.
           </DialogDescription>
         </DialogHeader>
 
@@ -1095,6 +1318,44 @@ export function TallyImportDialog({
             </Badge>
           )}
         </div>
+
+        {/* Auto-Creation Toggle & Candidate Summary */}
+        {processedList.length > 0 && (
+          <div className="flex items-center justify-between bg-violet-50/60 border border-violet-100 p-3 rounded-xl gap-2 flex-wrap">
+            <div className="flex items-center space-x-2.5">
+              <Switch
+                id="auto-create-masters-toggle"
+                checked={autoCreateMasters}
+                onCheckedChange={setAutoCreateMasters}
+              />
+              <Label htmlFor="auto-create-masters-toggle" className="text-xs font-bold text-slate-800 cursor-pointer">
+                Auto-Create Missing Masters & Ledgers
+              </Label>
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {autoCreateMasters && newMastersSummary.customersCount > 0 && (
+                <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[10px]">
+                  +{newMastersSummary.customersCount} New Customers
+                </Badge>
+              )}
+              {autoCreateMasters && newMastersSummary.suppliersCount > 0 && (
+                <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[10px]">
+                  +{newMastersSummary.suppliersCount} New Suppliers
+                </Badge>
+              )}
+              {autoCreateMasters && newMastersSummary.expensesCount > 0 && (
+                <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px]">
+                  +{newMastersSummary.expensesCount} New Expenses
+                </Badge>
+              )}
+              {autoCreateMasters && newMastersSummary.countersCount > 0 && (
+                <Badge className="bg-cyan-100 text-cyan-800 border-cyan-200 text-[10px]">
+                  +{newMastersSummary.countersCount} New Counters
+                </Badge>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Preview Table */}
         {processedList.length > 0 && (
@@ -1150,6 +1411,10 @@ export function TallyImportDialog({
                       <TableCell className="text-center">
                         {v.normalizedType === 'skipped' ? (
                           <Badge variant="outline" className="text-[10px] text-slate-400">Skip Journal</Badge>
+                        ) : v.isAutoCreated ? (
+                          <Badge className="bg-purple-100 text-purple-800 border-purple-200 text-[10px] font-semibold">
+                            + Auto {v.matchedEntityType === 'customer' ? 'Customer' : v.matchedEntityType === 'supplier' ? 'Supplier' : v.matchedEntityType === 'expense' ? 'Expense' : 'Counter'}
+                          </Badge>
                         ) : v.matchedEntityType === 'unmapped' ? (
                           <Badge variant="outline" className="text-[10px] text-rose-700 bg-rose-50 border-rose-200" title={`Unmapped Master: ${v.partyName}`}>
                             Unmapped Master: {v.partyName.length > 12 ? v.partyName.slice(0, 12) + '...' : v.partyName}

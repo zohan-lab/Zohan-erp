@@ -2771,6 +2771,18 @@ function App() {
             expenseTypes={safeExpenseTypes}
             counters={visibleCashBankCounters}
             onCommitImport={(newPayments, newCustomerPayments, _summary, extraEntities) => {
+              if (extraEntities?.newCustomers && extraEntities.newCustomers.length > 0) {
+                syncSetCustomers([...customers, ...extraEntities.newCustomers])
+              }
+              if (extraEntities?.newSuppliers && extraEntities.newSuppliers.length > 0) {
+                syncSetSuppliers([...suppliers, ...extraEntities.newSuppliers])
+              }
+              if (extraEntities?.newExpenseTypes && extraEntities.newExpenseTypes.length > 0) {
+                syncSetExpenseTypes([...expenseTypes, ...extraEntities.newExpenseTypes])
+              }
+              if (extraEntities?.newCounters && extraEntities.newCounters.length > 0) {
+                syncSetCashBankCounters([...cashBankCounters, ...extraEntities.newCounters])
+              }
               if (newPayments.length > 0) {
                 syncSetPayments([...payments, ...newPayments])
               }
@@ -2778,16 +2790,16 @@ function App() {
                 syncSetCustomerPayments([...customerPayments, ...newCustomerPayments])
               }
               if (extraEntities?.salesInvoices && extraEntities.salesInvoices.length > 0) {
-                setSalesInvoices(prev => [...prev, ...extraEntities.salesInvoices!])
+                syncSetSalesInvoices([...salesInvoices, ...extraEntities.salesInvoices])
               }
               if (extraEntities?.purchaseInvoices && extraEntities.purchaseInvoices.length > 0) {
-                setInvoices(prev => [...prev, ...extraEntities.purchaseInvoices!])
+                syncSetInvoices([...invoices, ...extraEntities.purchaseInvoices])
               }
               if (extraEntities?.creditNotes && extraEntities.creditNotes.length > 0) {
-                setCreditNotes(prev => [...prev, ...extraEntities.creditNotes!])
+                syncSetCreditNotes([...creditNotes, ...extraEntities.creditNotes])
               }
               if (extraEntities?.debitNotes && extraEntities.debitNotes.length > 0) {
-                setDebitNotes(prev => [...prev, ...extraEntities.debitNotes!])
+                syncSetDebitNotes([...debitNotes, ...extraEntities.debitNotes])
               }
               if (extraEntities?.expenseEntries && extraEntities.expenseEntries.length > 0) {
                 syncSetExpenseEntries([...expenseEntries, ...extraEntities.expenseEntries])

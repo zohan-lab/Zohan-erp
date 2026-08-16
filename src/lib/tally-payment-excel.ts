@@ -9,7 +9,15 @@ import {
   ExportOptions
 } from './tally-payment-types'
 import { Customer, Supplier, Item, ExpenseType } from './types'
-import { TallyParsedXmlVoucher, TallyXmlImportResult, normalizeTallyVoucherType } from './tally-xml-parser'
+import {
+  TallyParsedXmlVoucher,
+  TallyXmlImportResult,
+  normalizeTallyVoucherType,
+  TallyNewMasterCandidates,
+  TallyNewMasterCandidateParty,
+  TallyNewMasterCandidateExpense,
+  TallyNewMasterCandidateCounter
+} from './tally-xml-parser'
 
 // Re-export all types so callers can import everything from this single module
 export * from './tally-payment-types'
@@ -1007,6 +1015,11 @@ export function parseTallyAccountingVouchersExcel(
     if (it.itemCode) itemMap.set(it.itemCode.trim().toLowerCase(), it)
   })
 
+  const candidateCustomers = new Map<string, TallyNewMasterCandidateParty>()
+  const candidateSuppliers = new Map<string, TallyNewMasterCandidateParty>()
+  const candidateExpenses = new Map<string, TallyNewMasterCandidateExpense>()
+  const candidateCounters = new Map<string, TallyNewMasterCandidateCounter>()
+
   let workbook: XLSX.WorkBook
   try {
     const uint8 = fileBuffer instanceof Uint8Array ? fileBuffer : new Uint8Array(fileBuffer)
@@ -1032,7 +1045,17 @@ export function parseTallyAccountingVouchersExcel(
         debitNoteCount: 0,
         skippedCount: 0,
         matchedCount: 0,
-        unmappedCount: 0
+        unmappedCount: 0,
+        newCustomersCount: 0,
+        newSuppliersCount: 0,
+        newExpensesCount: 0,
+        newCountersCount: 0
+      },
+      newMasterCandidates: {
+        customers: [],
+        suppliers: [],
+        expenseCategories: [],
+        counters: []
       },
       errors: [`Failed to parse Excel workbook: ${err?.message || 'Invalid file format'}`],
       warnings: []
@@ -1056,7 +1079,17 @@ export function parseTallyAccountingVouchersExcel(
         debitNoteCount: 0,
         skippedCount: 0,
         matchedCount: 0,
-        unmappedCount: 0
+        unmappedCount: 0,
+        newCustomersCount: 0,
+        newSuppliersCount: 0,
+        newExpensesCount: 0,
+        newCountersCount: 0
+      },
+      newMasterCandidates: {
+        customers: [],
+        suppliers: [],
+        expenseCategories: [],
+        counters: []
       },
       errors: ['The Excel workbook contains no sheets.'],
       warnings: []
@@ -1086,7 +1119,17 @@ export function parseTallyAccountingVouchersExcel(
         debitNoteCount: 0,
         skippedCount: 0,
         matchedCount: 0,
-        unmappedCount: 0
+        unmappedCount: 0,
+        newCustomersCount: 0,
+        newSuppliersCount: 0,
+        newExpensesCount: 0,
+        newCountersCount: 0
+      },
+      newMasterCandidates: {
+        customers: [],
+        suppliers: [],
+        expenseCategories: [],
+        counters: []
       },
       errors: ['No data rows found in worksheet.'],
       warnings: []
@@ -1195,12 +1238,18 @@ export function parseTallyAccountingVouchersExcel(
     })
 
     // Infer party ledger name based on voucher type
-    if (normalizedType === 'sales' || normalizedType === 'credit_note') {
+    if (normalizedType === 'sales') {
       const drLeg = legs.find(l => l.drCr === 'Dr' && !l.ledgerName.toLowerCase().includes('round off'))
       partyName = drLeg ? drLeg.ledgerName : (legs[0]?.ledgerName || 'Cash Customer')
-    } else if (normalizedType === 'purchase' || normalizedType === 'debit_note') {
+    } else if (normalizedType === 'credit_note') {
+      const crLeg = legs.find(l => l.drCr === 'Cr' && !l.ledgerName.toLowerCase().includes('round off'))
+      partyName = crLeg ? crLeg.ledgerName : (legs[0]?.ledgerName || 'Cash Customer')
+    } else if (normalizedType === 'purchase') {
       const crLeg = legs.find(l => l.drCr === 'Cr' && !l.ledgerName.toLowerCase().includes('round off'))
       partyName = crLeg ? crLeg.ledgerName : (legs[0]?.ledgerName || 'Supplier Account')
+    } else if (normalizedType === 'debit_note') {
+      const drLeg = legs.find(l => l.drCr === 'Dr' && !l.ledgerName.toLowerCase().includes('round off'))
+      partyName = drLeg ? drLeg.ledgerName : (legs[0]?.ledgerName || 'Supplier Account')
     } else if (normalizedType === 'payment') {
       const drLeg = legs.find(l => l.drCr === 'Dr')
       partyName = drLeg ? drLeg.ledgerName : (legs[0]?.ledgerName || 'Payee')
@@ -1229,6 +1278,15 @@ export function parseTallyAccountingVouchersExcel(
       const toCounterName = drLeg ? drLeg.ledgerName : 'Destination Counter'
       partyName = `${fromCounterName} → ${toCounterName}`
 
+      candidateCounters.set(fromCounterName.toLowerCase(), {
+        name: fromCounterName,
+        type: fromCounterName.toLowerCase().includes('cash') ? 'Cash' : 'Bank'
+      })
+      candidateCounters.set(toCounterName.toLowerCase(), {
+        name: toCounterName,
+        type: toCounterName.toLowerCase().includes('cash') ? 'Cash' : 'Bank'
+      })
+
       contraDetails = {
         fromCounterName,
         toCounterName,
@@ -1240,6 +1298,13 @@ export function parseTallyAccountingVouchersExcel(
       const crLeg = legs.find(l => l.drCr === 'Cr')
       const drParty = (drLeg?.ledgerName || partyName || '').trim()
       const normDr = drParty.toLowerCase()
+
+      if (crLeg) {
+        candidateCounters.set(crLeg.ledgerName.toLowerCase(), {
+          name: crLeg.ledgerName,
+          type: crLeg.ledgerName.toLowerCase().includes('cash') ? 'Cash' : 'Bank'
+        })
+      }
 
       if (suppMap.has(normDr)) {
         normalizedType = 'payment'
@@ -1273,13 +1338,25 @@ export function parseTallyAccountingVouchersExcel(
           paymentAccountId: crLeg?.ledgerName,
           paymentAccountName: crLeg?.ledgerName
         }
+        candidateExpenses.set(normDr, {
+          name: drParty,
+          linkType: 'netprofit'
+        })
         matchedEntityType = 'unmapped'
         skipReason = `Unmapped Master: ${drParty}`
       }
     } else if (normalizedType === 'receipt') {
       const crLeg = legs.find(l => l.drCr === 'Cr')
+      const drLeg = legs.find(l => l.drCr === 'Dr')
       const crParty = (crLeg?.ledgerName || partyName || '').trim()
       const normCr = crParty.toLowerCase()
+
+      if (drLeg) {
+        candidateCounters.set(drLeg.ledgerName.toLowerCase(), {
+          name: drLeg.ledgerName,
+          type: drLeg.ledgerName.toLowerCase().includes('cash') ? 'Cash' : 'Bank'
+        })
+      }
 
       if (custMap.has(normCr)) {
         matchedEntityType = 'customer'
@@ -1290,11 +1367,17 @@ export function parseTallyAccountingVouchersExcel(
         matchedEntityId = suppMap.get(normCr)?.id
         partyName = crParty
       } else {
+        candidateCustomers.set(normCr, {
+          name: crParty,
+          address: partyAddress,
+          pincode: partyPincode,
+          state: 'West Bengal'
+        })
         matchedEntityType = 'unmapped'
         partyName = crParty
         skipReason = `Unmapped Master: ${crParty}`
       }
-    } else if (normalizedType === 'sales' || normalizedType === 'credit_note') {
+    } else if (normalizedType === 'sales') {
       const drLeg = legs.find(l => l.drCr === 'Dr' && !l.ledgerName.toLowerCase().includes('round off'))
       const pName = (drLeg ? drLeg.ledgerName : (partyName || legs[0]?.ledgerName || 'General Account')).trim()
       partyName = pName
@@ -1307,10 +1390,38 @@ export function parseTallyAccountingVouchersExcel(
         matchedEntityType = 'supplier'
         matchedEntityId = suppMap.get(normParty)?.id
       } else {
+        candidateCustomers.set(normParty, {
+          name: pName,
+          address: partyAddress,
+          pincode: partyPincode,
+          state: 'West Bengal'
+        })
         matchedEntityType = 'unmapped'
         skipReason = `Unmapped Master: ${pName}`
       }
-    } else if (normalizedType === 'purchase' || normalizedType === 'debit_note') {
+    } else if (normalizedType === 'credit_note') {
+      const crLeg = legs.find(l => l.drCr === 'Cr' && !l.ledgerName.toLowerCase().includes('round off'))
+      const pName = (crLeg ? crLeg.ledgerName : (partyName || legs[0]?.ledgerName || 'General Account')).trim()
+      partyName = pName
+      const normParty = pName.toLowerCase()
+
+      if (custMap.has(normParty)) {
+        matchedEntityType = 'customer'
+        matchedEntityId = custMap.get(normParty)?.id
+      } else if (suppMap.has(normParty)) {
+        matchedEntityType = 'supplier'
+        matchedEntityId = suppMap.get(normParty)?.id
+      } else {
+        candidateCustomers.set(normParty, {
+          name: pName,
+          address: partyAddress,
+          pincode: partyPincode,
+          state: 'West Bengal'
+        })
+        matchedEntityType = 'unmapped'
+        skipReason = `Unmapped Master: ${pName}`
+      }
+    } else if (normalizedType === 'purchase') {
       const crLeg = legs.find(l => l.drCr === 'Cr' && !l.ledgerName.toLowerCase().includes('round off'))
       const pName = (crLeg ? crLeg.ledgerName : (partyName || legs[0]?.ledgerName || 'General Account')).trim()
       partyName = pName
@@ -1323,6 +1434,34 @@ export function parseTallyAccountingVouchersExcel(
         matchedEntityType = 'customer'
         matchedEntityId = custMap.get(normParty)?.id
       } else {
+        candidateSuppliers.set(normParty, {
+          name: pName,
+          address: partyAddress,
+          pincode: partyPincode,
+          state: 'West Bengal'
+        })
+        matchedEntityType = 'unmapped'
+        skipReason = `Unmapped Master: ${pName}`
+      }
+    } else if (normalizedType === 'debit_note') {
+      const drLeg = legs.find(l => l.drCr === 'Dr' && !l.ledgerName.toLowerCase().includes('round off'))
+      const pName = (drLeg ? drLeg.ledgerName : (partyName || legs[0]?.ledgerName || 'General Account')).trim()
+      partyName = pName
+      const normParty = pName.toLowerCase()
+
+      if (suppMap.has(normParty)) {
+        matchedEntityType = 'supplier'
+        matchedEntityId = suppMap.get(normParty)?.id
+      } else if (custMap.has(normParty)) {
+        matchedEntityType = 'customer'
+        matchedEntityId = custMap.get(normParty)?.id
+      } else {
+        candidateSuppliers.set(normParty, {
+          name: pName,
+          address: partyAddress,
+          pincode: partyPincode,
+          state: 'West Bengal'
+        })
         matchedEntityType = 'unmapped'
         skipReason = `Unmapped Master: ${pName}`
       }
@@ -1363,6 +1502,14 @@ export function parseTallyAccountingVouchersExcel(
     })
   })
 
+  // Assemble candidate masters
+  const newMasterCandidates: TallyNewMasterCandidates = {
+    customers: Array.from(candidateCustomers.values()),
+    suppliers: Array.from(candidateSuppliers.values()),
+    expenseCategories: Array.from(candidateExpenses.values()),
+    counters: Array.from(candidateCounters.values())
+  }
+
   // Calculate summary counts
   const salesCount = vouchers.filter(v => v.normalizedType === 'sales').length
   const purchaseCount = vouchers.filter(v => v.normalizedType === 'purchase').length
@@ -1391,8 +1538,13 @@ export function parseTallyAccountingVouchersExcel(
       debitNoteCount,
       skippedCount,
       matchedCount,
-      unmappedCount
+      unmappedCount,
+      newCustomersCount: newMasterCandidates.customers.length,
+      newSuppliersCount: newMasterCandidates.suppliers.length,
+      newExpensesCount: newMasterCandidates.expenseCategories.length,
+      newCountersCount: newMasterCandidates.counters.length
     },
+    newMasterCandidates,
     errors,
     warnings
   }
