@@ -24,10 +24,10 @@ import { toast } from 'sonner'
 import { InvoicePreviewDialog } from '@/components/invoice-preview-dialog'
 import PurchaseInvoiceDetailsPage from '@/components/purchase-invoice-details-page'
 import { exportPurchaseInvoicePDF } from '@/lib/pdf-export'
-import { PartyEditorDialog } from '@/components/party-editor-dialog'
+import { PartyFullPageEditor } from '@/components/party-full-page-editor'
 import { ItemEditorDialog } from '@/components/item-editor-dialog'
 
-import { deleteInvoice, deletePayment, saveInvoice, savePayment } from '@/lib/firebase-storage'
+import { deleteInvoice, deletePayment, saveInvoice, savePayment, saveSupplier } from '@/lib/firebase-storage'
 import { ThreeDotDropdown } from '@/components/ui/three-dot-dropdown'
 
 interface InvoicesPageProps {
@@ -892,6 +892,28 @@ export default function InvoicesPage({
     )
   }
 
+  if (showQuickSupplier) {
+    return (
+      <PartyFullPageEditor
+        type="supplier"
+        existingParties={suppliers}
+        onSave={(party) => {
+          const supplier = party as Supplier
+          setSuppliers((prev) => [supplier, ...prev])
+          if (activeCompanyId) {
+            void saveSupplier(activeCompanyId, supplier)
+          }
+          setSelectedSupplierId(supplier.id)
+          setShowQuickSupplier(false)
+          toast.success(`Supplier "${supplier.name}" created`)
+        }}
+        onCancel={() => setShowQuickSupplier(false)}
+        invoices={invoices}
+        payments={payments}
+      />
+    )
+  }
+
   return (
     <div className="space-y-6 pb-12">
       {!open && (
@@ -1565,20 +1587,6 @@ export default function InvoicesPage({
           </form>
         </div>
       ) : null}
-
-      <PartyEditorDialog
-        open={showQuickSupplier}
-        onOpenChange={setShowQuickSupplier}
-        type="supplier"
-        existingParties={suppliers}
-        onSave={(party) => {
-          const supplier = party as Supplier
-          setSuppliers((prev) => [...prev, supplier])
-          setSelectedSupplierId(supplier.id)
-          setShowQuickSupplier(false)
-          toast.success(`Supplier "${supplier.name}" created`)
-        }}
-      />
 
       <Dialog
         open={itemPickerOpen}

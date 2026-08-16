@@ -15,7 +15,7 @@ import { formatCurrency, formatMT, getFYMonths, getFYFromDate, calculateRateWith
 import { toBaseQuantity } from '@/lib/unit-conversion-service'
 import { startOfMonth, endOfMonth, isWithinInterval, parseISO, format } from 'date-fns'
 import { toast } from 'sonner'
-import { PartyEditorDialog } from '@/components/party-editor-dialog'
+import { PartyFullPageEditor } from '@/components/party-full-page-editor'
 import { ItemEditorDialog } from '@/components/item-editor-dialog'
 
 import { saveEntityRemote, deleteEntityRemote } from '@/lib/firebase-storage'
@@ -451,6 +451,26 @@ export default function SalesReturnPage({
     setDeleteDialogOpen(false)
     setItemToDelete(null)
     toast.success('Sales Return & associated Credit Note deleted')
+  }
+
+  if (showQuickCustomer && setCustomers) {
+    return (
+      <PartyFullPageEditor
+        type="customer"
+        existingParties={customers}
+        onSave={(party) => {
+          const customer = party as Customer
+          setCustomers(prev => [...prev, customer])
+          if (activeCompanyId) {
+            void saveEntityRemote(activeCompanyId, 'customers', customer)
+          }
+          setSelectedCustomerId(customer.id)
+          setShowQuickCustomer(false)
+          toast.success(`Customer "${customer.name}" added`)
+        }}
+        onCancel={() => setShowQuickCustomer(false)}
+      />
+    )
   }
 
   return (
@@ -1286,20 +1306,6 @@ export default function SalesReturnPage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
-      {/* Quick Add Customer Dialog */}
-      {setCustomers && (
-        <PartyEditorDialog
-          open={showQuickCustomer}
-          onOpenChange={setShowQuickCustomer}
-          type="customer"
-          onSave={newCustomer => {
-            setCustomers(prev => [...prev, newCustomer as Customer])
-            setSelectedCustomerId(newCustomer.id)
-            toast.success(`Customer "${newCustomer.name}" added`)
-          }}
-        />
-      )}
 
       {/* Quick Add Item Dialog */}
       {setItems && (

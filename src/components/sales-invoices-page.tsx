@@ -24,11 +24,11 @@ import { startOfMonth, endOfMonth, isWithinInterval, parseISO, format } from 'da
 import { toast } from 'sonner'
 import { InvoicePreviewDialog } from '@/components/invoice-preview-dialog'
 import { exportSalesInvoicePDF } from '@/lib/pdf-export'
-import { PartyEditorDialog } from '@/components/party-editor-dialog'
+import { PartyFullPageEditor } from '@/components/party-full-page-editor'
 import { ItemEditorDialog } from '@/components/item-editor-dialog'
 import { cn } from '@/lib/utils'
 
-import { deleteSalesInvoice, deleteCustomerPayment, saveSalesInvoice, saveCustomerPayment } from '@/lib/firebase-storage'
+import { deleteSalesInvoice, deleteCustomerPayment, saveSalesInvoice, saveCustomerPayment, saveCustomer } from '@/lib/firebase-storage'
 import { ThreeDotDropdown } from '@/components/ui/three-dot-dropdown'
 
 interface SalesInvoicesPageProps {
@@ -823,6 +823,28 @@ export default function SalesInvoicesPage({
     toast.success(`Downloaded invoice ${invoice.invoiceNo}`)
   }
 
+  if (showQuickCustomer) {
+    return (
+      <PartyFullPageEditor
+        type="customer"
+        existingParties={customers}
+        onSave={(party) => {
+          const customer = party as Customer
+          setCustomers((prev) => [customer, ...prev])
+          if (activeCompanyId) {
+            void saveCustomer(activeCompanyId, customer)
+          }
+          setSelectedCustomerId(customer.id)
+          setShowQuickCustomer(false)
+          toast.success(`Customer "${customer.name}" created`)
+        }}
+        onCancel={() => setShowQuickCustomer(false)}
+        salesInvoices={salesInvoices}
+        customerPayments={customerPayments}
+      />
+    )
+  }
+
   return (
     <div className="space-y-6 pb-12">
       {!open && (
@@ -1512,20 +1534,6 @@ export default function SalesInvoicesPage({
               </form>
             </div>
           ) : null}
-
-            <PartyEditorDialog
-              open={showQuickCustomer}
-              onOpenChange={setShowQuickCustomer}
-              type="customer"
-              existingParties={customers}
-              onSave={(party) => {
-                const customer = party as Customer
-                setCustomers((prev) => [...prev, customer])
-                setSelectedCustomerId(customer.id)
-                setShowQuickCustomer(false)
-                toast.success(`Customer "${customer.name}" created`)
-              }}
-            />
 
             <Dialog
               open={itemPickerOpen}

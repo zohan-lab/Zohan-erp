@@ -23,7 +23,7 @@ import {
 import { formatCurrency, getFYStart } from '@/lib/calculations'
 import { getCustomerBalanceDetails, calculateTotalCustomerReceivables } from '@/lib/report-calculations'
 import { toast } from 'sonner'
-import { PartyEditorDialog } from '@/components/party-editor-dialog'
+import { PartyFullPageEditor } from '@/components/party-full-page-editor'
 import { deleteCustomer, saveCustomer } from '@/lib/firebase-storage'
 
 interface CustomersPageProps {
@@ -49,7 +49,7 @@ export default function CustomersPage({
   isLocked = false,
   activeCompanyId
 }: CustomersPageProps) {
-  const [open, setOpen] = useState(false)
+  const [viewMode, setViewMode] = useState<'list' | 'editor'>('list')
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null)
@@ -68,13 +68,14 @@ export default function CustomersPage({
       }
       toast.success('Customer updated successfully')
     } else {
-      setCustomers((prev) => [...prev, customer])
+      setCustomers((prev) => [customer, ...prev])
       if (activeCompanyId) {
         void saveCustomer(activeCompanyId, customer)
       }
       toast.success('Customer added successfully')
     }
     setEditingCustomer(null)
+    setViewMode('list')
   }
 
   const handleDeleteClick = (customer: Customer) => {
@@ -119,7 +120,7 @@ export default function CustomersPage({
       return
     }
     setEditingCustomer(null)
-    setOpen(true)
+    setViewMode('editor')
   }
 
   const handleEdit = (customer: Customer) => {
@@ -130,14 +131,7 @@ export default function CustomersPage({
       return
     }
     setEditingCustomer(customer)
-    setOpen(true)
-  }
-
-  const handleDialogClose = (isOpen: boolean) => {
-    setOpen(isOpen)
-    if (!isOpen) {
-      setEditingCustomer(null)
-    }
+    setViewMode('editor')
   }
 
   const handleImportCSV = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -276,6 +270,24 @@ export default function CustomersPage({
     return Math.min(customers.length, 1)
   }, [customers])
 
+  if (viewMode === 'editor') {
+    return (
+      <PartyFullPageEditor
+        type="customer"
+        party={editingCustomer}
+        existingParties={customers}
+        onSave={(savedCustomer) => handleSaveCustomer(savedCustomer as Customer)}
+        onCancel={() => {
+          setViewMode('list')
+          setEditingCustomer(null)
+        }}
+        isLocked={isLocked}
+        salesInvoices={salesInvoices}
+        customerPayments={customerPayments}
+      />
+    )
+  }
+
   return (
     <div className="space-y-6">
       {/* Hidden File Input for CSV Import */}
@@ -311,15 +323,6 @@ export default function CustomersPage({
             <Plus className="h-4 w-4" weight="bold" />
             Add Customer
           </Button>
-
-          <PartyEditorDialog
-            open={open}
-            onOpenChange={handleDialogClose}
-            type="customer"
-            party={editingCustomer}
-            existingParties={customers}
-            onSave={(party) => handleSaveCustomer(party as Customer)}
-          />
         </div>
       </div>
 
