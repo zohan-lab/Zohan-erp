@@ -7,6 +7,11 @@ export interface BusinessMetadata {
   id: string
   name: string
   startFY?: string
+  stateCode?: string
+  stateName?: string
+  gstin?: string
+  phone?: string
+  address?: string
 }
 
 export interface AppMetadata {

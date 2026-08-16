@@ -43,11 +43,15 @@ export interface Supplier {
   email?: string
   address?: string
   state?: string
+  stateCode?: string
+  stateName?: string
   pincode?: string
   city?: string
   shippingSameAsBilling?: boolean
   shippingAddress?: string
   shippingState?: string
+  shippingStateCode?: string
+  shippingStateName?: string
   shippingPincode?: string
   shippingCity?: string
   gstin?: string
@@ -152,11 +156,15 @@ export interface Customer {
   phone?: string
   address?: string
   state?: string
+  stateCode?: string
+  stateName?: string
   pincode?: string
   city?: string
   shippingSameAsBilling?: boolean
   shippingAddress?: string
   shippingState?: string
+  shippingStateCode?: string
+  shippingStateName?: string
   shippingPincode?: string
   shippingCity?: string
   gstin?: string

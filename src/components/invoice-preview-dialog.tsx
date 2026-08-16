@@ -141,39 +141,54 @@ export function InvoicePreviewDialog({
                 <tr>
                   <th>S.NO.</th>
                   <th>ITEMS</th>
+                  <th>HSN/SAC</th>
                   <th>QTY.</th>
+                  <th>UNIT</th>
                   <th>RATE</th>
-                  <th>DISC.</th>
+                  <th>TAXABLE</th>
+                  <th>GST %</th>
                   <th>AMOUNT</th>
                 </tr>
               </thead>
               <tbody>
                 {items.length === 0 ? (
                   <tr>
-                    <td colSpan={6}>No items</td>
+                    <td colSpan={9}>No items</td>
                   </tr>
                 ) : items.map((line, index) => {
                   const item = itemMap.get(line.itemId)
+                  const lineInfo = taxSummary.lineBreakdowns[index]
                   const unit = line.enteredUnit || item?.unit || 'KG'
                   const qty = line.enteredQuantity || line.baseQuantity || 0
-                  const rate = line.rate || (qty > 0 ? line.amount / qty : 0)
+                  const hsn = (item as any)?.hsnCode || '7214'
+                  const basicRate = lineInfo?.basicRate ?? line.basicRate ?? (qty > 0 ? line.amount / qty : 0)
+                  const rowTaxable = lineInfo?.taxableAmount ?? (qty * basicRate)
+                  const gstPct = lineInfo?.gstRate ?? item?.gstRate ?? 18
+                  const rowTotal = lineInfo?.totalAmount ?? line.amount
+
                   return (
                     <tr key={`${line.itemId}-${index}`}>
                       <td>{index + 1}</td>
                       <td>
                         <strong>{line.itemNameSnapshot || item?.name || 'Unknown item'}</strong>
-                        <span>{item?.description || unit}</span>
+                        <span>{item?.description || ''}</span>
                       </td>
-                      <td>{qty.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {unit}</td>
-                      <td>{formatCurrency(rate)}</td>
-                      <td>0</td>
-                      <td>{formatCurrency(line.amount)}</td>
+                      <td>{hsn}</td>
+                      <td>{qty.toLocaleString('en-IN', { maximumFractionDigits: 3 })}</td>
+                      <td>{unit}</td>
+                      <td>{formatCurrency(basicRate)}</td>
+                      <td>{formatCurrency(rowTaxable)}</td>
+                      <td>{gstPct}%</td>
+                      <td>{formatCurrency(rowTotal)}</td>
                     </tr>
                   )
                 })}
-                {Array.from({ length: Math.max(0, 8 - items.length) }).map((_, index) => (
+                {Array.from({ length: Math.max(0, 6 - items.length) }).map((_, index) => (
                   <tr key={`blank-${index}`} className="billbook-empty-row">
                     <td>&nbsp;</td>
+                    <td />
+                    <td />
+                    <td />
                     <td />
                     <td />
                     <td />
@@ -184,29 +199,29 @@ export function InvoicePreviewDialog({
               </tbody>
               <tfoot>
                 <tr>
-                  <td colSpan={5} style={{ textAlign: 'right' }}>Taxable Value</td>
+                  <td colSpan={8} style={{ textAlign: 'right' }}>Taxable Value</td>
                   <td>{formatCurrency(taxable)}</td>
                 </tr>
                 {!isInterState ? (
                   <>
                     <tr>
-                      <td colSpan={5} style={{ textAlign: 'right' }}>CGST @ {cgstRate}%</td>
+                      <td colSpan={8} style={{ textAlign: 'right' }}>CGST @ {cgstRate}%</td>
                       <td>{formatCurrency(cgstAmount)}</td>
                     </tr>
                     <tr>
-                      <td colSpan={5} style={{ textAlign: 'right' }}>SGST @ {sgstRate}%</td>
+                      <td colSpan={8} style={{ textAlign: 'right' }}>SGST @ {sgstRate}%</td>
                       <td>{formatCurrency(sgstAmount)}</td>
                     </tr>
                   </>
                 ) : (
                   <tr>
-                    <td colSpan={5} style={{ textAlign: 'right' }}>IGST @ {igstRate}%</td>
+                    <td colSpan={8} style={{ textAlign: 'right' }}>IGST @ {igstRate}%</td>
                     <td>{formatCurrency(igstAmount)}</td>
                   </tr>
                 )}
                 {additionalCost && additionalCost > 0 ? (
                   <tr>
-                    <td colSpan={5} style={{ textAlign: 'right' }}>
+                    <td colSpan={8} style={{ textAlign: 'right' }}>
                       Additional Cost {additionalCostRemarks ? `(${additionalCostRemarks})` : ''}
                     </td>
                     <td>{formatCurrency(additionalCost)}</td>
@@ -214,22 +229,22 @@ export function InvoicePreviewDialog({
                 ) : null}
                 {roundOff !== 0 && (
                   <tr>
-                    <td colSpan={5} style={{ textAlign: 'right' }}>Round Off</td>
+                    <td colSpan={8} style={{ textAlign: 'right' }}>Round Off</td>
                     <td>{roundOff >= 0 ? '+' : ''}{formatCurrency(roundOff)}</td>
                   </tr>
                 )}
                 <tr>
-                  <td colSpan={5} style={{ textAlign: 'right', fontWeight: 'bold' }}>Total</td>
+                  <td colSpan={8} style={{ textAlign: 'right', fontWeight: 'bold' }}>Total</td>
                   <td style={{ fontWeight: 'bold' }}>{formatCurrency(totalAmount)}</td>
                 </tr>
                 {paidAmount && paidAmount > 0 ? (
                   <>
                     <tr>
-                      <td colSpan={5} style={{ textAlign: 'right' }}>Amount Paid</td>
+                      <td colSpan={8} style={{ textAlign: 'right' }}>Amount Paid</td>
                       <td>{formatCurrency(paidAmount)}</td>
                     </tr>
                     <tr>
-                      <td colSpan={5} style={{ textAlign: 'right', fontWeight: 'bold' }}>Balance Due</td>
+                      <td colSpan={8} style={{ textAlign: 'right', fontWeight: 'bold' }}>Balance Due</td>
                       <td style={{ fontWeight: 'bold' }}>{formatCurrency(Math.max(0, totalAmount - paidAmount))}</td>
                     </tr>
                   </>

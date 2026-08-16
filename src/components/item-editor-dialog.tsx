@@ -24,25 +24,12 @@ interface ItemEditorDialogProps {
 }
 
 const GST_OPTIONS = [
-  { label: 'None', value: 'none', rate: undefined },
-  { label: 'Exempted', value: 'exempted', rate: 0 },
-  { label: 'GST @ 0%', value: '0', rate: 0 },
-  { label: 'GST @ 0.1%', value: '0.1', rate: 0.1 },
-  { label: 'GST @ 0.25%', value: '0.25', rate: 0.25 },
-  { label: 'GST @ 1.5%', value: '1.5', rate: 1.5 },
-  { label: 'GST @ 3%', value: '3', rate: 3 },
-  { label: 'GST @ 5%', value: '5', rate: 5 },
-  { label: 'GST @ 6%', value: '6', rate: 6 },
-  { label: 'GST @ 8.9%', value: '8.9', rate: 8.9 },
-  { label: 'GST @ 12%', value: '12', rate: 12 },
-  { label: 'GST @ 13.8%', value: '13.8', rate: 13.8 },
-  { label: 'GST @ 18%', value: '18', rate: 18 },
-  { label: 'GST @ 14% + cess @ 12%', value: '14-cess-12', rate: 14 },
-  { label: 'GST @ 28%', value: '28', rate: 28 },
-  { label: 'GST @ 28% + Cess @ 5%', value: '28-cess-5', rate: 28 },
-  { label: 'GST @ 40%', value: '40', rate: 40 },
-  { label: 'GST @ 28% + Cess @ 36%', value: '28-cess-36', rate: 28 },
-  { label: 'GST @ 28% + Cess @ 60%', value: '28-cess-60', rate: 28 }
+  { label: '0% (Exempted)', value: '0', rate: 0 },
+  { label: '3%', value: '3', rate: 3 },
+  { label: '5%', value: '5', rate: 5 },
+  { label: '12%', value: '12', rate: 12 },
+  { label: '18%', value: '18', rate: 18 },
+  { label: '28%', value: '28', rate: 28 }
 ]
 
 export function ItemEditorDialog({
@@ -55,7 +42,7 @@ export function ItemEditorDialog({
 }: ItemEditorDialogProps) {
   const [name, setName] = useState('')
   const [category, setCategory] = useState('')
-  const [gstRate, setGstRate] = useState('none')
+  const [gstRate, setGstRate] = useState('18')
   const [gstDropdownOpen, setGstDropdownOpen] = useState(false)
   const [purchasePrice, setPurchasePrice] = useState('')
   const [salesPrice, setSalesPrice] = useState('')
@@ -97,7 +84,7 @@ export function ItemEditorDialog({
     setCustomUnits(getCustomUnits(activeCompanyId))
     setName(item?.name || '')
     setCategory(item?.category || '')
-    setGstRate(typeof item?.gstRate === 'number' ? item.gstRate.toString() : 'none')
+    setGstRate(typeof item?.gstRate === 'number' ? item.gstRate.toString() : '18')
     setPurchasePrice(item?.purchasePrice?.toString() || '')
     setSalesPrice(item?.salesPrice?.toString() || '')
     const initialUnit = item?.unit || 'NONE'

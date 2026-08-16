@@ -1219,6 +1219,12 @@ export function calculateRateWithGst(basicRate: number, gstPercentage: number): 
   return roundCurrency(rate)
 }
 
+import {
+  getStateCode,
+  getStateName,
+  DEFAULT_COMPANY_STATE
+} from './constants/indian-states'
+
 export function calculateBasicRateFromInclusive(rateWithTax: number, gstPercentage: number): number {
   if (!Number.isFinite(rateWithTax) || rateWithTax <= 0) return 0
   const basicRate = rateWithTax / (1 + (gstPercentage || 0) / 100)
@@ -1229,27 +1235,33 @@ export function calculateBasicRateFromInclusive(rateWithTax: number, gstPercenta
  * Normalizes Indian state names and codes for comparison
  */
 export function normalizeStateName(state?: string): string {
-  if (!state) return ''
-  const trimmed = state.trim().toLowerCase()
-  if (trimmed === 'wb' || trimmed === '19' || trimmed === 'west bengal') return 'west bengal'
-  if (trimmed === 'mh' || trimmed === '27' || trimmed === 'maharashtra') return 'maharashtra'
-  if (trimmed === 'dl' || trimmed === '07' || trimmed === 'delhi') return 'delhi'
-  if (trimmed === 'or' || trimmed === 'od' || trimmed === '21' || trimmed === 'odisha' || trimmed === 'orissa') return 'odisha'
-  if (trimmed === 'jh' || trimmed === '20' || trimmed === 'jharkhand') return 'jharkhand'
-  if (trimmed === 'br' || trimmed === '10' || trimmed === 'bihar') return 'bihar'
-  if (trimmed === 'up' || trimmed === '09' || trimmed === 'uttar pradesh') return 'uttar pradesh'
-  return trimmed
+  return getStateName(state)
 }
 
 /**
- * Checks if transaction is Inter-State (different state -> IGST)
- * or Intra-State (same state -> CGST + SGST). Default company state is 'West Bengal'.
+ * Checks if transaction is Inter-State (partyStateCode !== companyStateCode -> IGST)
+ * or Intra-State (partyStateCode === companyStateCode -> CGST + SGST). Default company state is '19' (West Bengal).
  */
-export function isInterStateTransaction(partyState?: string, companyState: string = 'West Bengal'): boolean {
-  const normParty = normalizeStateName(partyState)
-  const normCompany = normalizeStateName(companyState || 'West Bengal')
-  if (!normParty) return false // Default to Intra-State if unspecified
-  return normParty !== normCompany
+export function isInterStateTransaction(partyState?: string, companyState: string = '19'): boolean {
+  if (!partyState || !partyState.trim()) return false // Default to Intra-State if unspecified
+  const partyCode = getStateCode(partyState)
+  const companyCode = getStateCode(companyState)
+  return partyCode !== companyCode
+}
+
+export interface LineItemTaxBreakdown {
+  itemId?: string
+  quantity: number
+  basicRate: number
+  taxableAmount: number
+  gstRate: number
+  cgstRate: number
+  cgstAmount: number
+  sgstRate: number
+  sgstAmount: number
+  igstRate: number
+  igstAmount: number
+  totalAmount: number
 }
 
 export interface InvoiceTaxBreakdownParams {
@@ -1261,6 +1273,7 @@ export interface InvoiceTaxBreakdownParams {
     amount?: number
     itemId?: string
     discountAmount?: number
+    gstRate?: number
   }>
   itemsMaster?: Item[]
   additionalCostBasicRate?: number
@@ -1273,11 +1286,21 @@ export interface InvoiceTaxBreakdownParams {
 }
 
 /**
- * Centralized Tax Calculation Helper:
- * - Intra-State (same state / default WB): CGST (9%) + SGST (9%), IGST (0%)
- * - Inter-State (different state): IGST (18%), CGST (0%), SGST (0%)
- * - Taxable Amount = (Qty * BasicRate) - Discounts + AdditionalCostBasicRate
- * - Tax Amount = Round(Taxable * Rate / 100, 2)
+ * Dynamic Centralized Tax Calculation Helper:
+ * 1. State Check: isInterState = partyStateCode !== companyStateCode (default companyStateCode = "19")
+ * 2. Row-Level Calculation:
+ *    - rowTaxable = (qty * basicRate) - (discount || 0)
+ *    - rate = item.gstRate ?? defaultGstRate (18%)
+ *    - If rate === 0: row tax is 0
+ *    - If Intra-State: rowCgst = Round(rowTaxable * (rate / 2) / 100, 2), rowSgst = Round(rowTaxable * (rate / 2) / 100, 2), rowIgst = 0
+ *    - If Inter-State: rowIgst = Round(rowTaxable * rate / 100, 2), rowCgst = 0, rowSgst = 0
+ * 3. Totals:
+ *    - totalTaxable = sum(rowTaxable) + additionalCostBasic - discounts
+ *    - totalCgst = sum(rowCgst) + additionalCgst
+ *    - totalSgst = sum(rowSgst) + additionalSgst
+ *    - totalIgst = sum(rowIgst) + additionalIgst
+ *    - grandTotal = Math.round(totalTaxable + totalCgst + totalSgst + totalIgst)
+ *    - roundOff = grandTotal - (totalTaxable + totalCgst + totalSgst + totalIgst)
  */
 export function calculateInvoiceTaxBreakdown(params: InvoiceTaxBreakdownParams): {
   taxableAmount: number
@@ -1291,6 +1314,7 @@ export function calculateInvoiceTaxBreakdown(params: InvoiceTaxBreakdownParams):
   totalTaxAmount: number
   roundOff: number
   totalAmount: number
+  lineBreakdowns: LineItemTaxBreakdown[]
 } {
   const {
     items = [],
@@ -1299,7 +1323,7 @@ export function calculateInvoiceTaxBreakdown(params: InvoiceTaxBreakdownParams):
     additionalCostFinal = 0,
     discountsAmount = 0,
     partyState,
-    companyState = 'West Bengal',
+    companyState = '19',
     customRoundOff,
     defaultGstRate = 18
   } = params
@@ -1307,65 +1331,124 @@ export function calculateInvoiceTaxBreakdown(params: InvoiceTaxBreakdownParams):
   const isInterState = isInterStateTransaction(partyState, companyState)
   const itemMap = new Map(itemsMaster.map(i => [i.id, i]))
 
-  let rawItemsTaxable = 0
+  let sumRowTaxable = 0
+  let sumRowCgst = 0
+  let sumRowSgst = 0
+  let sumRowIgst = 0
 
-  items.forEach(line => {
+  const lineBreakdowns: LineItemTaxBreakdown[] = items.map(line => {
     const itemDef = line.itemId ? itemMap.get(line.itemId) : undefined
     const qty = line.enteredQuantity ?? line.baseQuantity ?? 0
     const lineDiscount = line.discountAmount || 0
 
-    // Item GST rate (default 18%)
-    const itemGstPct = typeof itemDef?.gstRate === 'number' && !Number.isNaN(itemDef.gstRate)
-      ? itemDef.gstRate
-      : defaultGstRate
+    // Item GST rate (default 18%, or 0% if explicitly exempted)
+    const lineRate = typeof line.gstRate === 'number'
+      ? line.gstRate
+      : (typeof itemDef?.gstRate === 'number' ? itemDef.gstRate : defaultGstRate)
 
     // Determine basic rate
     let basicRate = line.basicRate
     if (basicRate === undefined || basicRate === null || basicRate <= 0) {
       if (line.rate && line.rate > 0) {
-        basicRate = calculateBasicRateFromInclusive(line.rate, itemGstPct)
+        basicRate = calculateBasicRateFromInclusive(line.rate, lineRate)
       } else if (line.amount && line.amount > 0 && qty > 0) {
-        basicRate = calculateBasicRateFromInclusive(line.amount / qty, itemGstPct)
+        basicRate = calculateBasicRateFromInclusive(line.amount / qty, lineRate)
       } else {
         basicRate = itemDef?.purchasePrice || itemDef?.salesPrice || 0
       }
     }
 
-    const lineTaxable = Math.max(0, (qty * basicRate) - lineDiscount)
-    rawItemsTaxable += lineTaxable
+    const rowTaxable = Math.max(0, roundCurrency((qty * basicRate) - lineDiscount))
+    sumRowTaxable += rowTaxable
+
+    let rowCgst = 0
+    let rowSgst = 0
+    let rowIgst = 0
+    let cgstRate = 0
+    let sgstRate = 0
+    let igstRate = 0
+
+    if (lineRate > 0) {
+      if (isInterState) {
+        igstRate = lineRate
+        rowIgst = Math.round(rowTaxable * (igstRate / 100) * 100) / 100
+      } else {
+        cgstRate = lineRate / 2
+        sgstRate = lineRate / 2
+        rowCgst = Math.round(rowTaxable * (cgstRate / 100) * 100) / 100
+        rowSgst = Math.round(rowTaxable * (sgstRate / 100) * 100) / 100
+      }
+    }
+
+    sumRowCgst += rowCgst
+    sumRowSgst += rowSgst
+    sumRowIgst += rowIgst
+
+    const rowTotal = roundCurrency(rowTaxable + rowCgst + rowSgst + rowIgst)
+
+    return {
+      itemId: line.itemId,
+      quantity: qty,
+      basicRate,
+      taxableAmount: rowTaxable,
+      gstRate: lineRate,
+      cgstRate,
+      cgstAmount: rowCgst,
+      sgstRate,
+      sgstAmount: rowSgst,
+      igstRate,
+      igstAmount: rowIgst,
+      totalAmount: rowTotal
+    }
   })
 
-  // Additional cost taxable component
+  // Additional cost calculation
   let additionalTaxable = 0
+  let additionalCgst = 0
+  let additionalSgst = 0
+  let additionalIgst = 0
+
   if (additionalCostBasicRate && additionalCostBasicRate > 0) {
-    additionalTaxable = additionalCostBasicRate
+    additionalTaxable = roundCurrency(additionalCostBasicRate)
   } else if (additionalCostFinal && additionalCostFinal > 0) {
     additionalTaxable = calculateBasicRateFromInclusive(additionalCostFinal, defaultGstRate)
   }
 
-  // Net Taxable Amount
-  const netTaxableAmount = roundCurrency(Math.max(0, rawItemsTaxable + additionalTaxable - discountsAmount))
-
-  // Determine Effective Rates & Amounts
-  let cgstRate = 0
-  let cgstAmount = 0
-  let sgstRate = 0
-  let sgstAmount = 0
-  let igstRate = 0
-  let igstAmount = 0
-
-  if (isInterState) {
-    igstRate = defaultGstRate
-    igstAmount = roundCurrency(netTaxableAmount * (igstRate / 100))
-  } else {
-    cgstRate = defaultGstRate / 2
-    cgstAmount = roundCurrency(netTaxableAmount * (cgstRate / 100))
-    sgstRate = defaultGstRate / 2
-    sgstAmount = roundCurrency(netTaxableAmount * (sgstRate / 100))
+  if (additionalTaxable > 0) {
+    if (isInterState) {
+      additionalIgst = Math.round(additionalTaxable * (defaultGstRate / 100) * 100) / 100
+    } else {
+      additionalCgst = Math.round(additionalTaxable * (defaultGstRate / 2 / 100) * 100) / 100
+      additionalSgst = Math.round(additionalTaxable * (defaultGstRate / 2 / 100) * 100) / 100
+    }
   }
 
-  const totalTaxAmount = roundCurrency(cgstAmount + sgstAmount + igstAmount)
-  const unroundedTotal = netTaxableAmount + totalTaxAmount
+  // Invoice-level discount reduction
+  let discountCgst = 0
+  let discountSgst = 0
+  let discountIgst = 0
+
+  if (discountsAmount && discountsAmount > 0 && sumRowTaxable > 0) {
+    const discountRatio = Math.min(1, discountsAmount / sumRowTaxable)
+    discountCgst = roundCurrency(sumRowCgst * discountRatio)
+    discountSgst = roundCurrency(sumRowSgst * discountRatio)
+    discountIgst = roundCurrency(sumRowIgst * discountRatio)
+  }
+
+  // Net Taxable & Taxes
+  const totalTaxable = roundCurrency(Math.max(0, sumRowTaxable + additionalTaxable - (discountsAmount || 0)))
+  const totalCgst = roundCurrency(Math.max(0, sumRowCgst + additionalCgst - discountCgst))
+  const totalSgst = roundCurrency(Math.max(0, sumRowSgst + additionalSgst - discountSgst))
+  const totalIgst = roundCurrency(Math.max(0, sumRowIgst + additionalIgst - discountIgst))
+  const totalTaxAmount = roundCurrency(totalCgst + totalSgst + totalIgst)
+
+  // Overall effective display rates
+  const effectiveGstRate = totalTaxable > 0 ? roundCurrency((totalTaxAmount / totalTaxable) * 100) : defaultGstRate
+  const overallCgstRate = isInterState ? 0 : roundCurrency(effectiveGstRate / 2)
+  const overallSgstRate = isInterState ? 0 : roundCurrency(effectiveGstRate / 2)
+  const overallIgstRate = isInterState ? effectiveGstRate : 0
+
+  const unroundedTotal = totalTaxable + totalTaxAmount
 
   let roundOff = 0
   let totalAmount = 0
@@ -1379,17 +1462,18 @@ export function calculateInvoiceTaxBreakdown(params: InvoiceTaxBreakdownParams):
   }
 
   return {
-    taxableAmount: netTaxableAmount,
+    taxableAmount: totalTaxable,
     isInterState,
-    cgstRate,
-    cgstAmount,
-    sgstRate,
-    sgstAmount,
-    igstRate,
-    igstAmount,
+    cgstRate: overallCgstRate,
+    cgstAmount: totalCgst,
+    sgstRate: overallSgstRate,
+    sgstAmount: totalSgst,
+    igstRate: overallIgstRate,
+    igstAmount: totalIgst,
     totalTaxAmount,
     roundOff,
-    totalAmount
+    totalAmount,
+    lineBreakdowns
   }
 }
 

@@ -546,6 +546,10 @@ describe('calculateInvoiceTaxBreakdown & isInterStateTransaction', () => {
     expect(isInterStateTransaction('Odisha', 'West Bengal')).toBe(true)
     expect(isInterStateTransaction('Jharkhand', 'West Bengal')).toBe(true)
     expect(isInterStateTransaction('Delhi', 'West Bengal')).toBe(true)
+    expect(isInterStateTransaction('27', '19')).toBe(true)
+    expect(isInterStateTransaction('10', '19')).toBe(true)
+    expect(isInterStateTransaction('19AAAAA0000A1Z5', '19')).toBe(false)
+    expect(isInterStateTransaction('27AAAAA0000A1Z5', '19')).toBe(true)
   })
 
   it('calculates intra-state tax split as CGST (9%) + SGST (9%), IGST = 0', () => {
@@ -600,6 +604,45 @@ describe('calculateInvoiceTaxBreakdown & isInterStateTransaction', () => {
     expect(result.igstAmount).toBe(90000) // 500,000 * 18%
     expect(result.totalTaxAmount).toBe(90000)
     expect(result.totalAmount).toBe(590000)
+  })
+
+  it('calculates row-level mixed GST rates (5% + 18% + 0% Exempted) on same invoice', () => {
+    const result = calculateInvoiceTaxBreakdown({
+      items: [
+        {
+          itemId: 'item-5pct',
+          enteredQuantity: 10,
+          basicRate: 1000, // Taxable: 10,000 @ 5% -> CGST: 250 (2.5%), SGST: 250 (2.5%)
+          gstRate: 5
+        },
+        {
+          itemId: 'item-18pct',
+          enteredQuantity: 5,
+          basicRate: 2000, // Taxable: 10,000 @ 18% -> CGST: 900 (9%), SGST: 900 (9%)
+          gstRate: 18
+        },
+        {
+          itemId: 'item-exempt',
+          enteredQuantity: 2,
+          basicRate: 5000, // Taxable: 10,000 @ 0% -> CGST: 0, SGST: 0
+          gstRate: 0
+        }
+      ],
+      partyState: '19', // Intra-state WB
+      companyState: '19'
+    })
+
+    expect(result.isInterState).toBe(false)
+    expect(result.taxableAmount).toBe(30000) // 10k + 10k + 10k
+    expect(result.cgstAmount).toBe(1150) // 250 + 900 + 0
+    expect(result.sgstAmount).toBe(1150) // 250 + 900 + 0
+    expect(result.igstAmount).toBe(0)
+    expect(result.totalTaxAmount).toBe(2300)
+    expect(result.totalAmount).toBe(32300)
+    expect(result.lineBreakdowns.length).toBe(3)
+    expect(result.lineBreakdowns[0].cgstAmount).toBe(250)
+    expect(result.lineBreakdowns[1].cgstAmount).toBe(900)
+    expect(result.lineBreakdowns[2].cgstAmount).toBe(0)
   })
 
   it('deducts discounts and accounts for additional cost basic rate with proper rounding', () => {

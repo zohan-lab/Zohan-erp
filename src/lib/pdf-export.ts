@@ -1059,31 +1059,13 @@ function exportStyledInvoicePDF(options: StyledInvoiceOptions) {
   doc.setFont('helvetica', 'normal');
   doc.text(options.partyAddress || '-', margin + contentWidth / 2 + 35, startY + 44, { maxWidth: 30 });
 
-  const tableData = (options.items || []).map((item, index) => {
-    const itemData = options.itemMap.get(item.itemId);
-    const desc = item.itemNameSnapshot || itemData?.name || 'Item';
-    const hsn = (itemData as any)?.hsnCode || '7214';
-    const unit = item.enteredUnit || itemData?.unit || 'KG';
-    const qty = item.enteredQuantity || item.baseQuantity || 0;
-    const rate = item.rate || (qty > 0 ? item.amount / qty : 0);
-    
-    return [
-      (index + 1).toString(),
-      desc,
-      hsn,
-      `${qty.toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${unit}`,
-      rate.toFixed(2),
-      unit,
-      item.amount.toFixed(2)
-    ];
-  });
-
+  // Calculate tax breakdown
   const taxSummary = calculateInvoiceTaxBreakdown({
     items: options.items,
     itemsMaster: Array.from(options.itemMap.values()),
     additionalCostFinal: options.additionalCost,
     partyState: options.partyState,
-    companyState: options.state || 'West Bengal',
+    companyState: options.state || '19',
     customRoundOff: options.roundOff ?? options.roundOffAdjustment
   })
 
@@ -1097,9 +1079,34 @@ function exportStyledInvoicePDF(options: StyledInvoiceOptions) {
   const igstAmount = options.igstAmount ?? taxSummary.igstAmount
   const roundOff = options.roundOff ?? options.roundOffAdjustment ?? taxSummary.roundOff
 
+  const tableData = (options.items || []).map((item, index) => {
+    const itemData = options.itemMap.get(item.itemId);
+    const lineInfo = taxSummary.lineBreakdowns[index];
+    const desc = item.itemNameSnapshot || itemData?.name || 'Item';
+    const hsn = (itemData as any)?.hsnCode || '7214';
+    const unit = item.enteredUnit || itemData?.unit || 'KG';
+    const qty = item.enteredQuantity || item.baseQuantity || 0;
+    const basicRate = lineInfo?.basicRate ?? item.basicRate ?? (qty > 0 ? item.amount / qty : 0);
+    const taxableVal = lineInfo?.taxableAmount ?? (qty * basicRate);
+    const gstPct = lineInfo?.gstRate ?? itemData?.gstRate ?? 18;
+    const rowAmount = lineInfo?.totalAmount ?? item.amount;
+    
+    return [
+      (index + 1).toString(),
+      desc,
+      hsn,
+      `${qty.toLocaleString('en-IN', { maximumFractionDigits: 3 })}`,
+      basicRate.toFixed(2),
+      unit,
+      taxableVal.toFixed(2),
+      `${gstPct}%`,
+      rowAmount.toFixed(2)
+    ];
+  });
+
   autoTable(doc, {
     startY: startY + 65,
-    head: [['Sl\nNo.', 'Description of Goods', 'HSN/SAC', 'Quantity', 'Rate', 'per', 'Amount']],
+    head: [['Sl\nNo.', 'Description of Goods', 'HSN/SAC', 'Quantity', 'Rate', 'per', 'Taxable', 'GST %', 'Amount']],
     body: tableData,
     theme: 'plain',
     styles: {
@@ -1117,12 +1124,14 @@ function exportStyledInvoicePDF(options: StyledInvoiceOptions) {
     },
     columnStyles: {
       0: { cellWidth: 10, halign: 'center' },
-      1: { cellWidth: 60, halign: 'left' },
-      2: { cellWidth: 20, halign: 'center' },
-      3: { cellWidth: 25, halign: 'right' },
-      4: { cellWidth: 25, halign: 'right' },
-      5: { cellWidth: 15, halign: 'center' },
-      6: { cellWidth: 35, halign: 'right', fontStyle: 'bold' }
+      1: { cellWidth: 46, halign: 'left' },
+      2: { cellWidth: 16, halign: 'center' },
+      3: { cellWidth: 22, halign: 'right' },
+      4: { cellWidth: 20, halign: 'right' },
+      5: { cellWidth: 12, halign: 'center' },
+      6: { cellWidth: 22, halign: 'right' },
+      7: { cellWidth: 14, halign: 'center' },
+      8: { cellWidth: 28, halign: 'right', fontStyle: 'bold' }
     },
     margin: { left: margin, right: margin }
   });
@@ -1296,7 +1305,7 @@ export function exportPurchaseInvoicePDF(
     partyName: supplier?.name || 'Unknown Supplier',
     partyAddress: supplier?.address,
     partyPhone: supplier?.phone,
-    partyState: supplier?.state,
+    partyState: supplier?.stateCode || supplier?.stateName || supplier?.state,
     partyGstin: supplier?.gstin,
     businessName: options.businessName || 'SK TRADERS',
     state: options.state,
@@ -1342,7 +1351,7 @@ export function exportSalesInvoicePDF(
     partyName: customer?.name || 'Unknown Customer',
     partyAddress: customer?.address,
     partyPhone: customer?.phone,
-    partyState: customer?.state,
+    partyState: customer?.stateCode || customer?.stateName || customer?.state,
     partyGstin: customer?.gstin,
     businessName: options.businessName || 'SK TRADERS',
     state: options.state,

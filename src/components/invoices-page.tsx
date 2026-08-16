@@ -559,7 +559,7 @@ export default function InvoicesPage({
       itemsMaster: items,
       additionalCostBasicRate: additionalCostBasicRate || 0,
       additionalCostFinal: additionalCost || 0,
-      partyState: suppliers.find(s => s.id === supplierId)?.state,
+      partyState: suppliers.find(s => s.id === supplierId)?.stateCode || suppliers.find(s => s.id === supplierId)?.stateName || suppliers.find(s => s.id === supplierId)?.state,
       customRoundOff: roundOffAdjustment,
       defaultGstRate: gstPercentage
     })
@@ -828,11 +828,11 @@ export default function InvoicesPage({
       itemsMaster: items,
       additionalCostBasicRate: addCostBasicRate,
       additionalCostFinal,
-      partyState: currentSupplier?.state,
+      partyState: currentSupplier?.stateCode || currentSupplier?.stateName || currentSupplier?.state,
       customRoundOff: roundOffAdjustment,
       defaultGstRate: gstPercentage
     })
-  }, [invoiceItems, items, additionalCharges, additionalCostFinal, currentSupplier?.state, roundOffAdjustment, gstPercentage])
+  }, [invoiceItems, items, additionalCharges, additionalCostFinal, currentSupplier?.stateCode, currentSupplier?.stateName, currentSupplier?.state, roundOffAdjustment, gstPercentage])
 
   const finalInvoiceAmountPreview = calculateInvoiceFinalAmount(totalInvoiceAmount, additionalCostFinal, roundOffAdjustment)
   const paidAmountPreview = Math.min(

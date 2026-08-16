@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { getChangedByLabel } from '@/lib/security-utils'
 import { Customer, Supplier, PaymentCDRule, InvoiceCloseCDRule, SupplierCDRuleVersion, CDRuleChangeLog } from '@/lib/types'
 import { getAvailableUnits } from '@/lib/custom-data-store'
+import { getStateFromGstin, getStateByCode, getStateByName } from '@/lib/constants/indian-states'
+import { StateSelector } from '@/components/state-selector'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -31,76 +33,11 @@ function trimOrUndefined(value: string) {
   return value.trim() || undefined
 }
 
-function addDays(date: string, days: number): string {
-  const value = new Date(date)
-  value.setDate(value.getDate() + days)
-  return value.toISOString().split('T')[0]
-}
-
 function todayKey(): string {
   return new Date().toISOString().split('T')[0]
 }
 
 import { getFYStart } from '@/lib/calculations'
-
-function rulesChanged(
-  supplier: Supplier | null | undefined,
-  paymentCDRules: PaymentCDRule[],
-  invoiceCloseCDRules: InvoiceCloseCDRule[],
-  advanceCDPercentage?: number
-): boolean {
-  return JSON.stringify({
-    paymentCDRules: supplier?.paymentCDRules || [],
-    invoiceCloseCDRules: supplier?.invoiceCloseCDRules || [],
-    advanceCDPercentage: supplier?.advanceCDPercentage || 0
-  }) !== JSON.stringify({
-    paymentCDRules,
-    invoiceCloseCDRules,
-    advanceCDPercentage: advanceCDPercentage || 0
-  })
-}
-
-function makeInitialVersion(supplier: Supplier, effectiveTo?: string): SupplierCDRuleVersion {
-  return {
-    id: `${supplier.id}-cd-version-1`,
-    version: 1,
-    ruleName: 'Supplier CD Rules',
-    effectiveFrom: '1900-01-01',
-    effectiveTo,
-    paymentCDRules: supplier.paymentCDRules || [],
-    invoiceCloseCDRules: supplier.invoiceCloseCDRules || [],
-    advanceCDPercentage: supplier.advanceCDPercentage,
-    changedBy: 'System migration',
-    changedAt: new Date().toISOString(),
-    reason: 'Historical rule baseline',
-    approvalStatus: 'Approved'
-  }
-}
-
-function makeSupplierRuleVersion(
-  supplierId: string,
-  version: number,
-  effectiveFrom: string,
-  paymentCDRules: PaymentCDRule[],
-  invoiceCloseCDRules: InvoiceCloseCDRule[],
-  advanceCDPercentage: number | undefined,
-  changedBy: string,
-  reason: string
-): SupplierCDRuleVersion {
-  return {
-    id: `${supplierId}-cd-version-${version}-${Date.now()}`,
-    version,
-    ruleName: 'Supplier CD Rules',
-    effectiveFrom,
-    paymentCDRules,
-    invoiceCloseCDRules,
-    advanceCDPercentage,
-    changedBy,
-    changedAt: new Date().toISOString(),
-    reason,
-    approvalStatus: 'Approved'
-  }
-}
 
 export function PartyEditorDialog({
   open,
@@ -123,11 +60,13 @@ export function PartyEditorDialog({
   const [email, setEmail] = useState('')
   const [address, setAddress] = useState('')
   const [state, setState] = useState('')
+  const [stateCode, setStateCode] = useState('')
   const [pincode, setPincode] = useState('')
   const [city, setCity] = useState('')
   const [shippingSameAsBilling, setShippingSameAsBilling] = useState(true)
   const [shippingAddress, setShippingAddress] = useState('')
   const [shippingState, setShippingState] = useState('')
+  const [shippingStateCode, setShippingStateCode] = useState('')
   const [shippingPincode, setShippingPincode] = useState('')
   const [shippingCity, setShippingCity] = useState('')
   const [gstin, setGstin] = useState('')
@@ -149,12 +88,22 @@ export function PartyEditorDialog({
     setPhone(party?.phone || '')
     setEmail(('email' in (party || {}) ? (party as Customer).email : '') || '')
     setAddress(party?.address || '')
-    setState(party?.state || '')
+    
+    const initialBillingState = party?.stateName || party?.state || ''
+    const resolvedBillingState = getStateByName(initialBillingState) || getStateByCode(party?.stateCode || initialBillingState)
+    setState(resolvedBillingState?.name || initialBillingState)
+    setStateCode(resolvedBillingState?.code || party?.stateCode || '')
+
     setPincode(party?.pincode || '')
     setCity(party?.city || '')
     setShippingSameAsBilling(party?.shippingSameAsBilling ?? true)
     setShippingAddress(party?.shippingAddress || '')
-    setShippingState(party?.shippingState || '')
+
+    const initialShippingState = party?.shippingStateName || party?.shippingState || ''
+    const resolvedShippingState = getStateByName(initialShippingState) || getStateByCode(party?.shippingStateCode || initialShippingState)
+    setShippingState(resolvedShippingState?.name || initialShippingState)
+    setShippingStateCode(resolvedShippingState?.code || party?.shippingStateCode || '')
+
     setShippingPincode(party?.shippingPincode || '')
     setShippingCity(party?.shippingCity || '')
     setGstin(party?.gstin || '')
@@ -173,25 +122,26 @@ export function PartyEditorDialog({
   const clearAddress = () => {
     setAddress('')
     setState('')
+    setStateCode('')
     setPincode('')
     setCity('')
     setShippingAddress('')
     setShippingState('')
+    setShippingStateCode('')
     setShippingPincode('')
     setShippingCity('')
     setShippingSameAsBilling(true)
   }
 
-  const updatePaymentCDRule = (index: number, patch: Partial<PaymentCDRule>) => {
-    setPaymentCDRules((prev) => prev.map((rule, ruleIndex) => (
-      ruleIndex === index ? { ...rule, ...patch } : rule
-    )))
-  }
-
-  const updateInvoiceCloseCDRule = (index: number, patch: Partial<InvoiceCloseCDRule>) => {
-    setInvoiceCloseCDRules((prev) => prev.map((rule, ruleIndex) => (
-      ruleIndex === index ? { ...rule, ...patch } : rule
-    )))
+  const handleGstinChange = (value: string) => {
+    const cleanGstin = value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15)
+    setGstin(cleanGstin)
+    
+    const detectedState = getStateFromGstin(cleanGstin)
+    if (detectedState) {
+      setStateCode(detectedState.code)
+      setState(detectedState.name)
+    }
   }
 
   const handleSave = () => {
@@ -214,6 +164,7 @@ export function PartyEditorDialog({
 
     const cleanShippingAddress = shippingSameAsBilling ? address : shippingAddress
     const cleanShippingState = shippingSameAsBilling ? state : shippingState
+    const cleanShippingStateCode = shippingSameAsBilling ? stateCode : shippingStateCode
     const cleanShippingPincode = shippingSameAsBilling ? pincode : shippingPincode
     const cleanShippingCity = shippingSameAsBilling ? city : shippingCity
     const openingBalanceValue = parseFloat(openingBalance) || 0
@@ -225,9 +176,6 @@ export function PartyEditorDialog({
       const targetMTValue = parseFloat(targetMT) || 0
       const targetRateValue = parseFloat(targetRate) || 0
       const normalizedAdvanceCD = advanceCDValue > 0 ? advanceCDValue : undefined
-      const cleanEffectiveDate = effectiveDate || todayKey()
-      const cleanChangeReason = changeReason.trim() || (supplier ? 'Supplier CD rule update' : 'Initial supplier CD rule setup')
-
 
       onSave({
         ...(supplier || {}),
@@ -236,11 +184,15 @@ export function PartyEditorDialog({
         phone: trimOrUndefined(phone),
         address: trimOrUndefined(address),
         state: trimOrUndefined(state),
+        stateCode: trimOrUndefined(stateCode),
+        stateName: trimOrUndefined(state),
         pincode: trimOrUndefined(pincode),
         city: trimOrUndefined(city),
         shippingSameAsBilling,
         shippingAddress: trimOrUndefined(cleanShippingAddress),
         shippingState: trimOrUndefined(cleanShippingState),
+        shippingStateCode: trimOrUndefined(cleanShippingStateCode),
+        shippingStateName: trimOrUndefined(cleanShippingState),
         shippingPincode: trimOrUndefined(cleanShippingPincode),
         shippingCity: trimOrUndefined(cleanShippingCity),
         gstin: trimOrUndefined(gstin.toUpperCase()),
@@ -267,11 +219,15 @@ export function PartyEditorDialog({
         email: trimOrUndefined(email),
         address: trimOrUndefined(address),
         state: trimOrUndefined(state),
+        stateCode: trimOrUndefined(stateCode),
+        stateName: trimOrUndefined(state),
         pincode: trimOrUndefined(pincode),
         city: trimOrUndefined(city),
         shippingSameAsBilling,
         shippingAddress: trimOrUndefined(cleanShippingAddress),
         shippingState: trimOrUndefined(cleanShippingState),
+        shippingStateCode: trimOrUndefined(cleanShippingStateCode),
+        shippingStateName: trimOrUndefined(cleanShippingState),
         shippingPincode: trimOrUndefined(cleanShippingPincode),
         shippingCity: trimOrUndefined(cleanShippingCity),
         gstin: trimOrUndefined(gstin.toUpperCase()),
@@ -356,7 +312,15 @@ export function PartyEditorDialog({
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="sharedPartyState" className="text-xs uppercase text-muted-foreground">State</Label>
-                  <Input id="sharedPartyState" value={state} onChange={(event) => setState(event.target.value)} placeholder="Enter State" className="h-10" />
+                  <StateSelector
+                    id="sharedPartyState"
+                    value={stateCode || state}
+                    onChange={(code, name) => {
+                      setStateCode(code)
+                      setState(name)
+                    }}
+                    placeholder="Select State"
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="sharedPartyPincode" className="text-xs uppercase text-muted-foreground">Pincode</Label>
@@ -394,7 +358,15 @@ export function PartyEditorDialog({
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor="sharedPartyShippingState" className="text-xs uppercase text-muted-foreground">State</Label>
-                      <Input id="sharedPartyShippingState" value={shippingState} onChange={(event) => setShippingState(event.target.value)} placeholder="Enter State" className="h-10" />
+                      <StateSelector
+                        id="sharedPartyShippingState"
+                        value={shippingStateCode || shippingState}
+                        onChange={(code, name) => {
+                          setShippingStateCode(code)
+                          setShippingState(name)
+                        }}
+                        placeholder="Select State"
+                      />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="sharedPartyShippingPincode" className="text-xs uppercase text-muted-foreground">Pincode</Label>
@@ -418,13 +390,14 @@ export function PartyEditorDialog({
               </Button>
             </div>
             <div className="space-y-2 p-4">
-              <Label htmlFor="sharedPartyGstin" className="text-xs uppercase text-muted-foreground">GSTIN</Label>
+              <Label htmlFor="sharedPartyGstin" className="text-xs uppercase text-muted-foreground">GSTIN (First 2 digits auto-select state)</Label>
               <Input
                 id="sharedPartyGstin"
                 value={gstin}
-                onChange={(event) => setGstin(event.target.value.toUpperCase())}
-                placeholder="ex: 29XXXXX9438X1XX"
-                className="h-10"
+                onChange={(event) => handleGstinChange(event.target.value)}
+                placeholder="ex: 19AAAAA0000A1Z5"
+                maxLength={15}
+                className="h-10 font-mono tracking-wider"
               />
             </div>
           </div>
