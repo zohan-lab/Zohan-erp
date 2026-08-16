@@ -155,15 +155,49 @@ export default function ExpenseEntriesPage({
     }
   }
 
-  // Payee suggestion list strictly queried from verified Supplier Master (suppliers)
+  // Payee suggestion list combining verified Supplier Master + Past Expense Payees
   const payeeSuggestions = useMemo(() => {
-    return suppliers.map((s) => ({
-      id: s.id,
-      name: s.name.trim(),
-      gstin: s.gstin ? s.gstin.trim() : undefined,
-      stateCode: s.stateCode || (s.gstin ? s.gstin.slice(0, 2) : '19')
-    }))
-  }, [suppliers])
+    const map = new Map<string, { id?: string; name: string; gstin?: string; stateCode?: string; source: 'Supplier Master' | 'Past Payee' }>()
+
+    // 1. Source B: Past Expense Entries
+    expenseEntries.forEach((e) => {
+      const rawName = (e.supplierName || '').trim()
+      if (!rawName) return
+      const key = rawName.toLowerCase()
+
+      if (!map.has(key)) {
+        map.set(key, {
+          name: rawName,
+          gstin: e.supplierGstin ? e.supplierGstin.trim().toUpperCase() : undefined,
+          stateCode: e.supplierStateCode || (e.supplierGstin ? e.supplierGstin.slice(0, 2) : '19'),
+          source: 'Past Payee'
+        })
+      } else {
+        const existing = map.get(key)!
+        if (!existing.gstin && e.supplierGstin) {
+          existing.gstin = e.supplierGstin.trim().toUpperCase()
+          existing.stateCode = e.supplierStateCode || e.supplierGstin.slice(0, 2)
+        }
+      }
+    })
+
+    // 2. Source A: Verified Supplier Master (Always takes precedence and overrides source tag to Supplier Master)
+    suppliers.forEach((s) => {
+      const rawName = (s.name || '').trim()
+      if (!rawName) return
+      const key = rawName.toLowerCase()
+
+      map.set(key, {
+        id: s.id,
+        name: rawName,
+        gstin: s.gstin ? s.gstin.trim().toUpperCase() : undefined,
+        stateCode: s.stateCode || (s.gstin ? s.gstin.slice(0, 2) : '19'),
+        source: 'Supplier Master'
+      })
+    })
+
+    return Array.from(map.values())
+  }, [suppliers, expenseEntries])
 
   // Matching payees when at least 1 character is typed
   const matchingPayees = useMemo(() => {
@@ -174,9 +208,13 @@ export default function ExpenseEntriesPage({
 
   const showPayeeSuggestions = payeeInputFocused && supplierName.trim().length >= 1
 
-  const handleSelectPayee = (item: { id?: string; name: string; gstin?: string; stateCode?: string }) => {
+  const handleSelectPayee = (item: { id?: string; name: string; gstin?: string; stateCode?: string; source: 'Supplier Master' | 'Past Payee' }) => {
     setSupplierName(item.name)
-    if (item.id) setSupplierId(item.id)
+    if (item.id) {
+      setSupplierId(item.id)
+    } else {
+      setSupplierId('')
+    }
     if (item.gstin) {
       handleGstinChange(item.gstin)
     } else {
@@ -889,11 +927,11 @@ export default function ExpenseEntriesPage({
                     {showPayeeSuggestions && matchingPayees.length > 0 && (
                       <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl shadow-xl border border-slate-200 z-50 overflow-hidden max-h-[220px] overflow-y-auto divide-y divide-slate-100 animate-in fade-in-50 duration-100">
                         <div className="px-2.5 py-1 bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                          Verified Suppliers ({matchingPayees.length})
+                          Suggested Payees ({matchingPayees.length})
                         </div>
-                        {matchingPayees.map((item) => (
+                        {matchingPayees.map((item, idx) => (
                           <div
-                            key={item.id}
+                            key={item.id || `${item.name}-${idx}`}
                             onMouseDown={(e) => {
                               e.preventDefault()
                               handleSelectPayee(item)
@@ -903,14 +941,18 @@ export default function ExpenseEntriesPage({
                             <div className="truncate mr-2">
                               <p className="font-bold text-slate-900 truncate">{item.name}</p>
                               <p className="text-[10px] text-slate-500 font-mono mt-0.5">
-                                {item.name} · {item.gstin ? `GSTIN: ${item.gstin}` : 'Unregistered'} · {getStateName(item.stateCode)}
+                                {item.name} · {item.source} · {item.gstin ? `GSTIN: ${item.gstin}` : 'Unregistered'}
                               </p>
                             </div>
                             <Badge
                               variant="outline"
-                              className="text-[9px] font-semibold shrink-0 bg-indigo-50 text-indigo-700 border-indigo-200"
+                              className={`text-[9px] font-semibold shrink-0 ${
+                                item.source === 'Supplier Master'
+                                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                  : 'bg-slate-50 text-slate-600 border-slate-200'
+                              }`}
                             >
-                              Supplier
+                              {item.source}
                             </Badge>
                           </div>
                         ))}
