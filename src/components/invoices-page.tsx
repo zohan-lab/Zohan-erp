@@ -1033,7 +1033,7 @@ export default function InvoicesPage({
                       <div className="flex items-center justify-between p-3.5 bg-[#5B5FEF]/10 border-2 border-[#5B5FEF] rounded-2xl shadow-sm">
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="w-10 h-10 rounded-xl bg-[#5B5FEF] text-white flex items-center justify-center font-extrabold text-sm shrink-0 shadow-sm">
-                            {selectedInvoiceSupplier.name.substring(0, 2).toUpperCase()}
+                            {(selectedInvoiceSupplier?.name || 'SU').substring(0, 2).toUpperCase()}
                           </div>
                           <div className="min-w-0">
                             <div className="text-sm font-extrabold text-slate-900 truncate">

@@ -163,42 +163,61 @@ export default function MasterDashboardPage({
     return calculateCDAtRisk(purchaseInvoices, payments, paymentAllocations, suppliers, items)
   }, [purchaseInvoices, payments, paymentAllocations, suppliers, items])
 
+  // Helper functions for safe invoice access
+  const getSafeInvoiceAmount = (inv: any): number => {
+    if (!inv) return 0
+    const amt = inv.totalAmount ?? inv.invoiceAmount ?? inv.finalAmount ?? 0
+    return typeof amt === 'number' && !isNaN(amt) ? amt : 0
+  }
+
+  const getSafeInvoiceDate = (inv: any): string => {
+    if (!inv) return ''
+    const d = inv.invoiceDate || inv.date || ''
+    return typeof d === 'string' ? d : ''
+  }
+
+  const getSafeInvoiceNumber = (inv: any): string => {
+    if (!inv) return ''
+    return String(inv.invoiceNumber || inv.invoiceNo || inv.id || '')
+  }
+
   const totalPayables = useMemo(() => {
-    const totalInvoiceAmount = purchaseInvoices.reduce((sum, inv) => sum + inv.invoiceAmount, 0)
-    const totalPaid = paymentAllocations.reduce((sum, alloc) => sum + alloc.allocatedAmount, 0)
+    const totalInvoiceAmount = purchaseInvoices.reduce((sum, inv) => sum + getSafeInvoiceAmount(inv), 0)
+    const totalPaid = paymentAllocations.reduce((sum, alloc) => sum + (alloc.allocatedAmount || 0), 0)
     return Math.max(0, totalInvoiceAmount - totalPaid)
   }, [purchaseInvoices, paymentAllocations])
 
   const totalReceivables = useMemo(() => {
-    const totalSalesAmount = salesInvoices.reduce((sum, inv) => sum + inv.invoiceAmount, 0)
-    const totalReceived = customerPayments.reduce((sum, payment) => sum + payment.amount, 0)
+    const totalSalesAmount = salesInvoices.reduce((sum, inv) => sum + getSafeInvoiceAmount(inv), 0)
+    const totalReceived = customerPayments.reduce((sum, payment) => sum + (payment.amount || 0), 0)
     return Math.max(0, totalSalesAmount - totalReceived)
   }, [salesInvoices, customerPayments])
 
   const totalStockValue = useMemo(() => {
-    return inventoryData.reduce((sum, item) => sum + item.currentStockValue, 0)
+    return inventoryData.reduce((sum, item) => sum + (item.currentStockValue || 0), 0)
   }, [inventoryData])
 
   const stockSummary = useMemo(() => {
     const byUnit: { [unit: string]: number } = {}
     inventoryData.forEach(item => {
-      if (!byUnit[item.unit]) {
-        byUnit[item.unit] = 0
+      const u = item.unit || 'KG'
+      if (!byUnit[u]) {
+        byUnit[u] = 0
       }
-      byUnit[item.unit] += item.balanceMT
+      byUnit[u] += item.balanceMT || 0
     })
     return byUnit
   }, [inventoryData])
 
   const netProfit = useMemo(() => {
-    const totalSalesRevenue = salesInvoices.reduce((sum, inv) => sum + inv.invoiceAmount, 0)
-    const totalPurchaseCost = purchaseInvoices.reduce((sum, inv) => sum + inv.invoiceAmount, 0)
+    const totalSalesRevenue = salesInvoices.reduce((sum, inv) => sum + getSafeInvoiceAmount(inv), 0)
+    const totalPurchaseCost = purchaseInvoices.reduce((sum, inv) => sum + getSafeInvoiceAmount(inv), 0)
     const totalExpenses = expenseEntries
       .filter(entry => {
         const expType = expenseTypes.find(t => t.id === entry.expenseTypeId)
         return expType?.linkType === 'netprofit'
       })
-      .reduce((sum, entry) => sum + entry.amount, 0)
+      .reduce((sum, entry) => sum + (entry.amount || 0), 0)
     
     return totalSalesRevenue - totalPurchaseCost - totalExpenses
   }, [salesInvoices, purchaseInvoices, expenseEntries, expenseTypes])
@@ -207,15 +226,19 @@ export default function MasterDashboardPage({
     const monthlyData: { [key: string]: { sales: number; purchase: number } } = {}
     
     salesInvoices.forEach(inv => {
-      const month = inv.invoiceDate.substring(0, 7)
+      const rawDate = getSafeInvoiceDate(inv)
+      if (!rawDate) return
+      const month = rawDate.slice(0, 7)
       if (!monthlyData[month]) monthlyData[month] = { sales: 0, purchase: 0 }
-      monthlyData[month].sales += inv.invoiceAmount
+      monthlyData[month].sales += getSafeInvoiceAmount(inv)
     })
     
     purchaseInvoices.forEach(inv => {
-      const month = inv.invoiceDate.substring(0, 7)
+      const rawDate = getSafeInvoiceDate(inv)
+      if (!rawDate) return
+      const month = rawDate.slice(0, 7)
       if (!monthlyData[month]) monthlyData[month] = { sales: 0, purchase: 0 }
-      monthlyData[month].purchase += inv.invoiceAmount
+      monthlyData[month].purchase += getSafeInvoiceAmount(inv)
     })
     
     const sorted = Object.entries(monthlyData)
@@ -286,13 +309,13 @@ export default function MasterDashboardPage({
   }, [totalDiscountsPending, totalAnnualDiscountPending])
 
   const totalSalesRevenue = useMemo(() => {
-    return salesInvoices.reduce((sum, inv) => sum + inv.invoiceAmount, 0)
+    return salesInvoices.reduce((sum, inv) => sum + getSafeInvoiceAmount(inv), 0)
   }, [salesInvoices])
 
   const profitMargin = useMemo(() => {
-    const totalSalesRevenue = salesInvoices.reduce((sum, inv) => sum + inv.invoiceAmount, 0)
-    if (totalSalesRevenue === 0) return 0
-    return (netProfit / totalSalesRevenue) * 100
+    const totalRev = salesInvoices.reduce((sum, inv) => sum + getSafeInvoiceAmount(inv), 0)
+    if (totalRev === 0) return 0
+    return (netProfit / totalRev) * 100
   }, [netProfit, salesInvoices])
 
   const purchaseVolumeByUnit = useMemo(() => {
@@ -326,7 +349,7 @@ export default function MasterDashboardPage({
   }, [salesInvoices, items])
 
   const totalPurchaseValue = useMemo(() => {
-    return purchaseInvoices.reduce((sum, inv) => sum + inv.invoiceAmount, 0)
+    return purchaseInvoices.reduce((sum, inv) => sum + getSafeInvoiceAmount(inv), 0)
   }, [purchaseInvoices])
 
   const recentTransactions = useMemo(() => {
@@ -342,56 +365,64 @@ export default function MasterDashboardPage({
 
     purchaseInvoices.forEach(inv => {
       const supplier = suppliers.find(s => s.id === inv.supplierId)
-      const d = new Date(inv.invoiceDate)
+      const rawDate = getSafeInvoiceDate(inv)
+      const d = rawDate ? new Date(rawDate) : new Date()
+      const validDate = isNaN(d.getTime()) ? new Date() : d
       allTransactions.push({
-        rawDate: d,
-        dateFormatted: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ', 10:15 AM',
+        rawDate: validDate,
+        dateFormatted: validDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ', 10:15 AM',
         type: 'Purchase',
-        description: `Purchase Bill - ${inv.invoiceNo || 'BILL-2026-088'}`,
+        description: `Purchase Bill - ${getSafeInvoiceNumber(inv) || 'BILL-2026'}`,
         module: 'Purchase',
-        amount: inv.invoiceAmount,
+        amount: getSafeInvoiceAmount(inv),
         status: 'Pending'
       })
     })
 
     salesInvoices.forEach(inv => {
       const customer = customers.find(c => c.id === inv.customerId)
-      const d = new Date(inv.invoiceDate)
+      const rawDate = getSafeInvoiceDate(inv)
+      const d = rawDate ? new Date(rawDate) : new Date()
+      const validDate = isNaN(d.getTime()) ? new Date() : d
       allTransactions.push({
-        rawDate: d,
-        dateFormatted: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ', 10:15 AM',
+        rawDate: validDate,
+        dateFormatted: validDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ', 10:15 AM',
         type: 'Invoice',
-        description: `Sales Invoice - ${inv.invoiceNo || 'INV-2026-189'}`,
+        description: `Sales Invoice - ${getSafeInvoiceNumber(inv) || 'INV-2026'}`,
         module: 'Sales',
-        amount: inv.invoiceAmount,
+        amount: getSafeInvoiceAmount(inv),
         status: 'Paid'
       })
     })
 
     payments.forEach(payment => {
       const supplier = suppliers.find(s => s.id === payment.supplierId)
-      const d = new Date(payment.paymentDate)
+      const rawDate = payment.paymentDate || ''
+      const d = rawDate ? new Date(rawDate) : new Date()
+      const validDate = isNaN(d.getTime()) ? new Date() : d
       allTransactions.push({
-        rawDate: d,
-        dateFormatted: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ', 11:24 AM',
+        rawDate: validDate,
+        dateFormatted: validDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ', 11:24 AM',
         type: 'Payment',
         description: `Payment to ${supplier?.name || 'Supplier'}`,
         module: 'Purchase',
-        amount: payment.amount,
+        amount: payment.amount || 0,
         status: 'Completed'
       })
     })
 
     customerPayments.forEach(payment => {
       const customer = customers.find(c => c.id === payment.customerId)
-      const d = new Date(payment.paymentDate)
+      const rawDate = payment.paymentDate || ''
+      const d = rawDate ? new Date(rawDate) : new Date()
+      const validDate = isNaN(d.getTime()) ? new Date() : d
       allTransactions.push({
-        rawDate: d,
-        dateFormatted: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ', 04:45 PM',
+        rawDate: validDate,
+        dateFormatted: validDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ', 04:45 PM',
         type: 'Payment',
         description: `Payment from ${customer?.name || 'Customer'}`,
         module: 'Sales',
-        amount: payment.amount,
+        amount: payment.amount || 0,
         status: 'Completed'
       })
     })
@@ -412,7 +443,7 @@ export default function MasterDashboardPage({
       const s = suppliers.find(sup => sup.id === inv.supplierId)
       if (s) {
         if (!supplierTotals[s.id]) supplierTotals[s.id] = { name: s.name, totalAmount: 0, count: 0 }
-        supplierTotals[s.id].totalAmount += inv.invoiceAmount
+        supplierTotals[s.id].totalAmount += getSafeInvoiceAmount(inv)
         supplierTotals[s.id].count += 1
       }
     })
@@ -428,7 +459,7 @@ export default function MasterDashboardPage({
       const c = customers.find(cust => cust.id === inv.customerId)
       if (c) {
         if (!customerTotals[c.id]) customerTotals[c.id] = { name: c.name, totalAmount: 0, count: 0 }
-        customerTotals[c.id].totalAmount += inv.invoiceAmount
+        customerTotals[c.id].totalAmount += getSafeInvoiceAmount(inv)
         customerTotals[c.id].count += 1
       }
     })
