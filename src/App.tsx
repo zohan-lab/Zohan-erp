@@ -238,6 +238,7 @@ import CDAtRiskReportPage from '@/components/cd-at-risk-report-page'
 import CDProfitReportsPage from '@/components/cd-profit-reports-page'
 import MasterDashboardPage from '@/components/master-dashboard-page'
 import PurchaseInvoiceDetailsPage from '@/components/purchase-invoice-details-page'
+import { DEFAULT_EXPENSE_CATEGORIES } from '@/lib/custom-data-store'
 import PaymentDetailsPage from '@/components/payment-details-page'
 import CashBankCountersMaster from '@/components/cash-bank-counters-master'
 import CashBankVoucherEntry from '@/components/cash-bank-voucher-entry'
@@ -755,7 +756,7 @@ function App() {
   const safeReceivedDiscounts = receivedDiscounts || []
   const safeSalesInvoices = salesInvoices || []
   const safeCustomerPayments = customerPayments || []
-  const safeExpenseTypes = expenseTypes || []
+  const safeExpenseTypes = expenseTypes && expenseTypes.length > 0 ? expenseTypes : DEFAULT_EXPENSE_CATEGORIES
   const safeExpenseEntries = expenseEntries || []
   const safeCreditNotes = creditNotes || []
   const safeDebitNotes = debitNotes || []

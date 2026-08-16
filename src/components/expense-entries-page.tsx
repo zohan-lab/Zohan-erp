@@ -60,7 +60,7 @@ interface ExpenseEntriesPageProps {
   activeCompanyId?: string
 }
 
-const COMMON_HSN_SAC_CODES = [
+export const COMMON_HSN_SAC_CODES = [
   { code: '9965', label: '9965 - Freight & Goods Transport (GTA)' },
   { code: '9972', label: '9972 - Real Estate Rent (Office / Godown)' },
   { code: '9987', label: '9987 - Maintenance & Machinery Repairs' },
@@ -115,6 +115,11 @@ export default function ExpenseEntriesPage({
   const [typeName, setTypeName] = useState('')
   const [typeDescription, setTypeDescription] = useState('')
   const [typeLinkType, setTypeLinkType] = useState<'invoice' | 'netprofit'>('netprofit')
+  const [catIsGstApplicable, setCatIsGstApplicable] = useState(true)
+  const [catDefaultSacCode, setCatDefaultSacCode] = useState('')
+  const [catDefaultGstRate, setCatDefaultGstRate] = useState<number>(18)
+  const [catIsRcmDefault, setCatIsRcmDefault] = useState(false)
+  const [catItcClassification, setCatItcClassification] = useState<'Input Services' | 'Inputs / Consumables' | 'Capital Goods' | 'Ineligible'>('Input Services')
 
   // Date / FY Filters State
   const [periodFilter, setPeriodFilter] = useState<PeriodFilterState>(defaultPeriodFilterState)
@@ -126,7 +131,33 @@ export default function ExpenseEntriesPage({
   const [filterGstOnly, setFilterGstOnly] = useState<string>('all')
 
   const selectedExpenseType = expenseTypes.find((et) => et.id === expenseTypeId)
-  const isInvoiceLinked = selectedExpenseType?.linkType === 'invoice'
+  const isInvoiceLinked = selectedExpenseType?.linkType === 'invoice' || selectedExpenseType?.costLinkingType === 'invoice_landed'
+
+  // Master-Child Category Selection Handler (Tally / Zoho Books Architecture)
+  const handleCategoryChange = (catId: string) => {
+    setExpenseTypeId(catId)
+    const cat = expenseTypes.find((t) => t.id === catId)
+    if (!cat) return
+
+    // Auto-populate statutory master defaults
+    if (cat.isGstApplicable !== undefined) {
+      setHasGst(cat.isGstApplicable)
+    }
+    if (cat.defaultSacCode) {
+      setHsnSacCode(cat.defaultSacCode)
+    }
+    if (typeof cat.defaultGstRate === 'number') {
+      setGstRate(cat.defaultGstRate)
+    }
+    if (cat.isRcmDefault !== undefined) {
+      setIsRcm(cat.isRcmDefault)
+    }
+    if (cat.itcClassification) {
+      const itc = cat.itcClassification === 'Inputs / Consumables' ? 'Inputs' : (cat.itcClassification as any)
+      setItcType(itc)
+      setIsItcEligible(itc !== 'Ineligible')
+    }
+  }
 
   // Handle GSTIN change with state detection
   const handleGstinChange = (value: string) => {
@@ -580,8 +611,8 @@ export default function ExpenseEntriesPage({
             {/* Expense Type / Category */}
             <div className="space-y-1.5">
               <Label className="text-xs font-bold text-slate-700">Expense Category <span className="text-red-500">*</span></Label>
-              <Select value={expenseTypeId} onValueChange={setExpenseTypeId}>
-                <SelectTrigger className="w-full h-9 bg-white text-xs">
+              <Select value={expenseTypeId} onValueChange={handleCategoryChange}>
+                <SelectTrigger className="w-full h-9 bg-white text-xs font-medium">
                   <SelectValue placeholder="Select Category" />
                 </SelectTrigger>
                 <SelectContent>
@@ -590,9 +621,9 @@ export default function ExpenseEntriesPage({
                       <span className="flex items-center justify-between w-full gap-2">
                         <span>{et.name}</span>
                         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                          et.linkType === 'invoice' ? 'bg-blue-100 text-blue-700' : 'bg-indigo-100 text-indigo-700'
+                          et.linkType === 'invoice' || et.costLinkingType === 'invoice_landed' ? 'bg-blue-100 text-blue-700' : 'bg-indigo-100 text-indigo-700'
                         }`}>
-                          {et.linkType === 'invoice' ? 'Invoice Linked' : 'Net Profit'}
+                          {et.linkType === 'invoice' || et.costLinkingType === 'invoice_landed' ? 'Invoice Linked' : 'Net Profit'}
                         </span>
                       </span>
                     </SelectItem>
@@ -1226,20 +1257,20 @@ export default function ExpenseEntriesPage({
 
       {/* Manage Expense Categories Modal */}
       <Dialog open={manageTypesOpen} onOpenChange={setManageTypesOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-base font-bold flex items-center gap-2">
               <SlidersHorizontal className="h-5 w-5 text-blue-600" />
-              Manage Expense Categories
+              Manage Expense Categories (Master Configuration)
             </DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            <div className="space-y-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+            <div className="space-y-3 p-3.5 bg-slate-50 rounded-xl border border-slate-200">
               <div className="space-y-1">
                 <Label className="text-xs font-bold">Category Name *</Label>
                 <Input
-                  placeholder="e.g. Office Rent, Freight Inward"
+                  placeholder="e.g. Freight & Transportation, Office Rent, Electricity"
                   value={typeName}
                   onChange={(e) => setTypeName(e.target.value)}
                   className="h-8 text-xs bg-white"
@@ -1249,14 +1280,98 @@ export default function ExpenseEntriesPage({
               <div className="space-y-1">
                 <Label className="text-xs font-bold">Cost Linking Type *</Label>
                 <Select value={typeLinkType} onValueChange={(val: any) => setTypeLinkType(val)}>
-                  <SelectTrigger className="h-8 text-xs bg-white">
+                  <SelectTrigger className="h-8 text-xs bg-white font-medium">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="netprofit">Net Profit (General Overhead)</SelectItem>
-                    <SelectItem value="invoice">Invoice Linked (Landed Cost / Freight)</SelectItem>
+                    <SelectItem value="invoice">Invoice Landed Cost (Direct Freight/Handling)</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              {/* Master Statutory GST Defaults */}
+              <div className="rounded-lg border border-slate-200 bg-white p-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold text-slate-800">GST Applicable by Default</Label>
+                  <Switch
+                    checked={catIsGstApplicable}
+                    onCheckedChange={setCatIsGstApplicable}
+                    id="cat-gst-switch"
+                  />
+                </div>
+
+                {catIsGstApplicable && (
+                  <div className="space-y-2.5 pt-1 border-t border-slate-100 animate-in fade-in-50 duration-150">
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div className="space-y-1">
+                        <Label className="text-[11px] font-bold text-slate-600">Default SAC Code</Label>
+                        <div className="flex items-center gap-1">
+                          <Input
+                            placeholder="9965"
+                            value={catDefaultSacCode}
+                            onChange={(e) => setCatDefaultSacCode(e.target.value.trim())}
+                            className="h-7 text-xs font-mono font-bold w-20"
+                          />
+                          <Select onValueChange={(val) => setCatDefaultSacCode(val)}>
+                            <SelectTrigger className="h-7 text-[11px] flex-1 truncate">
+                              <SelectValue placeholder="SAC" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {COMMON_HSN_SAC_CODES.map(s => (
+                                <SelectItem key={s.code} value={s.code} className="text-xs">{s.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-[11px] font-bold text-slate-600">Default GST Rate (%)</Label>
+                        <Select value={String(catDefaultGstRate)} onValueChange={(val) => setCatDefaultGstRate(Number(val))}>
+                          <SelectTrigger className="h-7 text-xs font-bold font-mono">
+                            <SelectValue placeholder="18%" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="0">0% (Exempt)</SelectItem>
+                            <SelectItem value="5">5% (Transport / Basic)</SelectItem>
+                            <SelectItem value="12">12% (Standard Concession)</SelectItem>
+                            <SelectItem value="18">18% (Standard 18%)</SelectItem>
+                            <SelectItem value="28">28% (Luxury)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5 items-center pt-1">
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={catIsRcmDefault}
+                          onCheckedChange={setCatIsRcmDefault}
+                          id="cat-rcm-switch"
+                        />
+                        <Label htmlFor="cat-rcm-switch" className="text-[11px] font-bold text-amber-900 cursor-pointer">
+                          RCM Default (e.g. GTA)
+                        </Label>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label className="text-[11px] font-bold text-slate-600">Default GSTR-3B ITC</Label>
+                        <Select value={catItcClassification} onValueChange={(val: any) => setCatItcClassification(val)}>
+                          <SelectTrigger className="h-7 text-[11px] font-medium">
+                            <SelectValue placeholder="Input Services" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Input Services">Input Services</SelectItem>
+                            <SelectItem value="Inputs / Consumables">Inputs / Consumables</SelectItem>
+                            <SelectItem value="Capital Goods">Capital Goods</SelectItem>
+                            <SelectItem value="Ineligible">Ineligible (Blocked)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <Button
@@ -1264,29 +1379,43 @@ export default function ExpenseEntriesPage({
                 size="sm"
                 onClick={() => {
                   if (!typeName.trim()) return toast.error('Enter category name')
+                  const newOrUpdated: ExpenseType = {
+                    id: editingType ? editingType.id : `exp-cat-${Date.now()}`,
+                    name: typeName.trim(),
+                    description: typeDescription.trim() || undefined,
+                    costLinkingType: typeLinkType === 'invoice' ? 'invoice_landed' : 'net_profit',
+                    linkType: typeLinkType,
+                    isGstApplicable: catIsGstApplicable,
+                    defaultSacCode: catIsGstApplicable ? (catDefaultSacCode.trim() || undefined) : undefined,
+                    defaultGstRate: catIsGstApplicable ? catDefaultGstRate : 0,
+                    isRcmDefault: catIsGstApplicable ? catIsRcmDefault : false,
+                    itcClassification: catIsGstApplicable ? catItcClassification : 'Ineligible'
+                  }
+
                   if (editingType) {
-                    const updated = expenseTypes.map(t => t.id === editingType.id ? { ...t, name: typeName.trim(), linkType: typeLinkType } : t)
+                    const updated = expenseTypes.map(t => t.id === editingType.id ? newOrUpdated : t)
                     setExpenseTypes?.(() => updated)
-                    if (activeCompanyId) void saveEntityRemote(activeCompanyId, 'expenseTypes', { id: editingType.id, name: typeName.trim(), linkType: typeLinkType })
-                    toast.success('Category updated')
+                    if (activeCompanyId) void saveEntityRemote(activeCompanyId, 'expenseTypes', newOrUpdated)
+                    toast.success('Expense category updated')
                     setEditingType(null)
                   } else {
-                    const newType: ExpenseType = {
-                      id: `type-${Date.now()}`,
-                      name: typeName.trim(),
-                      linkType: typeLinkType
-                    }
-                    setExpenseTypes?.((prev) => [...prev, newType])
-                    if (activeCompanyId) void saveEntityRemote(activeCompanyId, 'expenseTypes', newType)
-                    toast.success('Category created')
+                    setExpenseTypes?.((prev) => [...prev, newOrUpdated])
+                    if (activeCompanyId) void saveEntityRemote(activeCompanyId, 'expenseTypes', newOrUpdated)
+                    toast.success('Expense category created')
                   }
+
                   setTypeName('')
                   setTypeDescription('')
                   setTypeLinkType('netprofit')
+                  setCatIsGstApplicable(true)
+                  setCatDefaultSacCode('')
+                  setCatDefaultGstRate(18)
+                  setCatIsRcmDefault(false)
+                  setCatItcClassification('Input Services')
                 }}
-                className="w-full h-8 text-xs font-bold bg-blue-600 text-white hover:bg-blue-700"
+                className="w-full h-8 text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 shadow-xs"
               >
-                {editingType ? 'Update Category' : 'Add Category'}
+                {editingType ? 'Update Category Master' : 'Add Category Master'}
               </Button>
             </div>
 
@@ -1295,9 +1424,17 @@ export default function ExpenseEntriesPage({
               {expenseTypes.map((t) => (
                 <div key={t.id} className="flex items-center justify-between p-2.5 rounded-lg border border-slate-200 bg-white text-xs">
                   <div>
-                    <p className="font-bold text-slate-900">{t.name}</p>
-                    <p className="text-[10px] text-slate-500 font-medium">
-                      {t.linkType === 'invoice' ? 'Direct Invoice Cost' : 'General Overhead'}
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-slate-900">{t.name}</p>
+                      {t.isGstApplicable && (
+                        <Badge variant="outline" className="text-[9px] font-mono bg-emerald-50 text-emerald-700 border-emerald-200">
+                          {t.defaultSacCode ? `SAC ${t.defaultSacCode}` : 'GST'} | {t.defaultGstRate}%
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-500 font-medium mt-0.5">
+                      {t.linkType === 'invoice' || t.costLinkingType === 'invoice_landed' ? 'Direct Invoice Landed Cost' : 'General Overhead'}
+                      {t.isRcmDefault ? ' · RCM Applicable' : ''}
                     </p>
                   </div>
                   <div className="flex items-center gap-1">
@@ -1307,7 +1444,12 @@ export default function ExpenseEntriesPage({
                       onClick={() => {
                         setEditingType(t)
                         setTypeName(t.name)
-                        setTypeLinkType(t.linkType)
+                        setTypeLinkType(t.linkType || (t.costLinkingType === 'invoice_landed' ? 'invoice' : 'netprofit'))
+                        setCatIsGstApplicable(t.isGstApplicable !== false)
+                        setCatDefaultSacCode(t.defaultSacCode || '')
+                        setCatDefaultGstRate(typeof t.defaultGstRate === 'number' ? t.defaultGstRate : 18)
+                        setCatIsRcmDefault(Boolean(t.isRcmDefault))
+                        setCatItcClassification(t.itcClassification || 'Input Services')
                       }}
                       className="h-6 w-6 text-slate-500 hover:text-blue-600"
                     >

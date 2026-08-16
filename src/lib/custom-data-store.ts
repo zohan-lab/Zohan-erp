@@ -1,5 +1,94 @@
-import { Item } from './types'
+import { Item, ExpenseCategory } from './types'
 import { getMetadata } from './storage-utils'
+
+export const DEFAULT_EXPENSE_CATEGORIES: ExpenseCategory[] = [
+  {
+    id: 'exp-cat-freight',
+    name: 'Freight & Transportation (Inward)',
+    costLinkingType: 'invoice_landed',
+    linkType: 'invoice',
+    isGstApplicable: true,
+    defaultSacCode: '9965',
+    defaultGstRate: 5,
+    isRcmDefault: true,
+    itcClassification: 'Input Services'
+  },
+  {
+    id: 'exp-cat-loading',
+    name: 'Loading & Unloading Charges',
+    costLinkingType: 'invoice_landed',
+    linkType: 'invoice',
+    isGstApplicable: true,
+    defaultSacCode: '9967',
+    defaultGstRate: 18,
+    isRcmDefault: false,
+    itcClassification: 'Input Services'
+  },
+  {
+    id: 'exp-cat-rent',
+    name: 'Office & Godown Rent',
+    costLinkingType: 'net_profit',
+    linkType: 'netprofit',
+    isGstApplicable: true,
+    defaultSacCode: '9972',
+    defaultGstRate: 18,
+    isRcmDefault: false,
+    itcClassification: 'Input Services'
+  },
+  {
+    id: 'exp-cat-repairs',
+    name: 'Repairs & Machinery Maintenance',
+    costLinkingType: 'net_profit',
+    linkType: 'netprofit',
+    isGstApplicable: true,
+    defaultSacCode: '9987',
+    defaultGstRate: 18,
+    isRcmDefault: false,
+    itcClassification: 'Input Services'
+  },
+  {
+    id: 'exp-cat-legal',
+    name: 'Legal & Professional Charges',
+    costLinkingType: 'net_profit',
+    linkType: 'netprofit',
+    isGstApplicable: true,
+    defaultSacCode: '9983',
+    defaultGstRate: 18,
+    isRcmDefault: false,
+    itcClassification: 'Input Services'
+  },
+  {
+    id: 'exp-cat-electricity',
+    name: 'Electricity & Utilities',
+    costLinkingType: 'net_profit',
+    linkType: 'netprofit',
+    isGstApplicable: false,
+    defaultSacCode: '9969',
+    defaultGstRate: 0,
+    isRcmDefault: false,
+    itcClassification: 'Ineligible'
+  },
+  {
+    id: 'exp-cat-tea',
+    name: 'Tea, Snacks & Staff Welfare',
+    costLinkingType: 'net_profit',
+    linkType: 'netprofit',
+    isGstApplicable: false,
+    defaultGstRate: 0,
+    isRcmDefault: false,
+    itcClassification: 'Ineligible'
+  },
+  {
+    id: 'exp-cat-petty',
+    name: 'General Petty Cash Expenses',
+    costLinkingType: 'net_profit',
+    linkType: 'netprofit',
+    isGstApplicable: false,
+    defaultGstRate: 0,
+    isRcmDefault: false,
+    itcClassification: 'Ineligible'
+  }
+]
 
 export const DEFAULT_CATEGORIES: string[] = [
   'PIPE',

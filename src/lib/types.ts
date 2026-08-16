@@ -398,12 +398,22 @@ export interface LedgerEntry {
   refId: string
 }
 
-export interface ExpenseType {
+export interface ExpenseCategory {
   id: string
   name: string
   description?: string
-  linkType: 'invoice' | 'netprofit'
+  linkType?: 'invoice' | 'netprofit'
+  costLinkingType?: 'net_profit' | 'invoice_landed'
+  
+  // Master GST & Statutory Defaults
+  isGstApplicable?: boolean
+  defaultSacCode?: string
+  defaultGstRate?: number
+  isRcmDefault?: boolean
+  itcClassification?: 'Input Services' | 'Inputs / Consumables' | 'Capital Goods' | 'Ineligible'
 }
+
+export type ExpenseType = ExpenseCategory
 
 export interface ExpenseEntry {
   id: string
