@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo, useCallback } from 'react'
+import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   FileArrowUp,
@@ -16,11 +16,16 @@ import {
   ArrowBendDownRight,
   Sparkle,
   FileXls,
+  FileCode,
+  Gear,
   CreditCard,
   Receipt,
   ArrowsLeftRight,
   DotsThreeVertical,
-  X
+  X,
+  FileText,
+  Building,
+  Scales
 } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -42,6 +47,15 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/components/ui/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
   parseTallyPayments,
   exportPaymentsToTallyExcel,
   generateSampleTallyExcel,
@@ -49,21 +63,91 @@ import {
   TallyImportResult,
   TallyVoucherType
 } from '@/lib/tally-payment-excel'
+import {
+  TallyLedgerMapping,
+  DEFAULT_TALLY_LEDGER_MAPPING,
+  TallyCompoundVoucher,
+  generateTallySalesVouchers,
+  generateTallyPurchaseVouchers,
+  generateTallyCreditNoteVouchers,
+  generateTallyDebitNoteVouchers,
+  generateTallyExpenseVouchers,
+  exportCompoundVouchersToTallyExcel,
+  generateTallyXML,
+  downloadTallyXML
+} from '@/lib/tally-universal-engine'
+import {
+  SalesInvoice,
+  PurchaseInvoice,
+  CustomerCreditNote,
+  CustomerDebitNote,
+  SupplierCreditNote,
+  SupplierDebitNote,
+  ExpenseEntry,
+  Customer,
+  Supplier,
+  Payment,
+  CustomerPayment
+} from '@/lib/types'
 import { formatCurrency } from '@/lib/calculations'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
 interface TallyVoucherManagerProps {
+  salesInvoices?: SalesInvoice[]
+  purchaseInvoices?: PurchaseInvoice[]
+  customerCreditNotes?: CustomerCreditNote[]
+  customerDebitNotes?: CustomerDebitNote[]
+  supplierDebitNotes?: SupplierDebitNote[]
+  supplierCreditNotes?: SupplierCreditNote[]
+  expenseEntries?: ExpenseEntry[]
+  customers?: Customer[]
+  suppliers?: Supplier[]
+  payments?: Payment[]
+  customerPayments?: CustomerPayment[]
+  businessName?: string
+  companyStateCode?: string
   onImportToERP?: (vouchers: PaymentVoucher[]) => void
   className?: string
   defaultVouchers?: PaymentVoucher[]
 }
 
+const STORAGE_KEY_TALLY_MAPPING = 'erp_tally_ledger_mapping'
+
 export function TallyVoucherManager({
+  salesInvoices = [],
+  purchaseInvoices = [],
+  customerCreditNotes = [],
+  customerDebitNotes = [],
+  supplierDebitNotes = [],
+  supplierCreditNotes = [],
+  expenseEntries = [],
+  customers = [],
+  suppliers = [],
+  payments = [],
+  customerPayments = [],
+  businessName = 'SK TRADERS',
+  companyStateCode = '19',
   onImportToERP,
   className,
   defaultVouchers
 }: TallyVoucherManagerProps) {
+  // Main Module Tab
+  const [activeModule, setActiveModule] = useState<'payments' | 'sales' | 'purchases' | 'notes' | 'expenses'>('payments')
+
+  // Ledger Mapping Configuration State
+  const [ledgerMapping, setLedgerMapping] = useState<TallyLedgerMapping>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_TALLY_MAPPING)
+      return saved ? { ...DEFAULT_TALLY_LEDGER_MAPPING, ...JSON.parse(saved) } : DEFAULT_TALLY_LEDGER_MAPPING
+    } catch {
+      return DEFAULT_TALLY_LEDGER_MAPPING
+    }
+  })
+  const [isMappingModalOpen, setIsMappingModalOpen] = useState(false)
+  const [tempMapping, setTempMapping] = useState<TallyLedgerMapping>(ledgerMapping)
+
+  // Payments / Receipts State (Import & 2-Line Manager)
   const [vouchers, setVouchers] = useState<PaymentVoucher[]>(defaultVouchers || [])
   const [errors, setErrors] = useState<string[]>([])
   const [warnings, setWarnings] = useState<string[]>([])
@@ -77,6 +161,81 @@ export function TallyVoucherManager({
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'VALID' | 'ISSUES'>('ALL')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Sync payments/customerPayments from props if vouchers empty
+  useEffect(() => {
+    if (vouchers.length === 0 && (payments.length > 0 || customerPayments.length > 0)) {
+      const supplierMap = new Map(suppliers.map(s => [s.id, s]))
+      const customerMap = new Map(customers.map(c => [c.id, c]))
+
+      const payList: PaymentVoucher[] = payments.map((p, idx) => {
+        const sup = supplierMap.get(p.supplierId)
+        return {
+          id: p.id || `pay-${idx}`,
+          voucherNumber: `PAY-${p.paymentDate?.replace(/-/g, '') || '000'}-${idx + 1}`,
+          voucherDate: p.paymentDate || new Date().toISOString().split('T')[0],
+          type: 'PAYMENT',
+          partyLedger: sup?.name || 'Supplier Account',
+          bankCashLedger: p.counterName || ledgerMapping.defaultBankLedgerName,
+          amount: p.amount || 0,
+          address: [sup?.address, sup?.city, sup?.state].filter(Boolean).join(', ') || undefined,
+          pincode: sup?.pincode || undefined,
+          status: 'valid',
+          isValid: true
+        }
+      })
+
+      const recList: PaymentVoucher[] = customerPayments.map((cp, idx) => {
+        const cust = customerMap.get(cp.customerId)
+        return {
+          id: cp.id || `rec-${idx}`,
+          voucherNumber: `REC-${cp.paymentDate?.replace(/-/g, '') || '000'}-${idx + 1}`,
+          voucherDate: cp.paymentDate || new Date().toISOString().split('T')[0],
+          type: 'RECEIPT',
+          partyLedger: cust?.name || 'Customer Account',
+          bankCashLedger: cp.counterName || ledgerMapping.defaultBankLedgerName,
+          amount: cp.amount || 0,
+          address: [cust?.address, cust?.city, cust?.state].filter(Boolean).join(', ') || undefined,
+          pincode: cust?.pincode || undefined,
+          status: 'valid',
+          isValid: true
+        }
+      })
+
+      setVouchers([...payList, ...recList])
+    }
+  }, [payments, customerPayments, suppliers, customers, ledgerMapping])
+
+  // Generate Multi-Line Compound Vouchers dynamically
+  const compoundSalesVouchers = useMemo(() => {
+    return generateTallySalesVouchers(salesInvoices, customers, ledgerMapping, companyStateCode)
+  }, [salesInvoices, customers, ledgerMapping, companyStateCode])
+
+  const compoundPurchaseVouchers = useMemo(() => {
+    return generateTallyPurchaseVouchers(purchaseInvoices, suppliers, ledgerMapping, companyStateCode)
+  }, [purchaseInvoices, suppliers, ledgerMapping, companyStateCode])
+
+  const compoundNotesVouchers = useMemo(() => {
+    const cn = generateTallyCreditNoteVouchers(customerCreditNotes, customers, ledgerMapping, companyStateCode)
+    const dn = generateTallyDebitNoteVouchers(supplierDebitNotes, suppliers, ledgerMapping, companyStateCode)
+    return [...cn, ...dn]
+  }, [customerCreditNotes, supplierDebitNotes, customers, suppliers, ledgerMapping, companyStateCode])
+
+  const compoundExpenseVouchers = useMemo(() => {
+    return generateTallyExpenseVouchers(expenseEntries, ledgerMapping, companyStateCode)
+  }, [expenseEntries, ledgerMapping, companyStateCode])
+
+  // Save Ledger Mapping
+  const handleSaveLedgerMapping = () => {
+    setLedgerMapping(tempMapping)
+    try {
+      localStorage.setItem(STORAGE_KEY_TALLY_MAPPING, JSON.stringify(tempMapping))
+      toast.success('Tally Ledger Mapping saved successfully')
+    } catch {
+      toast.warning('Saved in current session')
+    }
+    setIsMappingModalOpen(false)
+  }
 
   // 1. Process Excel/CSV File
   const processFile = useCallback(async (file: File) => {
@@ -102,9 +261,7 @@ export function TallyVoucherManager({
       if (result.success && result.data.length > 0) {
         toast.success(`Imported ${result.data.length} Tally voucher(s) successfully`)
       } else if (result.data.length > 0) {
-        toast.warning(
-          `Imported ${result.data.length} voucher(s) with ${result.errors.length} validation issue(s)`
-        )
+        toast.warning(`Imported ${result.data.length} voucher(s) with ${result.errors.length} validation issue(s)`)
       } else {
         toast.error(result.errors[0] || 'No valid Payment/Receipt vouchers found in file')
       }
@@ -170,33 +327,6 @@ export function TallyVoucherManager({
         pincode: '700091',
         status: 'valid',
         isValid: true
-      },
-      {
-        id: 'demo-4',
-        voucherNumber: 'REC-2026-002',
-        voucherDate: '2026-04-10',
-        displayDate: '10-04-2026',
-        type: 'RECEIPT',
-        partyLedger: 'Apex Building Solutions',
-        bankCashLedger: 'Main Cash Counter',
-        amount: 45000,
-        address: 'GIDC Industrial Estate, Ahmedabad',
-        pincode: '382445',
-        status: 'valid',
-        isValid: true
-      },
-      {
-        id: 'demo-5',
-        voucherNumber: 'CNT-2026-001',
-        voucherDate: '2026-04-12',
-        displayDate: '12-04-2026',
-        type: 'CONTRA',
-        partyLedger: 'HDFC Bank Ltd (Current A/c)',
-        bankCashLedger: 'Main Cash Counter',
-        amount: 100000,
-        address: 'Petty cash bank withdrawal',
-        status: 'valid',
-        isValid: true
       }
     ]
 
@@ -204,699 +334,556 @@ export function TallyVoucherManager({
     setErrors([])
     setWarnings([])
     setFileName('Demo_Tally_Vouchers.xlsx')
-    toast.success('Loaded 5 demo vouchers')
+    toast.info('Loaded demo Tally payment & receipt vouchers')
   }
 
-  // Clear data
-  const handleClear = () => {
-    setVouchers([])
-    setErrors([])
-    setWarnings([])
-    setFileName(null)
-    setExpandedRows({})
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
-  }
-
-  // Toggle row expansion for double-entry breakdown
-  const toggleRow = (id: string) => {
-    setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }))
-  }
-
-  // 3. Filtered vouchers dataset
-  const filteredVouchers = useMemo(() => {
-    return vouchers.filter(v => {
-      // Type Filter
-      if (typeFilter !== 'ALL' && v.type !== typeFilter) return false
-
-      // Status Filter
-      if (statusFilter === 'VALID' && (v.status !== 'valid' || v.isValid === false)) return false
-      if (statusFilter === 'ISSUES' && v.status === 'valid' && v.isValid !== false) return false
-
-      // Search Query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase()
-        const matchNo = v.voucherNumber.toLowerCase().includes(q)
-        const matchParty = v.partyLedger.toLowerCase().includes(q)
-        const matchBank = v.bankCashLedger.toLowerCase().includes(q)
-        const matchDate = (v.displayDate || v.voucherDate).toLowerCase().includes(q)
-        const matchAddress = (v.address || '').toLowerCase().includes(q)
-        if (!matchNo && !matchParty && !matchBank && !matchDate && !matchAddress) {
-          return false
-        }
-      }
-
-      return true
-    })
-  }, [vouchers, typeFilter, statusFilter, searchQuery])
-
-  // Filter-Aware Valid Export list
-  const filteredValidVouchers = useMemo(() => {
-    return filteredVouchers.filter(v => v.isValid !== false && v.status !== 'error')
-  }, [filteredVouchers])
-
-  const filteredValidCount = filteredValidVouchers.length
-
-  // 4. Filter-Aware Export Action
-  const handleExportFiltered = () => {
-    if (filteredValidCount === 0) {
-      toast.error('No valid filtered vouchers available to export.')
-      return
-    }
-
+  // 3. Export Handlers
+  const handleExportCurrentExcel = () => {
     try {
-      const filename = `Tally_Payments_Export_${Date.now()}.xlsx`
-      exportPaymentsToTallyExcel(filteredValidVouchers, { filename })
-      toast.success(`Exported ${filteredValidCount} filtered voucher(s) to ${filename}`)
+      if (activeModule === 'payments') {
+        const validList = vouchers.filter(v => v.isValid !== false && v.status !== 'error')
+        if (validList.length === 0) {
+          toast.warning('No valid Payment/Receipt vouchers to export')
+          return
+        }
+        const filename = `Tally_Payments_${businessName.replace(/\s+/g, '_')}_${Date.now()}.xlsx`
+        exportPaymentsToTallyExcel(validList, { filename })
+        toast.success(`Exported ${validList.length} Payment/Receipt vouchers`)
+      } else {
+        const activeList =
+          activeModule === 'sales'
+            ? compoundSalesVouchers
+            : activeModule === 'purchases'
+            ? compoundPurchaseVouchers
+            : activeModule === 'notes'
+            ? compoundNotesVouchers
+            : compoundExpenseVouchers
+
+        if (activeList.length === 0) {
+          toast.warning(`No ${activeModule} vouchers found to export`)
+          return
+        }
+        const filename = `Tally_${activeModule.toUpperCase()}_${businessName.replace(/\s+/g, '_')}_${Date.now()}.xlsx`
+        exportCompoundVouchersToTallyExcel(activeList, { filename })
+        toast.success(`Exported ${activeList.length} ${activeModule} compound vouchers`)
+      }
     } catch (err: any) {
       toast.error(`Export failed: ${err?.message || 'Unknown error'}`)
     }
   }
 
-  // Download Sample Template
-  const handleDownloadSample = () => {
+  const handleExportAllToTallyXML = () => {
     try {
-      generateSampleTallyExcel('Tally_Payment_Receipt_Sample.xlsx')
-      toast.success('Sample Tally Excel template downloaded')
+      const allCompound = [
+        ...compoundSalesVouchers,
+        ...compoundPurchaseVouchers,
+        ...compoundNotesVouchers,
+        ...compoundExpenseVouchers
+      ]
+
+      if (allCompound.length === 0) {
+        toast.warning('No vouchers available to export to Tally XML')
+        return
+      }
+
+      const xml = generateTallyXML(allCompound, businessName)
+      const filename = `Tally_Prime_Import_${businessName.replace(/\s+/g, '_')}_${Date.now()}.xml`
+      downloadTallyXML(xml, filename)
+      toast.success(`Generated Tally Prime XML with ${allCompound.length} double-entry vouchers`)
     } catch (err: any) {
-      toast.error(`Failed to download template: ${err?.message || 'Unknown error'}`)
+      toast.error(`XML Export failed: ${err?.message || 'Unknown error'}`)
     }
   }
 
-  // Summary Metrics
-  const summary = useMemo(() => {
-    const totalVouchers = vouchers.length
-    const paymentList = filteredVouchers.filter(v => v.type === 'PAYMENT' && v.status !== 'error')
-    const receiptList = filteredVouchers.filter(v => v.type === 'RECEIPT' && v.status !== 'error')
-    const contraList = filteredVouchers.filter(v => v.type === 'CONTRA' && v.status !== 'error')
+  const handleDownloadSample = () => {
+    generateSampleTallyExcel()
+    toast.success('Downloaded Tally Payment & Receipt Sample Excel')
+  }
 
-    const totalPaymentAmount = paymentList.reduce((sum, v) => sum + v.amount, 0)
-    const totalReceiptAmount = receiptList.reduce((sum, v) => sum + v.amount, 0)
-    const totalContraAmount = contraList.reduce((sum, v) => sum + v.amount, 0)
+  const handleClear = () => {
+    setVouchers([])
+    setErrors([])
+    setWarnings([])
+    setFileName(null)
+    toast.info('Cleared all vouchers')
+  }
 
-    const validCount = filteredVouchers.filter(v => v.status === 'valid' && v.isValid !== false).length
-    const issuesCount = filteredVouchers.filter(v => v.status !== 'valid' || v.isValid === false).length
+  // Filtered Payments/Receipts
+  const filteredPaymentVouchers = useMemo(() => {
+    return vouchers.filter(v => {
+      if (typeFilter !== 'ALL' && v.type !== typeFilter) return false
+      if (statusFilter === 'VALID' && (v.status !== 'valid' || v.isValid === false)) return false
+      if (statusFilter === 'ISSUES' && v.status === 'valid' && v.isValid !== false) return false
+      if (!searchQuery.trim()) return true
+      const q = searchQuery.toLowerCase()
+      return (
+        v.partyLedger.toLowerCase().includes(q) ||
+        v.bankCashLedger.toLowerCase().includes(q) ||
+        v.voucherNumber.toLowerCase().includes(q)
+      )
+    })
+  }, [vouchers, typeFilter, statusFilter, searchQuery])
 
-    return {
-      totalVouchers,
-      filteredTotal: filteredVouchers.length,
-      paymentCount: paymentList.length,
-      receiptCount: receiptList.length,
-      contraCount: contraList.length,
-      totalPaymentAmount,
-      totalReceiptAmount,
-      totalContraAmount,
-      validCount,
-      issuesCount
-    }
-  }, [vouchers, filteredVouchers])
+  // Filtered Active Compound Vouchers
+  const activeCompoundList = useMemo(() => {
+    const raw =
+      activeModule === 'sales'
+        ? compoundSalesVouchers
+        : activeModule === 'purchases'
+        ? compoundPurchaseVouchers
+        : activeModule === 'notes'
+        ? compoundNotesVouchers
+        : compoundExpenseVouchers
+
+    if (!searchQuery.trim()) return raw
+    const q = searchQuery.toLowerCase()
+    return raw.filter(v =>
+      v.partyName.toLowerCase().includes(q) ||
+      v.voucherNumber.toLowerCase().includes(q) ||
+      (v.partyGstin && v.partyGstin.toLowerCase().includes(q))
+    )
+  }, [
+    activeModule,
+    compoundSalesVouchers,
+    compoundPurchaseVouchers,
+    compoundNotesVouchers,
+    compoundExpenseVouchers,
+    searchQuery
+  ])
 
   return (
-    <div className={cn('space-y-4', className)}>
-      {/* Hidden File Input for Import */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".xlsx, .xls, .csv"
-        onChange={handleFileInputChange}
-        className="hidden"
-      />
-
-      {/* ── Top Summary Header / Status Banner ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200/80 shadow-2xs">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-indigo-50 text-indigo-600 shrink-0">
-            <FileXls className="h-6 w-6" weight="duotone" />
+    <div className={cn('space-y-6', className)}>
+      {/* ── HEADER CARD ── */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="p-2.5 rounded-xl bg-violet-50 border border-violet-100 text-violet-700">
+              <Building className="w-6 h-6" weight="duotone" />
+            </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-bold text-slate-900 tracking-tight">
+                  Tally Prime Integration & Double-Entry Engine
+                </h1>
+                <Badge variant="outline" className="text-[11px] font-semibold bg-violet-50 text-violet-700 border-violet-200">
+                  Tally Prime 4.x / ERP 9
+                </Badge>
+              </div>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                Generate balanced multi-line statutory accounting entries (Dr/Cr) and export directly to Tally Prime Excel & XML
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-base font-bold text-slate-900 leading-tight">
-              Tally Payment & Receipt Vouchers
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Double-entry 2-row Excel import & export matching Tally Prime / ERP 9 format
-            </p>
+
+          {/* Global Header Actions */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setTempMapping(ledgerMapping)
+                setIsMappingModalOpen(true)
+              }}
+              className="h-9 text-xs font-semibold rounded-xl border-slate-200 hover:bg-slate-50 flex items-center gap-1.5"
+            >
+              <Gear className="w-4 h-4 text-slate-600" weight="bold" />
+              Ledger Mapping
+            </Button>
+
+            <Button
+              onClick={handleExportAllToTallyXML}
+              className="h-9 px-3.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5"
+            >
+              <FileCode className="w-4 h-4" weight="bold" />
+              Export Tally XML (.xml)
+            </Button>
+
+            <Button
+              onClick={handleExportCurrentExcel}
+              className="h-9 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-sm flex items-center gap-1.5"
+            >
+              <FileXls className="w-4 h-4" weight="bold" />
+              Export Excel (.xlsx)
+            </Button>
           </div>
-        </div>
-
-        {/* Compact File Indicator & Secondary Actions */}
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          {fileName && (
-            <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200 text-xs py-1 px-2.5 gap-1.5">
-              <FileXls className="h-3.5 w-3.5 text-indigo-600" />
-              <span className="truncate max-w-[180px]">{fileName}</span>
-            </Badge>
-          )}
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-500 hover:text-slate-700">
-                <DotsThreeVertical className="h-4 w-4" weight="bold" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48 text-xs">
-              <DropdownMenuItem onClick={handleDownloadSample} className="cursor-pointer">
-                <DownloadSimple className="h-3.5 w-3.5 mr-2 text-indigo-500" />
-                Download Sample Excel
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleLoadDemoData} className="cursor-pointer">
-                <Sparkle className="h-3.5 w-3.5 mr-2 text-emerald-500" />
-                Load Demo Vouchers
-              </DropdownMenuItem>
-              {onImportToERP && vouchers.length > 0 && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => onImportToERP(filteredValidVouchers)}
-                    className="cursor-pointer text-emerald-700 focus:text-emerald-800"
-                  >
-                    <CheckCircle className="h-3.5 w-3.5 mr-2 text-emerald-600" />
-                    Import Filtered to ERP ({filteredValidCount})
-                  </DropdownMenuItem>
-                </>
-              )}
-              {vouchers.length > 0 && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleClear} className="cursor-pointer text-rose-600 focus:text-rose-700">
-                    <Trash className="h-3.5 w-3.5 mr-2" />
-                    Clear All Vouchers
-                  </DropdownMenuItem>
-                </>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
 
-      {/* ── MAIN SEARCH, FILTER & ACTION TOOLBAR (Unified Row) ── */}
-      <div className="bg-white rounded-xl border border-slate-200/80 p-3 shadow-2xs">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-          {/* Left / Center: Search & Filter Controls */}
-          <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
-            {/* Search Input */}
-            <div className="relative w-full sm:w-64 min-w-[200px]">
-              <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-              <Input
-                placeholder="Search party, bank, voucher..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="pl-8 text-xs h-8 bg-slate-50/70 border-slate-200 rounded-lg focus-visible:bg-white"
+      {/* ── MODULE SELECTOR TABS ── */}
+      <Tabs value={activeModule} onValueChange={v => setActiveModule(v as any)} className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-2.5">
+          <TabsList className="bg-slate-100/90 p-1 rounded-xl h-10">
+            <TabsTrigger
+              value="payments"
+              className="text-xs font-bold px-3.5 rounded-lg data-[state=active]:bg-white data-[state=active]:text-violet-700 data-[state=active]:shadow-xs"
+            >
+              💳 Bank & Cash Vouchers ({vouchers.length})
+            </TabsTrigger>
+            <TabsTrigger
+              value="sales"
+              className="text-xs font-bold px-3.5 rounded-lg data-[state=active]:bg-white data-[state=active]:text-violet-700 data-[state=active]:shadow-xs"
+            >
+              📤 Sales (Multi-Line) ({compoundSalesVouchers.length})
+            </TabsTrigger>
+            <TabsTrigger
+              value="purchases"
+              className="text-xs font-bold px-3.5 rounded-lg data-[state=active]:bg-white data-[state=active]:text-violet-700 data-[state=active]:shadow-xs"
+            >
+              📥 Purchases (Multi-Line) ({compoundPurchaseVouchers.length})
+            </TabsTrigger>
+            <TabsTrigger
+              value="notes"
+              className="text-xs font-bold px-3.5 rounded-lg data-[state=active]:bg-white data-[state=active]:text-violet-700 data-[state=active]:shadow-xs"
+            >
+              📜 Credit / Debit Notes ({compoundNotesVouchers.length})
+            </TabsTrigger>
+            <TabsTrigger
+              value="expenses"
+              className="text-xs font-bold px-3.5 rounded-lg data-[state=active]:bg-white data-[state=active]:text-violet-700 data-[state=active]:shadow-xs"
+            >
+              🚛 Expenses & RCM ({compoundExpenseVouchers.length})
+            </TabsTrigger>
+          </TabsList>
+
+          {/* Search Bar */}
+          <div className="relative w-full sm:w-64">
+            <MagnifyingGlass className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+            <Input
+              placeholder="Search voucher, party..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="h-8 pl-8 text-xs bg-white"
+            />
+          </div>
+        </div>
+
+        {/* ── TAB 1: PAYMENTS & RECEIPTS ── */}
+        <TabsContent value="payments" className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+            <div className="flex items-center gap-2">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileInputChange}
+                accept=".xlsx, .xls, .csv"
+                className="hidden"
               />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isParsing}
+                className="text-xs font-bold h-8 border-dashed"
+              >
+                <FileArrowUp className="w-3.5 h-3.5 mr-1.5 text-violet-600" />
+                Upload Tally Excel / CSV
+              </Button>
+              <Button variant="ghost" size="sm" onClick={handleDownloadSample} className="text-xs h-8 text-slate-600">
+                <DownloadSimple className="w-3.5 h-3.5 mr-1 text-slate-500" />
+                Sample
+              </Button>
+              <Button variant="ghost" size="sm" onClick={handleLoadDemoData} className="text-xs h-8 text-emerald-600">
+                <Sparkle className="w-3.5 h-3.5 mr-1" />
+                Demo Data
+              </Button>
             </div>
 
-            {/* Type Filter Pills */}
-            <div className="flex items-center bg-slate-100 p-0.5 rounded-lg text-xs">
-              <button
-                type="button"
-                onClick={() => setTypeFilter('ALL')}
-                className={cn(
-                  'px-2.5 py-1 rounded-md font-medium text-[11px] transition-all',
-                  typeFilter === 'ALL'
-                    ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                    : 'text-slate-600 hover:text-slate-900'
-                )}
+            {onImportToERP && vouchers.length > 0 && (
+              <Button
+                size="sm"
+                onClick={() => onImportToERP(filteredPaymentVouchers.filter(v => v.status === 'valid'))}
+                className="text-xs font-bold h-8 bg-emerald-600 hover:bg-emerald-700 text-white"
               >
-                All
-              </button>
-              <button
-                type="button"
-                onClick={() => setTypeFilter('PAYMENT')}
-                className={cn(
-                  'px-2.5 py-1 rounded-md font-medium text-[11px] transition-all',
-                  typeFilter === 'PAYMENT'
-                    ? 'bg-white text-violet-700 shadow-2xs font-semibold'
-                    : 'text-slate-600 hover:text-violet-700'
-                )}
-              >
-                Payment
-              </button>
-              <button
-                type="button"
-                onClick={() => setTypeFilter('RECEIPT')}
-                className={cn(
-                  'px-2.5 py-1 rounded-md font-medium text-[11px] transition-all',
-                  typeFilter === 'RECEIPT'
-                    ? 'bg-white text-emerald-700 shadow-2xs font-semibold'
-                    : 'text-slate-600 hover:text-emerald-700'
-                )}
-              >
-                Receipt
-              </button>
-              <button
-                type="button"
-                onClick={() => setTypeFilter('CONTRA')}
-                className={cn(
-                  'px-2.5 py-1 rounded-md font-medium text-[11px] transition-all',
-                  typeFilter === 'CONTRA'
-                    ? 'bg-white text-amber-700 shadow-2xs font-semibold'
-                    : 'text-slate-600 hover:text-amber-700'
-                )}
-              >
-                Contra
-              </button>
-            </div>
-
-            {/* Status Filter Pills */}
-            <div className="flex items-center bg-slate-100 p-0.5 rounded-lg text-xs">
-              <button
-                type="button"
-                onClick={() => setStatusFilter('ALL')}
-                className={cn(
-                  'px-2.5 py-1 rounded-md font-medium text-[11px] transition-all',
-                  statusFilter === 'ALL'
-                    ? 'bg-white text-slate-900 shadow-2xs font-semibold'
-                    : 'text-slate-600 hover:text-slate-900'
-                )}
-              >
-                All Status
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('VALID')}
-                className={cn(
-                  'px-2.5 py-1 rounded-md font-medium text-[11px] transition-all',
-                  statusFilter === 'VALID'
-                    ? 'bg-white text-emerald-700 shadow-2xs font-semibold'
-                    : 'text-slate-600 hover:text-emerald-700'
-                )}
-              >
-                Valid Only
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('ISSUES')}
-                className={cn(
-                  'px-2.5 py-1 rounded-md font-medium text-[11px] transition-all',
-                  statusFilter === 'ISSUES'
-                    ? 'bg-white text-rose-700 shadow-2xs font-semibold'
-                    : 'text-slate-600 hover:text-rose-700'
-                )}
-              >
-                Issues ({errors.length + vouchers.filter(v => v.status === 'error').length})
-              </button>
-            </div>
-          </div>
-
-          {/* Right: Import Tally & Filter-Aware Export Action Buttons */}
-          <div className="flex items-center gap-2 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
-            {/* Import Tally Button */}
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isParsing}
-              className="h-8 text-xs font-semibold text-slate-700 hover:text-indigo-600 hover:bg-indigo-50/60 border-slate-200"
-            >
-              {isParsing ? (
-                <ArrowsClockwise className="h-3.5 w-3.5 mr-1.5 animate-spin text-indigo-600" />
-              ) : (
-                <FileArrowUp className="h-3.5 w-3.5 mr-1.5 text-indigo-600" weight="bold" />
-              )}
-              Import Tally
-            </Button>
-
-            {/* Filter-Aware Export Button */}
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleExportFiltered}
-              disabled={filteredValidCount === 0}
-              className={cn(
-                'h-8 text-xs font-semibold shadow-2xs transition-all',
-                filteredValidCount > 0
-                  ? 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer'
-                  : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed hover:bg-slate-100'
-              )}
-            >
-              <FileArrowDown className="h-3.5 w-3.5 mr-1.5" weight="bold" />
-              Export Filtered ({filteredValidCount}) to Tally
-            </Button>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Error & Warning Alert Banner ── */}
-      <AnimatePresence>
-        {(errors.length > 0 || warnings.length > 0) && (
-          <motion.div
-            initial={{ opacity: 0, y: -6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            className="space-y-2"
-          >
-            {errors.length > 0 && (
-              <div className="bg-rose-50 border border-rose-200/80 rounded-xl p-3.5 text-rose-900 text-xs">
-                <div className="flex items-center justify-between font-semibold text-rose-800 mb-1">
-                  <div className="flex items-center gap-1.5">
-                    <WarningOctagon className="h-4 w-4 text-rose-600" weight="fill" />
-                    <span>Validation Issues Detected ({errors.length})</span>
-                  </div>
-                  <span className="text-[11px] text-rose-600 font-normal">
-                    Invalid entries will be excluded from Tally Export
-                  </span>
-                </div>
-                <ul className="list-disc list-inside space-y-0.5 text-rose-700 max-h-28 overflow-y-auto text-[11px]">
-                  {errors.map((err, idx) => (
-                    <li key={idx}>{err}</li>
-                  ))}
-                </ul>
-              </div>
+                <CheckCircle className="w-3.5 h-3.5 mr-1.5" />
+                Import to ERP ({filteredPaymentVouchers.filter(v => v.status === 'valid').length})
+              </Button>
             )}
-
-            {warnings.length > 0 && (
-              <div className="bg-amber-50 border border-amber-200/80 rounded-xl p-3.5 text-amber-900 text-xs">
-                <div className="flex items-center gap-1.5 font-semibold text-amber-800 mb-1">
-                  <WarningCircle className="h-4 w-4 text-amber-600" weight="fill" />
-                  <span>Warnings ({warnings.length})</span>
-                </div>
-                <ul className="list-disc list-inside space-y-0.5 text-amber-700 max-h-24 overflow-y-auto text-[11px]">
-                  {warnings.map((warn, idx) => (
-                    <li key={idx}>{warn}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── Summary Stat KPI Cards ── */}
-      {vouchers.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Card className="border-slate-200/80 shadow-2xs bg-white">
-            <CardContent className="p-3.5 flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
-                  Filtered Vouchers
-                </p>
-                <h3 className="text-xl font-bold text-slate-900 mt-0.5">
-                  {summary.filteredTotal} <span className="text-xs font-normal text-slate-400">/ {summary.totalVouchers}</span>
-                </h3>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className="text-[10px] text-emerald-600 font-medium">{summary.validCount} valid</span>
-                  {summary.issuesCount > 0 && (
-                    <span className="text-[10px] text-rose-600 font-medium">· {summary.issuesCount} issues</span>
-                  )}
-                </div>
-              </div>
-              <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
-                <Receipt className="h-4.5 w-4.5" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-200/80 shadow-2xs bg-white">
-            <CardContent className="p-3.5 flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-semibold text-violet-600 uppercase tracking-wider">
-                  Filtered Payments
-                </p>
-                <h3 className="text-xl font-bold text-violet-700 mt-0.5">
-                  {formatCurrency(summary.totalPaymentAmount)}
-                </h3>
-                <p className="text-[10px] text-slate-500 mt-0.5">
-                  {summary.paymentCount} voucher(s)
-                </p>
-              </div>
-              <div className="w-9 h-9 rounded-lg bg-violet-50 flex items-center justify-center text-violet-600">
-                <CreditCard className="h-4.5 w-4.5" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-200/80 shadow-2xs bg-white">
-            <CardContent className="p-3.5 flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-semibold text-emerald-600 uppercase tracking-wider">
-                  Filtered Receipts
-                </p>
-                <h3 className="text-xl font-bold text-emerald-700 mt-0.5">
-                  {formatCurrency(summary.totalReceiptAmount)}
-                </h3>
-                <p className="text-[10px] text-slate-500 mt-0.5">
-                  {summary.receiptCount} voucher(s)
-                </p>
-              </div>
-              <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
-                <FileArrowDown className="h-4.5 w-4.5" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-slate-200/80 shadow-2xs bg-white">
-            <CardContent className="p-3.5 flex items-center justify-between">
-              <div>
-                <p className="text-[10px] font-semibold text-amber-600 uppercase tracking-wider">
-                  Contra / Transfers
-                </p>
-                <h3 className="text-xl font-bold text-amber-700 mt-0.5">
-                  {formatCurrency(summary.totalContraAmount)}
-                </h3>
-                <p className="text-[10px] text-slate-500 mt-0.5">
-                  {summary.contraCount} voucher(s)
-                </p>
-              </div>
-              <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
-                <ArrowsLeftRight className="h-4.5 w-4.5" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* ── Table or Empty State ── */}
-      {vouchers.length === 0 ? (
-        <div className="bg-white rounded-xl border border-slate-200/80 p-8 text-center shadow-2xs">
-          <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto mb-3">
-            <FileXls className="h-6 w-6" weight="duotone" />
           </div>
-          <h3 className="text-sm font-bold text-slate-800">No Tally Vouchers Loaded</h3>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 mb-4">
-            Click "Import Tally" in the toolbar above to upload an Excel voucher sheet, or load sample demo vouchers.
-          </p>
-          <div className="flex items-center justify-center gap-2.5">
-            <Button
-              size="sm"
-              onClick={() => fileInputRef.current?.click()}
-              className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white"
-            >
-              <FileArrowUp className="h-3.5 w-3.5 mr-1.5" />
-              Import Tally Excel
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleLoadDemoData}
-              className="text-xs font-medium text-slate-700 border-slate-200 hover:bg-slate-50"
-            >
-              <Sparkle className="h-3.5 w-3.5 mr-1.5 text-emerald-500" />
-              Load Demo Vouchers
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="bg-white rounded-xl border border-slate-200/80 shadow-2xs overflow-hidden">
-          {/* Table View */}
-          <div className="overflow-x-auto max-h-[500px]">
-            <Table>
-              <TableHeader className="bg-slate-50/80 sticky top-0 z-10">
-                <TableRow className="border-b border-slate-200">
-                  <TableHead className="w-8"></TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-700">Voucher No & Date</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-700">Type</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-700">Party Ledger</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-700">Bank / Cash Account</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-700 text-right">Amount (₹)</TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-700 text-center">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredVouchers.length === 0 ? (
+
+          <Card className="border-slate-200/80 shadow-sm overflow-hidden">
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader className="bg-slate-50/80">
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-10 text-slate-400 text-xs">
-                      No vouchers match the current search or filter criteria.
-                    </TableCell>
+                    <TableHead className="text-xs font-bold text-slate-700">Type</TableHead>
+                    <TableHead className="text-xs font-bold text-slate-700">Voucher No</TableHead>
+                    <TableHead className="text-xs font-bold text-slate-700">Date</TableHead>
+                    <TableHead className="text-xs font-bold text-slate-700">Party Account (Dr/Cr)</TableHead>
+                    <TableHead className="text-xs font-bold text-slate-700">Bank / Cash Account</TableHead>
+                    <TableHead className="text-xs font-bold text-slate-700 text-right">Amount (₹)</TableHead>
+                    <TableHead className="text-xs font-bold text-slate-700 text-center">Status</TableHead>
                   </TableRow>
-                ) : (
-                  filteredVouchers.map(v => {
-                    const isExpanded = !!expandedRows[v.id]
-                    return (
-                      <React.Fragment key={v.id}>
-                        <TableRow
-                          onClick={() => toggleRow(v.id)}
-                          className={cn(
-                            'cursor-pointer hover:bg-slate-50/80 transition-colors border-b border-slate-100',
-                            isExpanded && 'bg-indigo-50/20'
-                          )}
-                        >
-                          <TableCell className="py-2.5 px-2 text-center text-slate-400">
-                            {isExpanded ? (
-                              <CaretUp className="h-3.5 w-3.5 inline" />
-                            ) : (
-                              <CaretDown className="h-3.5 w-3.5 inline" />
+                </TableHeader>
+                <TableBody>
+                  {filteredPaymentVouchers.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8 text-xs text-slate-400">
+                        No payment or receipt vouchers available.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredPaymentVouchers.map(v => (
+                      <TableRow key={v.id} className="hover:bg-slate-50/50">
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={cn(
+                              'text-[10px] font-bold',
+                              v.type === 'PAYMENT' && 'bg-rose-50 text-rose-700 border-rose-200',
+                              v.type === 'RECEIPT' && 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                              v.type === 'CONTRA' && 'bg-blue-50 text-blue-700 border-blue-200'
                             )}
-                          </TableCell>
-
-                          <TableCell className="py-2.5 font-medium text-xs text-slate-900">
-                            <div className="font-semibold">{v.voucherNumber}</div>
-                            <div className="text-[11px] text-slate-400 mt-0.5">
-                              {v.displayDate || v.voucherDate}
-                            </div>
-                          </TableCell>
-
-                          <TableCell className="py-2.5">
-                            <Badge
-                              variant="outline"
-                              className={cn(
-                                'text-[10px] font-semibold tracking-wide uppercase px-2 py-0.5 border',
-                                v.type === 'PAYMENT' && 'bg-violet-50 text-violet-700 border-violet-200',
-                                v.type === 'RECEIPT' && 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                                v.type === 'CONTRA' && 'bg-amber-50 text-amber-700 border-amber-200'
-                              )}
-                            >
-                              {v.type}
+                          >
+                            {v.type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs font-bold text-slate-900">{v.voucherNumber}</TableCell>
+                        <TableCell className="text-xs text-slate-600">{v.displayDate || v.voucherDate}</TableCell>
+                        <TableCell className="font-semibold text-xs text-slate-800">{v.partyLedger}</TableCell>
+                        <TableCell className="text-xs text-slate-600">{v.bankCashLedger}</TableCell>
+                        <TableCell className="text-xs text-right font-mono font-bold text-slate-900">
+                          {formatCurrency(v.amount)}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {v.status === 'valid' ? (
+                            <Badge className="bg-emerald-100 text-emerald-800 text-[10px]">Valid</Badge>
+                          ) : (
+                            <Badge variant="destructive" className="text-[10px]">
+                              Issue
                             </Badge>
-                          </TableCell>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-                          <TableCell className="py-2.5 text-xs text-slate-800">
-                            <div className="font-medium">{v.partyLedger}</div>
-                            {(v.address || v.pincode) && (
-                              <div className="text-[11px] text-slate-400 truncate max-w-xs mt-0.5">
-                                {[v.address, v.pincode].filter(Boolean).join(', ')}
-                              </div>
-                            )}
-                          </TableCell>
-
-                          <TableCell className="py-2.5 text-xs text-slate-700 font-medium">
-                            {v.bankCashLedger}
-                          </TableCell>
-
-                          <TableCell className="py-2.5 text-xs font-bold text-slate-900 text-right">
-                            {formatCurrency(v.amount)}
-                          </TableCell>
-
-                          <TableCell className="py-2.5 text-center">
-                            {v.status === 'valid' && v.isValid !== false ? (
-                              <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-semibold">
-                                Valid
-                              </Badge>
-                            ) : v.status === 'warning' ? (
-                              <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-semibold">
-                                Warning
-                              </Badge>
-                            ) : (
-                              <Badge className="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-semibold">
-                                Error
-                              </Badge>
-                            )}
-                          </TableCell>
-                        </TableRow>
-
-                        {/* ── Expanded Double-Entry Breakdown ── */}
-                        {isExpanded && (
-                          <TableRow className="bg-slate-50/60 border-b border-slate-200">
-                            <TableCell colSpan={7} className="p-3.5">
-                              <div className="bg-white rounded-xl p-3.5 border border-slate-200 shadow-2xs space-y-2.5">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                                    <ArrowBendDownRight className="h-3.5 w-3.5 text-indigo-600" />
-                                    <span>Tally Double-Entry Journal Legs (2 Rows)</span>
-                                  </div>
-                                  <span className="text-[10px] text-slate-400">
-                                    Key: {v.type}_{v.voucherNumber}_{v.voucherDate}
-                                  </span>
-                                </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 text-xs">
-                                  {/* Debit Leg */}
-                                  <div className="bg-emerald-50/40 border border-emerald-200/70 rounded-lg p-2.5">
-                                    <div className="flex items-center justify-between mb-1">
-                                      <span className="font-bold text-emerald-800 uppercase tracking-wider text-[10px]">
-                                        Debit (Dr) Leg
-                                      </span>
-                                      <span className="font-bold text-emerald-700">
-                                        {formatCurrency(v.amount)}
-                                      </span>
-                                    </div>
-                                    <p className="font-semibold text-slate-900">
-                                      {v.type === 'PAYMENT' ? v.partyLedger : v.bankCashLedger}
-                                    </p>
-                                    <p className="text-[10px] text-slate-500 mt-0.5">
-                                      Role:{' '}
-                                      {v.type === 'PAYMENT'
-                                        ? 'Party Ledger (Receiving funds)'
-                                        : 'Bank/Cash Account (Receiving funds)'}
-                                    </p>
-                                  </div>
-
-                                  {/* Credit Leg */}
-                                  <div className="bg-violet-50/40 border border-violet-200/70 rounded-lg p-2.5">
-                                    <div className="flex items-center justify-between mb-1">
-                                      <span className="font-bold text-violet-800 uppercase tracking-wider text-[10px]">
-                                        Credit (Cr) Leg
-                                      </span>
-                                      <span className="font-bold text-violet-700">
-                                        {formatCurrency(v.amount)}
-                                      </span>
-                                    </div>
-                                    <p className="font-semibold text-slate-900">
-                                      {v.type === 'PAYMENT' ? v.bankCashLedger : v.partyLedger}
-                                    </p>
-                                    <p className="text-[10px] text-slate-500 mt-0.5">
-                                      Role:{' '}
-                                      {v.type === 'PAYMENT'
-                                        ? 'Bank/Cash Account (Disbursing funds)'
-                                        : 'Party Ledger (Paying party)'}
-                                    </p>
-                                  </div>
-                                </div>
-
-                                {v.errors && v.errors.length > 0 && (
-                                  <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs p-2 rounded-lg">
-                                    <p className="font-semibold text-[11px]">Voucher Issues:</p>
-                                    <ul className="list-disc list-inside mt-0.5 space-y-0.5 text-[10px]">
-                                      {v.errors.map((err, i) => (
-                                        <li key={i}>{err}</li>
-                                      ))}
-                                    </ul>
-                                  </div>
-                                )}
-                              </div>
-                            </TableCell>
-                          </TableRow>
+        {/* ── TABS 2, 3, 4, 5: COMPOUND MULTI-LINE VOUCHERS VIEW ── */}
+        {activeModule !== 'payments' && (
+          <TabsContent value={activeModule} className="space-y-4">
+            <div className="grid grid-cols-1 gap-4">
+              {activeCompoundList.length === 0 ? (
+                <Card className="border-slate-200/80 shadow-sm p-8 text-center text-xs text-slate-400">
+                  No {activeModule} double-entry vouchers found for the current period.
+                </Card>
+              ) : (
+                activeCompoundList.map(v => (
+                  <Card key={v.id} className="border-slate-200/80 shadow-sm overflow-hidden bg-white">
+                    <div className="bg-slate-50/80 border-b border-slate-200 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <Badge className="bg-slate-800 text-white text-[11px] font-mono font-bold">
+                          {v.voucherType}
+                        </Badge>
+                        <span className="font-mono text-xs font-extrabold text-indigo-900">#{v.voucherNumber}</span>
+                        <span className="text-xs text-slate-500">•</span>
+                        <span className="text-xs text-slate-600 font-medium">{v.displayDate}</span>
+                        <span className="text-xs text-slate-500">•</span>
+                        <span className="text-xs font-bold text-slate-800">{v.partyName}</span>
+                        {v.partyGstin && (
+                          <Badge variant="outline" className="text-[10px] font-mono text-slate-600">
+                            {v.partyGstin}
+                          </Badge>
                         )}
-                      </React.Fragment>
-                    )
-                  })
-                )}
-              </TableBody>
-            </Table>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <span className="text-xs font-extrabold font-mono text-slate-900">
+                            {formatCurrency(v.totalAmount)}
+                          </span>
+                        </div>
+                        {v.isBalanced ? (
+                          <Badge className="bg-emerald-100 text-emerald-800 text-[10px] flex items-center gap-1">
+                            <CheckCircle className="w-3 h-3 text-emerald-600" />
+                            Dr = Cr Balanced
+                          </Badge>
+                        ) : (
+                          <Badge variant="destructive" className="text-[10px] flex items-center gap-1">
+                            <WarningCircle className="w-3 h-3" />
+                            Diff: {formatCurrency(v.imbalanceDifference)}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+
+                    <CardContent className="p-0">
+                      <Table>
+                        <TableHeader className="bg-slate-50/40">
+                          <TableRow>
+                            <TableHead className="text-[11px] font-bold text-slate-600 w-16">Dr / Cr</TableHead>
+                            <TableHead className="text-[11px] font-bold text-slate-600">Tally Ledger Name</TableHead>
+                            <TableHead className="text-[11px] font-bold text-slate-600 text-right w-36">
+                              Debit Amount (₹)
+                            </TableHead>
+                            <TableHead className="text-[11px] font-bold text-slate-600 text-right w-36">
+                              Credit Amount (₹)
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {v.legs.map((leg, idx) => (
+                            <TableRow key={idx} className="hover:bg-slate-50/40 text-xs font-mono">
+                              <TableCell>
+                                <span
+                                  className={cn(
+                                    'font-bold px-1.5 py-0.5 rounded text-[10px]',
+                                    leg.drCr === 'Dr'
+                                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                      : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  )}
+                                >
+                                  {leg.drCr}
+                                </span>
+                              </TableCell>
+                              <TableCell className="font-sans font-semibold text-slate-800">
+                                {leg.ledgerName}
+                              </TableCell>
+                              <TableCell className="text-right text-blue-700 font-bold">
+                                {leg.drCr === 'Dr' ? formatCurrency(leg.amount) : '-'}
+                              </TableCell>
+                              <TableCell className="text-right text-emerald-700 font-bold">
+                                {leg.drCr === 'Cr' ? formatCurrency(leg.amount) : '-'}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                      <div className="bg-slate-50/60 p-2.5 px-4 text-[11px] text-slate-500 border-t border-slate-100 flex items-center gap-1.5">
+                        <span className="font-semibold text-slate-700">Narration:</span>
+                        <span>{v.narration}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
+          </TabsContent>
+        )}
+      </Tabs>
+
+      {/* ── LEDGER MAPPING CONFIGURATION DIALOG ── */}
+      <Dialog open={isMappingModalOpen} onOpenChange={setIsMappingModalOpen}>
+        <DialogContent className="sm:max-w-[540px]">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold flex items-center gap-2">
+              <Gear className="w-5 h-5 text-violet-600" weight="duotone" />
+              Tally Ledger Name Configuration
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              Customize standard chart-of-accounts ledger names to match your Tally Prime company masters.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-2 gap-3 py-2 text-xs">
+            <div className="space-y-1">
+              <label className="font-semibold text-slate-700 text-[11px]">Sales Account</label>
+              <Input
+                value={tempMapping.salesLedgerName}
+                onChange={e => setTempMapping({ ...tempMapping, salesLedgerName: e.target.value })}
+                className="h-8 text-xs font-mono"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="font-semibold text-slate-700 text-[11px]">Purchase Account</label>
+              <Input
+                value={tempMapping.purchaseLedgerName}
+                onChange={e => setTempMapping({ ...tempMapping, purchaseLedgerName: e.target.value })}
+                className="h-8 text-xs font-mono"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="font-semibold text-slate-700 text-[11px]">Output CGST</label>
+              <Input
+                value={tempMapping.outputCgstLedgerName}
+                onChange={e => setTempMapping({ ...tempMapping, outputCgstLedgerName: e.target.value })}
+                className="h-8 text-xs font-mono"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="font-semibold text-slate-700 text-[11px]">Output SGST</label>
+              <Input
+                value={tempMapping.outputSgstLedgerName}
+                onChange={e => setTempMapping({ ...tempMapping, outputSgstLedgerName: e.target.value })}
+                className="h-8 text-xs font-mono"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="font-semibold text-slate-700 text-[11px]">Output IGST</label>
+              <Input
+                value={tempMapping.outputIgstLedgerName}
+                onChange={e => setTempMapping({ ...tempMapping, outputIgstLedgerName: e.target.value })}
+                className="h-8 text-xs font-mono"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="font-semibold text-slate-700 text-[11px]">Round Off Account</label>
+              <Input
+                value={tempMapping.roundOffLedgerName}
+                onChange={e => setTempMapping({ ...tempMapping, roundOffLedgerName: e.target.value })}
+                className="h-8 text-xs font-mono"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="font-semibold text-slate-700 text-[11px]">Input CGST</label>
+              <Input
+                value={tempMapping.inputCgstLedgerName}
+                onChange={e => setTempMapping({ ...tempMapping, inputCgstLedgerName: e.target.value })}
+                className="h-8 text-xs font-mono"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="font-semibold text-slate-700 text-[11px]">Input SGST</label>
+              <Input
+                value={tempMapping.inputSgstLedgerName}
+                onChange={e => setTempMapping({ ...tempMapping, inputSgstLedgerName: e.target.value })}
+                className="h-8 text-xs font-mono"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="font-semibold text-slate-700 text-[11px]">Input IGST</label>
+              <Input
+                value={tempMapping.inputIgstLedgerName}
+                onChange={e => setTempMapping({ ...tempMapping, inputIgstLedgerName: e.target.value })}
+                className="h-8 text-xs font-mono"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="font-semibold text-slate-700 text-[11px]">Sales Return</label>
+              <Input
+                value={tempMapping.salesReturnLedgerName}
+                onChange={e => setTempMapping({ ...tempMapping, salesReturnLedgerName: e.target.value })}
+                className="h-8 text-xs font-mono"
+              />
+            </div>
           </div>
 
-          {/* Table Footer */}
-          <div className="p-2.5 bg-slate-50 border-t border-slate-200/80 flex items-center justify-between text-xs text-slate-500">
-            <span>
-              Showing {filteredVouchers.length} of {vouchers.length} voucher(s)
-              {filteredValidCount !== filteredVouchers.length && (
-                <span className="text-slate-400 ml-1">({filteredValidCount} exportable)</span>
-              )}
-            </span>
-            <span className="text-[11px] text-slate-400">
-              Click any row to expand double-entry details
-            </span>
-          </div>
-        </div>
-      )}
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setTempMapping(DEFAULT_TALLY_LEDGER_MAPPING)}
+              className="text-xs h-8"
+            >
+              Reset to Defaults
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSaveLedgerMapping}
+              className="text-xs h-8 bg-violet-600 hover:bg-violet-700 text-white font-bold"
+            >
+              Save Configuration
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -825,4 +825,5 @@ export function exportGstReportsToExcel(
 // Re-export Tally Excel Import & Export utilities and types
 export * from './tally-payment-types'
 export * from './tally-payment-excel'
+export * from './tally-universal-engine'
 
