@@ -12,6 +12,7 @@ import { Customer, Supplier, Item, ExpenseType } from './types'
 import {
   TallyParsedXmlVoucher,
   TallyXmlImportResult,
+  TallyXmlAdditionalCharge,
   normalizeTallyVoucherType,
   TallyNewMasterCandidates,
   TallyNewMasterCandidateParty,
@@ -19,7 +20,10 @@ import {
   TallyNewMasterCandidateCounter,
   TallyNewMasterCandidateItem,
   isLikelyIndirectExpenseLedger,
-  isCashLedger
+  isCashLedger,
+  isGstTaxLedger,
+  isRoundOffLedger,
+  isMainTradingLedger
 } from './tally-xml-parser'
 
 // Re-export all types so callers can import everything from this single module
@@ -1565,6 +1569,63 @@ export function parseTallyAccountingVouchersExcel(
       }
     }
 
+    // Extract Additional Charges & Statutory Taxes for Purchase & Sales Invoices
+    let voucherCgst = 0
+    let voucherSgst = 0
+    let voucherIgst = 0
+    let voucherRoundOff = 0
+    const additionalCharges: TallyXmlAdditionalCharge[] = []
+
+    const partyLegName = (partyName || '').trim().toLowerCase()
+
+    legs.forEach((leg, lIdx) => {
+      const norm = leg.ledgerName.trim().toLowerCase()
+      if (norm === partyLegName || norm.includes('cash customer')) {
+        return
+      }
+
+      if (norm.includes('cgst')) {
+        voucherCgst += leg.amount
+      } else if (norm.includes('sgst') || norm.includes('utgst')) {
+        voucherSgst += leg.amount
+      } else if (norm.includes('igst')) {
+        voucherIgst += leg.amount
+      } else if (isRoundOffLedger(leg.ledgerName)) {
+        voucherRoundOff = leg.isDeemedPositive ? leg.amount : -leg.amount
+      } else if (isMainTradingLedger(leg.ledgerName)) {
+        // Main trading purchase/sales ledger
+      } else if (normalizedType === 'purchase' || normalizedType === 'sales') {
+        const isTcs = norm.includes('tcs')
+        const sacCode = norm.includes('freight') || norm.includes('transport') ? '996511' : undefined
+        const chargeTaxable = leg.amount
+        const chargeGstRate = isTcs ? 0 : 18
+        const chargeCgst = isTcs ? 0 : Math.round(chargeTaxable * (chargeGstRate / 2) / 100 * 100) / 100
+        const chargeSgst = isTcs ? 0 : Math.round(chargeTaxable * (chargeGstRate / 2) / 100 * 100) / 100
+        const chargeIgst = 0
+        const finalAmt = chargeTaxable + chargeCgst + chargeSgst + chargeIgst
+
+        additionalCharges.push({
+          id: `charge-${lIdx + 1}`,
+          ledgerName: leg.ledgerName,
+          remarks: leg.ledgerName,
+          sacCode,
+          basicRate: chargeTaxable,
+          taxableAmount: chargeTaxable,
+          gstRate: chargeGstRate,
+          cgstAmount: chargeCgst,
+          sgstAmount: chargeSgst,
+          igstAmount: chargeIgst,
+          finalAmt
+        })
+      }
+    })
+
+    const itemsTaxable = inventory.reduce((sum, inv) => sum + inv.amount, 0)
+    const chargesTaxable = additionalCharges.reduce((sum, c) => sum + c.taxableAmount, 0)
+    const computedTaxable = itemsTaxable > 0
+      ? itemsTaxable + chargesTaxable
+      : (totalAmount - voucherCgst - voucherSgst - voucherIgst - voucherRoundOff)
+
     vouchers.push({
       id: `xlsx-vch-${vchIndex}`,
       voucherNumber: voucherNo,
@@ -1577,6 +1638,12 @@ export function parseTallyAccountingVouchersExcel(
       narration: `Imported from Tally Excel #${voucherNo}`,
       legs,
       inventory,
+      additionalCharges,
+      taxableAmount: computedTaxable,
+      cgstAmount: voucherCgst,
+      sgstAmount: voucherSgst,
+      igstAmount: voucherIgst,
+      roundOff: voucherRoundOff,
       drTotal,
       crTotal,
       totalAmount,

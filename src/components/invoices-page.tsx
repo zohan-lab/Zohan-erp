@@ -527,7 +527,6 @@ export default function InvoicesPage({
     const { totalQty, totalAmount: totalAmt } = calculateInvoiceItemsTotals(invoiceItems)
     const { basicRateTotal: additionalCostBasicRate, finalAmtTotal: additionalCost, remarksJoined: additionalCostRemarks } = calculateAdditionalChargesTotals(additionalCharges)
     const roundOffAdjustment = parseFloat(formData.get('roundOffAdjustment') as string) || 0
-    const finalInvoiceAmount = calculateInvoiceFinalAmount(totalAmt, additionalCost, roundOffAdjustment)
     const amountValue = amountPaid || formData.get('amountPaid') as string
     const finalAmountPaid = Math.max(0, parseFloat(amountValue) || 0)
     const counterId = formData.get('counterId') as string
@@ -562,12 +561,15 @@ export default function InvoicesPage({
     const taxSummary = calculateInvoiceTaxBreakdown({
       items: sanitizedItems,
       itemsMaster: items,
+      additionalCharges,
       additionalCostBasicRate: additionalCostBasicRate || 0,
       additionalCostFinal: additionalCost || 0,
       partyState: suppliers.find(s => s.id === supplierId)?.stateCode || suppliers.find(s => s.id === supplierId)?.stateName || suppliers.find(s => s.id === supplierId)?.state,
       customRoundOff: roundOffAdjustment,
       defaultGstRate: gstPercentage
     })
+
+    const finalInvoiceAmount = taxSummary.totalAmount
 
     const finalItems: InvoiceItem[] = sanitizedItems.map((sItem, idx) => {
       const lineBreakdown = taxSummary.lineBreakdowns[idx]
@@ -591,6 +593,7 @@ export default function InvoicesPage({
         invoiceNo: invoiceNo,
         invoiceDate: invoiceDate,
         items: finalItems,
+        additionalCharges: additionalCharges.length > 0 ? additionalCharges : undefined,
         invoiceAmount: finalInvoiceAmount,
         additionalCost: additionalCost,
         additionalCostBasicRate: additionalCostBasicRate || undefined,
@@ -621,7 +624,7 @@ export default function InvoicesPage({
           }
         ]
       }
-      setInvoices((prev) => prev.map(inv => inv.id === editingInvoice.id ? updated : inv))
+      setInvoices((prev) => prev.map((inv) => (inv.id === editingInvoice.id ? updated : inv)))
       if (activeCompanyId) {
         void saveInvoice(activeCompanyId, updated)
       }
@@ -635,6 +638,7 @@ export default function InvoicesPage({
         invoiceNo: invoiceNo,
         invoiceDate: invoiceDate,
         items: finalItems,
+        additionalCharges: additionalCharges.length > 0 ? additionalCharges : undefined,
         invoiceAmount: finalInvoiceAmount,
         additionalCost: additionalCost,
         additionalCostBasicRate: additionalCostBasicRate || undefined,
@@ -751,19 +755,24 @@ export default function InvoicesPage({
     setSupplierPickerOpen(false)
     setSupplierSearch('')
     setInvoiceItems(invoice.items || [])
-    const hasCost = Boolean(invoice.additionalCost || invoice.additionalCostBasicRate || invoice.additionalCostRemarks);
-    setShowAdditionalCharge(hasCost);
-    if (hasCost) {
-      setAdditionalCharges([{
-        id: Math.random().toString(36).substring(7),
-        remarks: invoice.additionalCostRemarks || '',
-        basicRate: invoice.additionalCostBasicRate || 0,
-        taxMode: invoice.additionalCostBasicRate && invoice.additionalCost && invoice.additionalCost > invoice.additionalCostBasicRate ? 'gst' : 'none',
-        gstRate: gstPercentage,
-        finalAmt: invoice.additionalCost || 0
-      }]);
+    if (invoice.additionalCharges && invoice.additionalCharges.length > 0) {
+      setShowAdditionalCharge(true)
+      setAdditionalCharges(invoice.additionalCharges)
     } else {
-      setAdditionalCharges([]);
+      const hasCost = Boolean(invoice.additionalCost || invoice.additionalCostBasicRate || invoice.additionalCostRemarks)
+      setShowAdditionalCharge(hasCost)
+      if (hasCost) {
+        setAdditionalCharges([{
+          id: Math.random().toString(36).substring(7),
+          remarks: invoice.additionalCostRemarks || '',
+          basicRate: invoice.additionalCostBasicRate || 0,
+          taxMode: invoice.additionalCostBasicRate && invoice.additionalCost && invoice.additionalCost > invoice.additionalCostBasicRate ? 'gst' : 'none',
+          gstRate: gstPercentage,
+          finalAmt: invoice.additionalCost || 0
+        }])
+      } else {
+        setAdditionalCharges([])
+      }
     }
     setRoundOffAdjustment(invoice.roundOffAdjustment || 0)
     const linkedPayment = payments.find((payment) => payment.id === getInvoicePaymentId(invoice.id))
@@ -1930,7 +1939,7 @@ export default function InvoicesPage({
                         </TableCell>
                         <TableCell className="text-slate-600 text-xs font-medium">{new Date(invoice.invoiceDate).toLocaleDateString('en-IN')}</TableCell>
                         <TableCell className="font-semibold text-slate-800 text-sm">{supplier?.name || 'Unknown'}</TableCell>
-                        <TableCell className="text-right font-mono font-bold text-slate-900 text-sm">{formatCurrency(invoice.invoiceAmount)}</TableCell>
+                        <TableCell className="text-right font-mono font-bold text-slate-900 text-sm">{formatCurrency(invoice.totalAmount ?? invoice.invoiceAmount)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
                             <Button

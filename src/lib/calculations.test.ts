@@ -8,13 +8,15 @@ import {
   getBookingNormalizedMT,
   formatCurrency,
   calculateInvoiceTaxBreakdown,
+  calculateInvoiceTotals,
+  calculateInvoiceListTotals,
   calculateExpenseTaxBreakdown,
   calculateNoteTaxBreakdown,
   calculateExpenseTotals,
   isInterStateTransaction
 } from './calculations'
 import { convertItemQuantity, getInvoiceQtyForUnit, isUnitCompatible } from './unit-conversion-service'
-import { Payment, PurchaseInvoice, Supplier } from './types'
+import { Payment, PurchaseInvoice, Supplier, AdditionalCharge } from './types'
 
 function invoice(overrides: Partial<PurchaseInvoice>): PurchaseInvoice {
   return {
@@ -820,5 +822,96 @@ describe('calculateNoteTaxBreakdown', () => {
     expect(result.sgstAmount).toBe(0)
     expect(result.igstAmount).toBe(0)
     expect(result.totalAmount).toBe(5000)
+  })
+})
+
+describe('calculateInvoiceTotals & Additional Charges Parity (Benchmark #RV1200012668)', () => {
+  it('strictly computes exact statutory math for Benchmark Invoice #RV1200012668 with zero drift', () => {
+    // Benchmark Invoice #RV1200012668
+    // Item 1: 8MM (9.06 TON @ 58,628.80) = ₹5,31,176.89 (taxable), CGST 9% = ₹47,805.92, SGST 9% = ₹47,805.92
+    // Item 2: 12MM (3.00 TON @ 57,188.49) = ₹1,71,565.48 (taxable), CGST 9% = ₹15,440.89, SGST 9% = ₹15,440.89
+    // Additional Charge: Freight Charges (SAC 996511) = ₹1,200.00 (taxable) + 18% GST (CGST ₹108.00 + SGST ₹108.00) = ₹1,416.00
+    // Taxable Base = ₹5,31,176.89 + ₹1,71,565.48 + ₹1,200.00 = ₹7,03,942.37
+    // Total CGST = ₹47,805.92 + ₹15,440.89 + ₹108.00 = ₹63,354.81
+    // Total SGST = ₹47,805.92 + ₹15,440.89 + ₹108.00 = ₹63,354.81
+    // Round Off = ₹0.01
+    // Final Total Amount = ₹8,30,652.00
+
+    const freightCharge: AdditionalCharge = {
+      id: 'chg-1',
+      remarks: 'Freight Charges',
+      sacCode: '996511',
+      basicRate: 1200.00,
+      taxableAmount: 1200.00,
+      taxMode: 'gst',
+      gstRate: 18,
+      cgstAmount: 108.00,
+      sgstAmount: 108.00,
+      igstAmount: 0,
+      finalAmt: 1416.00
+    }
+
+    const testInvoice: PurchaseInvoice = {
+      id: 'inv-rv1200012668',
+      supplierId: 'sup-captain-steel',
+      invoiceNo: 'RV1200012668',
+      invoiceDate: '2026-04-10',
+      invoiceAmount: 830652.00,
+      totalAmount: 830652.00,
+      roundOff: 0.01,
+      roundOffAdjustment: 0.01,
+      additionalCharges: [freightCharge],
+      items: [
+        {
+          itemId: 'item-8mm',
+          enteredQuantity: 9.06,
+          enteredUnit: 'TON',
+          baseQuantity: 9060,
+          basicRate: 58628.80,
+          rate: 58628.80,
+          amount: 531176.89,
+          taxableAmount: 531176.89,
+          gstRate: 18,
+          cgstRate: 9,
+          cgstAmount: 47805.92,
+          sgstRate: 9,
+          sgstAmount: 47805.92,
+          igstRate: 0,
+          igstAmount: 0
+        },
+        {
+          itemId: 'item-12mm',
+          enteredQuantity: 3.00,
+          enteredUnit: 'TON',
+          baseQuantity: 3000,
+          basicRate: 57188.49,
+          rate: 57188.49,
+          amount: 171565.48,
+          taxableAmount: 171565.48,
+          gstRate: 18,
+          cgstRate: 9,
+          cgstAmount: 15440.89,
+          sgstRate: 9,
+          sgstAmount: 15440.89,
+          igstRate: 0,
+          igstAmount: 0
+        }
+      ],
+      fy: '2026-2027'
+    }
+
+    const totals = calculateInvoiceTotals(testInvoice)
+
+    expect(totals.taxableAmount).toBe(703942.37)
+    expect(totals.cgstAmount).toBe(63354.81)
+    expect(totals.sgstAmount).toBe(63354.81)
+    expect(totals.igstAmount).toBe(0)
+    expect(totals.roundOff).toBe(0.01)
+    expect(totals.totalAmount).toBe(830652.00)
+
+    // Table List View Totals Parity
+    const listTotals = calculateInvoiceListTotals([testInvoice])
+    expect(listTotals.totalAmount).toBe(830652.00)
+    expect(formatCurrency(totals.totalAmount)).toBe('₹8,30,652.00')
   })
 })

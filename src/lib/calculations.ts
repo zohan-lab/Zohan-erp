@@ -62,6 +62,9 @@
 
 import {
   PurchaseInvoice,
+  SalesInvoice,
+  InvoiceItem,
+  AdditionalCharge,
   Payment,
   PaymentAllocation,
   PaymentAdvanceInfo,
@@ -1285,6 +1288,7 @@ export interface InvoiceTaxBreakdownParams {
     gstRate?: number
   }>
   itemsMaster?: Item[]
+  additionalCharges?: AdditionalCharge[]
   additionalCostBasicRate?: number
   additionalCostFinal?: number
   discountsAmount?: number
@@ -1303,11 +1307,14 @@ export interface InvoiceTaxBreakdownParams {
  *    - If rate === 0: row tax is 0
  *    - If Intra-State: rowCgst = Round(rowTaxable * (rate / 2) / 100, 2), rowSgst = Round(rowTaxable * (rate / 2) / 100, 2), rowIgst = 0
  *    - If Inter-State: rowIgst = Round(rowTaxable * rate / 100, 2), rowCgst = 0, rowSgst = 0
- * 3. Totals:
- *    - totalTaxable = sum(rowTaxable) + additionalCostBasic - discounts
- *    - totalCgst = sum(rowCgst) + additionalCgst
- *    - totalSgst = sum(rowSgst) + additionalSgst
- *    - totalIgst = sum(rowIgst) + additionalIgst
+ * 3. Additional Charges Calculation:
+ *    - chargeTaxable = charge.taxableAmount ?? charge.basicRate
+ *    - chargeCgst / chargeSgst / chargeIgst based on charge.gstRate (or 18%)
+ * 4. Totals:
+ *    - totalTaxable = sum(rowTaxable) + sum(chargeTaxable) - discounts
+ *    - totalCgst = sum(rowCgst) + sum(chargeCgst)
+ *    - totalSgst = sum(rowSgst) + sum(chargeSgst)
+ *    - totalIgst = sum(rowIgst) + sum(chargeIgst)
  *    - grandTotal = Math.round(totalTaxable + totalCgst + totalSgst + totalIgst)
  *    - roundOff = grandTotal - (totalTaxable + totalCgst + totalSgst + totalIgst)
  */
@@ -1328,6 +1335,7 @@ export function calculateInvoiceTaxBreakdown(params: InvoiceTaxBreakdownParams):
   const {
     items = [],
     itemsMaster = [],
+    additionalCharges = [],
     additionalCostBasicRate = 0,
     additionalCostFinal = 0,
     discountsAmount = 0,
@@ -1367,7 +1375,9 @@ export function calculateInvoiceTaxBreakdown(params: InvoiceTaxBreakdownParams):
       }
     }
 
-    const rowTaxable = Math.max(0, roundCurrency((qty * basicRate) - lineDiscount))
+    const rowTaxable = typeof (line as any).taxableAmount === 'number' && (line as any).taxableAmount > 0
+      ? (line as any).taxableAmount
+      : Math.max(0, roundCurrency((qty * (basicRate || 0)) - lineDiscount))
     sumRowTaxable += rowTaxable
 
     let rowCgst = 0
@@ -1380,12 +1390,18 @@ export function calculateInvoiceTaxBreakdown(params: InvoiceTaxBreakdownParams):
     if (lineRate > 0) {
       if (isInterState) {
         igstRate = lineRate
-        rowIgst = Math.round(rowTaxable * (igstRate / 100) * 100) / 100
+        rowIgst = typeof (line as any).igstAmount === 'number' && (line as any).igstAmount > 0
+          ? (line as any).igstAmount
+          : Math.round(rowTaxable * (igstRate / 100) * 100) / 100
       } else {
         cgstRate = lineRate / 2
         sgstRate = lineRate / 2
-        rowCgst = Math.round(rowTaxable * (cgstRate / 100) * 100) / 100
-        rowSgst = Math.round(rowTaxable * (sgstRate / 100) * 100) / 100
+        rowCgst = typeof (line as any).cgstAmount === 'number' && (line as any).cgstAmount > 0
+          ? (line as any).cgstAmount
+          : Math.round(rowTaxable * (cgstRate / 100) * 100) / 100
+        rowSgst = typeof (line as any).sgstAmount === 'number' && (line as any).sgstAmount > 0
+          ? (line as any).sgstAmount
+          : Math.round(rowTaxable * (sgstRate / 100) * 100) / 100
       }
     }
 
@@ -1411,24 +1427,48 @@ export function calculateInvoiceTaxBreakdown(params: InvoiceTaxBreakdownParams):
     }
   })
 
-  // Additional cost calculation
+  // Additional charges & expenses calculation
   let additionalTaxable = 0
   let additionalCgst = 0
   let additionalSgst = 0
   let additionalIgst = 0
 
-  if (additionalCostBasicRate && additionalCostBasicRate > 0) {
-    additionalTaxable = roundCurrency(additionalCostBasicRate)
-  } else if (additionalCostFinal && additionalCostFinal > 0) {
-    additionalTaxable = calculateBasicRateFromInclusive(additionalCostFinal, defaultGstRate)
-  }
+  if (additionalCharges && additionalCharges.length > 0) {
+    additionalCharges.forEach(charge => {
+      const chargeTaxable = typeof charge.taxableAmount === 'number' && charge.taxableAmount > 0
+        ? charge.taxableAmount
+        : (charge.basicRate || (charge.finalAmt ? calculateBasicRateFromInclusive(charge.finalAmt, charge.gstRate || defaultGstRate) : 0))
+      const rate = charge.taxMode === 'none' ? 0 : (typeof charge.gstRate === 'number' ? charge.gstRate : defaultGstRate)
 
-  if (additionalTaxable > 0) {
-    if (isInterState) {
-      additionalIgst = Math.round(additionalTaxable * (defaultGstRate / 100) * 100) / 100
-    } else {
-      additionalCgst = Math.round(additionalTaxable * (defaultGstRate / 2 / 100) * 100) / 100
-      additionalSgst = Math.round(additionalTaxable * (defaultGstRate / 2 / 100) * 100) / 100
+      additionalTaxable += roundCurrency(chargeTaxable)
+
+      if (charge.cgstAmount !== undefined && charge.sgstAmount !== undefined && (charge.cgstAmount > 0 || charge.sgstAmount > 0 || charge.igstAmount)) {
+        additionalCgst += charge.cgstAmount || 0
+        additionalSgst += charge.sgstAmount || 0
+        additionalIgst += charge.igstAmount || 0
+      } else if (rate > 0) {
+        if (isInterState) {
+          additionalIgst += Math.round(chargeTaxable * (rate / 100) * 100) / 100
+        } else {
+          additionalCgst += Math.round(chargeTaxable * (rate / 2 / 100) * 100) / 100
+          additionalSgst += Math.round(chargeTaxable * (rate / 2 / 100) * 100) / 100
+        }
+      }
+    })
+  } else {
+    if (additionalCostBasicRate && additionalCostBasicRate > 0) {
+      additionalTaxable = roundCurrency(additionalCostBasicRate)
+    } else if (additionalCostFinal && additionalCostFinal > 0) {
+      additionalTaxable = calculateBasicRateFromInclusive(additionalCostFinal, defaultGstRate)
+    }
+
+    if (additionalTaxable > 0) {
+      if (isInterState) {
+        additionalIgst = Math.round(additionalTaxable * (defaultGstRate / 100) * 100) / 100
+      } else {
+        additionalCgst = Math.round(additionalTaxable * (defaultGstRate / 2 / 100) * 100) / 100
+        additionalSgst = Math.round(additionalTaxable * (defaultGstRate / 2 / 100) * 100) / 100
+      }
     }
   }
 
@@ -1611,16 +1651,101 @@ export function calculateCostBreakdownDetails(
   }
 }
 
+export interface InvoiceTotals {
+  taxableAmount: number
+  cgstAmount: number
+  sgstAmount: number
+  igstAmount: number
+  totalTaxAmount: number
+  roundOff: number
+  totalAmount: number
+  isInterState: boolean
+}
+
+/**
+ * Universal Canonical Math Formula for Every Purchase and Sales Invoice:
+ * - totalTaxable = sum(item.taxableAmount) + sum(additionalCharge.taxableAmount)
+ * - totalCgst = sum(item.cgstAmount) + sum(additionalCharge.cgstAmount)
+ * - totalSgst = sum(item.sgstAmount) + sum(additionalCharge.sgstAmount)
+ * - totalIgst = sum(item.igstAmount) + sum(additionalCharge.igstAmount)
+ * - totalAmount = roundCurrency(totalTaxable + totalCgst + totalSgst + totalIgst + (invoice.roundOff ?? invoice.roundOffAdjustment ?? 0))
+ */
+export function calculateInvoiceTotals(
+  invoice: PurchaseInvoice | SalesInvoice,
+  itemsMaster: Item[] = []
+): InvoiceTotals {
+  if (
+    (invoice.items && invoice.items.length > 0) ||
+    (invoice.additionalCharges && invoice.additionalCharges.length > 0) ||
+    (invoice.additionalCostBasicRate && invoice.additionalCostBasicRate > 0) ||
+    (invoice.additionalCost && invoice.additionalCost > 0)
+  ) {
+    const chargesSummary = invoice.additionalCharges && invoice.additionalCharges.length > 0
+      ? calculateAdditionalChargesTotals(invoice.additionalCharges)
+      : {
+          basicRateTotal: invoice.additionalCostBasicRate || 0,
+          finalAmtTotal: invoice.additionalCost || 0,
+          remarksJoined: ''
+        }
+    const addCostBasicRate = chargesSummary.basicRateTotal
+    const addCostFinal = chargesSummary.finalAmtTotal
+
+    const breakdown = calculateInvoiceTaxBreakdown({
+      items: invoice.items || [],
+      itemsMaster,
+      additionalCharges: invoice.additionalCharges,
+      additionalCostBasicRate: addCostBasicRate,
+      additionalCostFinal: addCostFinal,
+      customRoundOff: invoice.roundOff !== undefined ? invoice.roundOff : (invoice.roundOffAdjustment || 0)
+    })
+
+    return {
+      taxableAmount: invoice.taxableAmount !== undefined && invoice.taxableAmount > 0 ? invoice.taxableAmount : breakdown.taxableAmount,
+      cgstAmount: invoice.cgstAmount !== undefined ? invoice.cgstAmount : breakdown.cgstAmount,
+      sgstAmount: invoice.sgstAmount !== undefined ? invoice.sgstAmount : breakdown.sgstAmount,
+      igstAmount: invoice.igstAmount !== undefined ? invoice.igstAmount : breakdown.igstAmount,
+      totalTaxAmount: (invoice.cgstAmount || 0) + (invoice.sgstAmount || 0) + (invoice.igstAmount || 0) || breakdown.totalTaxAmount,
+      roundOff: invoice.roundOff !== undefined ? invoice.roundOff : (invoice.roundOffAdjustment !== undefined ? invoice.roundOffAdjustment : breakdown.roundOff),
+      totalAmount: invoice.totalAmount !== undefined && invoice.totalAmount > 0
+        ? invoice.totalAmount
+        : (invoice.invoiceAmount !== undefined && invoice.invoiceAmount > 0 ? invoice.invoiceAmount : breakdown.totalAmount),
+      isInterState: invoice.isInterState !== undefined ? invoice.isInterState : breakdown.isInterState
+    }
+  }
+
+  const totalAmt = invoice.totalAmount !== undefined && invoice.totalAmount > 0 ? invoice.totalAmount : (invoice.invoiceAmount || 0)
+  const roundOff = invoice.roundOff !== undefined ? invoice.roundOff : (invoice.roundOffAdjustment || 0)
+  const cgst = invoice.cgstAmount || 0
+  const sgst = invoice.sgstAmount || 0
+  const igst = invoice.igstAmount || 0
+  const totalTax = cgst + sgst + igst
+  const taxable = invoice.taxableAmount !== undefined && invoice.taxableAmount > 0 ? invoice.taxableAmount : (totalAmt - totalTax - roundOff)
+
+  return {
+    taxableAmount: roundCurrency(taxable),
+    cgstAmount: roundCurrency(cgst),
+    sgstAmount: roundCurrency(sgst),
+    igstAmount: roundCurrency(igst),
+    totalTaxAmount: roundCurrency(totalTax),
+    roundOff: roundCurrency(roundOff),
+    totalAmount: roundCurrency(totalAmt),
+    isInterState: invoice.isInterState || false
+  }
+}
+
 export function calculateInvoiceItemsTotals(items: Array<{ enteredQuantity?: number; baseQuantity?: number; amount?: number }>): { totalQty: number; totalAmount: number } {
   const totalQty = items.reduce((sum, item) => sum + (item.enteredQuantity ?? item.baseQuantity ?? 0), 0)
   const totalAmount = roundCurrency(items.reduce((sum, item) => sum + (item.amount || 0), 0))
   return { totalQty, totalAmount }
 }
 
-export function calculateInvoiceListTotals(invoices: Array<{ items?: any[]; invoiceAmount?: number }>, items?: Item[]): { totalQtyMT: number; totalAmount: number } {
+export function calculateInvoiceListTotals(
+  invoices: Array<{ items?: any[]; invoiceAmount?: number; totalAmount?: number }>,
+  items?: Item[]
+): { totalQtyMT: number; totalAmount: number } {
   const itemMap = items ? new Map(items.map(i => [i.id, i])) : undefined
   const totalQtyMT = invoices.reduce((sum, inv) => sum + getInvoiceQtyForUnit(inv as any, 'MT', itemMap), 0)
-  const totalAmount = roundCurrency(invoices.reduce((sum, inv) => sum + (inv.invoiceAmount || 0), 0))
+  const totalAmount = roundCurrency(invoices.reduce((sum, inv) => sum + (inv.totalAmount ?? inv.invoiceAmount ?? 0), 0))
   return { totalQtyMT, totalAmount }
 }
 

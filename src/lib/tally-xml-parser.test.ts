@@ -774,4 +774,115 @@ describe('Native Tally XML Ingestion Engine', () => {
     expect(result.newMasterCandidates.items[0].name).toBe('GP PIPE 1 INCH')
     expect(result.newMasterCandidates.items[0].rate).toBe(450)
   })
+
+  it('correctly parses multi-item Purchase Voucher with Freight charges, statutory taxes, and round off', () => {
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+<ENVELOPE>
+  <BODY>
+    <IMPORTDATA>
+      <REQUESTDATA>
+        <TALLYMESSAGE xmlns:UDF="TallyUDF">
+          <VOUCHER VCHTYPE="Purchase" ACTION="Create">
+            <DATE>20260410</DATE>
+            <VOUCHERTYPENAME>Purchase</VOUCHERTYPENAME>
+            <VOUCHERNUMBER>RV1200012668</VOUCHERNUMBER>
+            <PARTYLEDGERNAME>Captain Steel India Limited</PARTYLEDGERNAME>
+            <PARTYGSTIN>19AAACC1234F1Z9</PARTYGSTIN>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Captain Steel India Limited</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+              <AMOUNT>830652.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Purchase Account</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+              <AMOUNT>-702742.37</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Freight Charges</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+              <AMOUNT>-1200.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Input CGST</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+              <AMOUNT>-63354.81</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Input SGST</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+              <AMOUNT>-63354.81</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Round Off</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+              <AMOUNT>-0.01</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLINVENTORYENTRIES.LIST>
+              <STOCKITEMNAME>8MM TMT BAR</STOCKITEMNAME>
+              <ACTUALQTY>9.06 TON</ACTUALQTY>
+              <BILLEDQTY>9.06 TON</BILLEDQTY>
+              <RATE>58628.80/TON</RATE>
+              <AMOUNT>-531176.89</AMOUNT>
+            </ALLINVENTORYENTRIES.LIST>
+            <ALLINVENTORYENTRIES.LIST>
+              <STOCKITEMNAME>12MM TMT BAR</STOCKITEMNAME>
+              <ACTUALQTY>3.00 TON</ACTUALQTY>
+              <BILLEDQTY>3.00 TON</BILLEDQTY>
+              <RATE>57188.49/TON</RATE>
+              <AMOUNT>-171565.48</AMOUNT>
+            </ALLINVENTORYENTRIES.LIST>
+          </VOUCHER>
+        </TALLYMESSAGE>
+      </REQUESTDATA>
+    </IMPORTDATA>
+  </BODY>
+</ENVELOPE>`
+
+    const result = parseTallyXmlVouchers(xml, {
+      customers: [],
+      suppliers: [{ id: 'sup-captain', name: 'Captain Steel India Limited', gstin: '19AAACC1234F1Z9', stateCode: '19', paymentCDRules: [], invoiceCloseCDRules: [] }],
+      items: [
+        { id: 'item-8mm', name: '8MM TMT BAR', unit: 'TON', purchasePrice: 58628.80, salesPrice: 60000, defaultGstRate: 18, category: 'TMT' },
+        { id: 'item-12mm', name: '12MM TMT BAR', unit: 'TON', purchasePrice: 57188.49, salesPrice: 59000, defaultGstRate: 18, category: 'TMT' }
+      ],
+      expenseTypes: [],
+      counters: []
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.vouchers).toHaveLength(1)
+
+    const vch = result.vouchers[0]
+    expect(vch.voucherNumber).toBe('RV1200012668')
+    expect(vch.normalizedType).toBe('purchase')
+    expect(vch.partyName).toBe('Captain Steel India Limited')
+    expect(vch.totalAmount).toBe(830652.00)
+
+    // Check Multi-Item Extraction
+    expect(vch.inventory).toHaveLength(2)
+    expect(vch.inventory[0].itemName).toBe('8MM TMT BAR')
+    expect(vch.inventory[0].quantity).toBe(9.06)
+    expect(vch.inventory[0].amount).toBe(531176.89)
+
+    expect(vch.inventory[1].itemName).toBe('12MM TMT BAR')
+    expect(vch.inventory[1].quantity).toBe(3.00)
+    expect(vch.inventory[1].amount).toBe(171565.48)
+
+    // Check Additional Charges (Freight)
+    expect(vch.additionalCharges).toBeDefined()
+    expect(vch.additionalCharges).toHaveLength(1)
+    expect(vch.additionalCharges![0].ledgerName).toBe('Freight Charges')
+    expect(vch.additionalCharges![0].sacCode).toBe('996511')
+    expect(vch.additionalCharges![0].taxableAmount).toBe(1200.00)
+    expect(vch.additionalCharges![0].cgstAmount).toBe(108.00)
+    expect(vch.additionalCharges![0].sgstAmount).toBe(108.00)
+    expect(vch.additionalCharges![0].finalAmt).toBe(1416.00)
+
+    // Check Statutory Tax Breakdown & Round Off
+    expect(vch.cgstAmount).toBe(63354.81)
+    expect(vch.sgstAmount).toBe(63354.81)
+    expect(vch.roundOff).toBe(0.01)
+    expect(vch.taxableAmount).toBe(703942.37)
+  })
 })

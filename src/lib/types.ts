@@ -213,6 +213,20 @@ export interface InvoiceItem {
   discountAmount?: number
 }
 
+export interface AdditionalCharge {
+  id: string
+  remarks: string
+  basicRate: number
+  taxMode: 'none' | 'gst'
+  gstRate: number
+  finalAmt: number
+  sacCode?: string
+  taxableAmount?: number
+  cgstAmount?: number
+  sgstAmount?: number
+  igstAmount?: number
+}
+
 export interface PurchaseInvoice {
   id: string
   supplierId: string
@@ -220,6 +234,7 @@ export interface PurchaseInvoice {
   invoiceDate: string
   orderDate?: string
   items?: InvoiceItem[]
+  additionalCharges?: AdditionalCharge[]
   invoiceAmount: number
   additionalCost?: number
   additionalCostBasicRate?: number
@@ -353,6 +368,7 @@ export interface SalesInvoice {
   invoiceNo: string
   invoiceDate: string
   items?: InvoiceItem[]
+  additionalCharges?: AdditionalCharge[]
   invoiceAmount: number
   additionalCost?: number
   additionalCostBasicRate?: number

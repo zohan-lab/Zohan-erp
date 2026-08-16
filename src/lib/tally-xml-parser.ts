@@ -30,6 +30,20 @@ export interface TallyXmlInventoryItem {
   amount: number
 }
 
+export interface TallyXmlAdditionalCharge {
+  id: string
+  ledgerName: string
+  remarks?: string
+  sacCode?: string
+  basicRate: number
+  taxableAmount: number
+  gstRate: number
+  cgstAmount: number
+  sgstAmount: number
+  igstAmount: number
+  finalAmt: number
+}
+
 export interface TallyParsedXmlVoucher {
   id: string
   voucherNumber: string
@@ -42,6 +56,12 @@ export interface TallyParsedXmlVoucher {
   narration?: string
   legs: TallyXmlLedgerLeg[]
   inventory: TallyXmlInventoryItem[]
+  additionalCharges?: TallyXmlAdditionalCharge[]
+  taxableAmount?: number
+  cgstAmount?: number
+  sgstAmount?: number
+  igstAmount?: number
+  roundOff?: number
   drTotal: number
   crTotal: number
   totalAmount: number
@@ -267,6 +287,37 @@ export function isCashLedger(ledgerName: string): boolean {
     lower === 'cash sales' ||
     lower === 'cash sale' ||
     lower === 'petty cash'
+  )
+}
+
+export function isGstTaxLedger(name: string): boolean {
+  const norm = name.trim().toLowerCase()
+  return norm.includes('cgst') || norm.includes('sgst') || norm.includes('igst') || norm.includes('utgst') || norm.includes('gst payable') || norm.includes('tax on')
+}
+
+export function isRoundOffLedger(name: string): boolean {
+  const norm = name.trim().toLowerCase()
+  return norm.includes('round off') || norm.includes('rounding') || norm.includes('round-off') || norm.includes('fractional')
+}
+
+export function isMainTradingLedger(name: string): boolean {
+  const norm = name.trim().toLowerCase()
+  return (
+    norm === 'purchase' ||
+    norm === 'purchase account' ||
+    norm === 'purchase a/c' ||
+    norm === 'purchases' ||
+    norm === 'purchase-gst' ||
+    norm === 'purchase gst' ||
+    norm === 'sales' ||
+    norm === 'sales account' ||
+    norm === 'sales a/c' ||
+    norm === 'sales-gst' ||
+    norm === 'sales gst' ||
+    norm.startsWith('purchase @') ||
+    norm.startsWith('sales @') ||
+    norm.startsWith('trading sales') ||
+    norm.startsWith('trading purchase')
   )
 }
 
@@ -849,6 +900,63 @@ export function parseTallyXmlVouchers(
       }
     }
 
+    // Extract Additional Charges & Statutory Taxes for Purchase & Sales Invoices
+    let voucherCgst = 0
+    let voucherSgst = 0
+    let voucherIgst = 0
+    let voucherRoundOff = 0
+    const additionalCharges: TallyXmlAdditionalCharge[] = []
+
+    const partyLegName = (partyName || '').trim().toLowerCase()
+
+    legs.forEach((leg, lIdx) => {
+      const norm = leg.ledgerName.trim().toLowerCase()
+      if (norm === partyLegName || (raw.partyName && norm === raw.partyName.trim().toLowerCase())) {
+        return
+      }
+
+      if (norm.includes('cgst')) {
+        voucherCgst += leg.amount
+      } else if (norm.includes('sgst') || norm.includes('utgst')) {
+        voucherSgst += leg.amount
+      } else if (norm.includes('igst')) {
+        voucherIgst += leg.amount
+      } else if (isRoundOffLedger(leg.ledgerName)) {
+        voucherRoundOff = leg.isDeemedPositive ? leg.amount : -leg.amount
+      } else if (isMainTradingLedger(leg.ledgerName)) {
+        // Main trading purchase/sales ledger
+      } else if (normalizedType === 'purchase' || normalizedType === 'sales') {
+        const isTcs = norm.includes('tcs')
+        const sacCode = norm.includes('freight') || norm.includes('transport') ? '996511' : undefined
+        const chargeTaxable = leg.amount
+        const chargeGstRate = isTcs ? 0 : 18
+        const chargeCgst = isTcs ? 0 : Math.round(chargeTaxable * (chargeGstRate / 2) / 100 * 100) / 100
+        const chargeSgst = isTcs ? 0 : Math.round(chargeTaxable * (chargeGstRate / 2) / 100 * 100) / 100
+        const chargeIgst = 0
+        const finalAmt = chargeTaxable + chargeCgst + chargeSgst + chargeIgst
+
+        additionalCharges.push({
+          id: `charge-${lIdx + 1}`,
+          ledgerName: leg.ledgerName,
+          remarks: leg.ledgerName,
+          sacCode,
+          basicRate: chargeTaxable,
+          taxableAmount: chargeTaxable,
+          gstRate: chargeGstRate,
+          cgstAmount: chargeCgst,
+          sgstAmount: chargeSgst,
+          igstAmount: chargeIgst,
+          finalAmt
+        })
+      }
+    })
+
+    const itemsTaxable = inventory.reduce((sum, inv) => sum + inv.amount, 0)
+    const chargesTaxable = additionalCharges.reduce((sum, c) => sum + c.taxableAmount, 0)
+    const computedTaxable = itemsTaxable > 0
+      ? itemsTaxable + chargesTaxable
+      : (totalAmount - voucherCgst - voucherSgst - voucherIgst - voucherRoundOff)
+
     vouchers.push({
       id: `xml-vch-${idx + 1}`,
       voucherNumber,
@@ -861,6 +969,12 @@ export function parseTallyXmlVouchers(
       narration: raw.narration,
       legs,
       inventory,
+      additionalCharges,
+      taxableAmount: computedTaxable,
+      cgstAmount: voucherCgst,
+      sgstAmount: voucherSgst,
+      igstAmount: voucherIgst,
+      roundOff: voucherRoundOff,
       drTotal,
       crTotal,
       totalAmount,

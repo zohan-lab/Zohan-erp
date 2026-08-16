@@ -56,6 +56,8 @@ import {
   Payment,
   CustomerPayment,
   Item,
+  InvoiceItem,
+  AdditionalCharge,
   ExpenseType
 } from '@/lib/types'
 import { formatCurrency } from '@/lib/calculations'
@@ -1335,10 +1337,38 @@ export function TallyImportDialog({
         }
       } else if (v.effectiveType === 'sales' && v.matchedEntityType === 'customer') {
         const custId = v.matchedEntityId || autoCustMap.get(normParty) || customerMap.get(normParty)?.id || 'cust-cash'
-        const taxableAmount = v.legs.find(l => l.ledgerName.toLowerCase().includes('sale'))?.amount || (v.inventory.length > 0 ? v.inventory.reduce((s, it) => s + it.amount, 0) : v.totalAmount)
-        const cgstAmount = v.legs.find(l => l.ledgerName.toLowerCase().includes('cgst'))?.amount || 0
-        const sgstAmount = v.legs.find(l => l.ledgerName.toLowerCase().includes('sgst') || l.ledgerName.toLowerCase().includes('utgst'))?.amount || 0
-        const igstAmount = v.legs.find(l => l.ledgerName.toLowerCase().includes('igst'))?.amount || 0
+        const charges = v.additionalCharges || []
+        const addCost = charges.reduce((s, c) => s + c.finalAmt, 0)
+        const addCostBasic = charges.reduce((s, c) => s + c.basicRate, 0)
+        const addCostRemarks = charges.map(c => c.remarks || c.ledgerName).filter(Boolean).join(', ')
+
+        const sanitizedItems: InvoiceItem[] = v.inventory.map(inv => {
+          const norm = inv.itemName.trim().toLowerCase()
+          const itemId = itemMap.get(norm)?.id || autoItemMap.get(norm) || 'item-gen'
+          const lineTaxable = inv.amount
+          const lineCgst = Math.round(lineTaxable * 0.09 * 100) / 100
+          const lineSgst = Math.round(lineTaxable * 0.09 * 100) / 100
+          return {
+            itemId,
+            baseQuantity: inv.quantity,
+            enteredQuantity: inv.quantity,
+            enteredUnit: inv.unit || 'KG',
+            basicRate: inv.rate,
+            baseRate: inv.rate,
+            rate: inv.rate,
+            amount: inv.amount,
+            taxableAmount: lineTaxable,
+            gstRate: 18,
+            cgstRate: 9,
+            cgstAmount: lineCgst,
+            sgstRate: 9,
+            sgstAmount: lineSgst,
+            igstRate: 0,
+            igstAmount: 0,
+            itemNameSnapshot: inv.itemName,
+            itemUnitSnapshot: inv.unit || 'KG'
+          }
+        })
 
         newSalesInvoices.push({
           id: `inv-tally-${Date.now()}-${idx}`,
@@ -1347,35 +1377,55 @@ export function TallyImportDialog({
           invoiceDate: v.voucherDate || new Date().toISOString().split('T')[0],
           invoiceAmount: v.totalAmount,
           totalAmount: v.totalAmount,
-          taxableAmount,
-          cgstAmount,
-          sgstAmount,
-          igstAmount,
-          items: v.inventory.map(inv => {
-            const norm = inv.itemName.trim().toLowerCase()
-            const itemId = itemMap.get(norm)?.id || autoItemMap.get(norm) || 'item-gen'
-            return {
-              itemId,
-              baseQuantity: inv.quantity,
-              enteredQuantity: inv.quantity,
-              baseRate: inv.rate,
-              rate: inv.rate,
-              amount: inv.amount,
-              taxableAmount: inv.amount,
-              itemNameSnapshot: inv.itemName,
-              itemUnitSnapshot: inv.unit || 'KG'
-            }
-          }),
+          additionalCharges: charges,
+          additionalCost: addCost > 0 ? addCost : undefined,
+          additionalCostBasicRate: addCostBasic > 0 ? addCostBasic : undefined,
+          additionalCostRemarks: addCostRemarks || undefined,
+          roundOff: v.roundOff || undefined,
+          roundOffAdjustment: v.roundOff || undefined,
+          taxableAmount: v.taxableAmount,
+          cgstAmount: v.cgstAmount,
+          sgstAmount: v.sgstAmount,
+          igstAmount: v.igstAmount,
+          items: sanitizedItems,
           fy: '2025-2026',
           history: []
         } as any)
       } else if (v.effectiveType === 'purchase' && v.matchedEntityType === 'supplier') {
         const suppId = v.matchedEntityId || autoSuppMap.get(normParty) || supplierMap.get(normParty)?.id
         if (suppId) {
-          const taxableAmount = v.legs.find(l => l.ledgerName.toLowerCase().includes('purchase'))?.amount || (v.inventory.length > 0 ? v.inventory.reduce((s, it) => s + it.amount, 0) : v.totalAmount)
-          const cgstAmount = v.legs.find(l => l.ledgerName.toLowerCase().includes('cgst'))?.amount || 0
-          const sgstAmount = v.legs.find(l => l.ledgerName.toLowerCase().includes('sgst') || l.ledgerName.toLowerCase().includes('utgst'))?.amount || 0
-          const igstAmount = v.legs.find(l => l.ledgerName.toLowerCase().includes('igst'))?.amount || 0
+          const charges = v.additionalCharges || []
+          const addCost = charges.reduce((s, c) => s + c.finalAmt, 0)
+          const addCostBasic = charges.reduce((s, c) => s + c.basicRate, 0)
+          const addCostRemarks = charges.map(c => c.remarks || c.ledgerName).filter(Boolean).join(', ')
+
+          const sanitizedItems: InvoiceItem[] = v.inventory.map(inv => {
+            const norm = inv.itemName.trim().toLowerCase()
+            const itemId = itemMap.get(norm)?.id || autoItemMap.get(norm) || 'item-gen'
+            const lineTaxable = inv.amount
+            const lineCgst = Math.round(lineTaxable * 0.09 * 100) / 100
+            const lineSgst = Math.round(lineTaxable * 0.09 * 100) / 100
+            return {
+              itemId,
+              baseQuantity: inv.quantity,
+              enteredQuantity: inv.quantity,
+              enteredUnit: inv.unit || 'KG',
+              basicRate: inv.rate,
+              baseRate: inv.rate,
+              rate: inv.rate,
+              amount: inv.amount,
+              taxableAmount: lineTaxable,
+              gstRate: 18,
+              cgstRate: 9,
+              cgstAmount: lineCgst,
+              sgstRate: 9,
+              sgstAmount: lineSgst,
+              igstRate: 0,
+              igstAmount: 0,
+              itemNameSnapshot: inv.itemName,
+              itemUnitSnapshot: inv.unit || 'KG'
+            }
+          })
 
           newPurchaseInvoices.push({
             id: `pur-tally-${Date.now()}-${idx}`,
@@ -1384,25 +1434,17 @@ export function TallyImportDialog({
             invoiceDate: v.voucherDate || new Date().toISOString().split('T')[0],
             invoiceAmount: v.totalAmount,
             totalAmount: v.totalAmount,
-            taxableAmount,
-            cgstAmount,
-            sgstAmount,
-            igstAmount,
-            items: v.inventory.map(inv => {
-              const norm = inv.itemName.trim().toLowerCase()
-              const itemId = itemMap.get(norm)?.id || autoItemMap.get(norm) || 'item-gen'
-              return {
-                itemId,
-                baseQuantity: inv.quantity,
-                enteredQuantity: inv.quantity,
-                baseRate: inv.rate,
-                rate: inv.rate,
-                amount: inv.amount,
-                taxableAmount: inv.amount,
-                itemNameSnapshot: inv.itemName,
-                itemUnitSnapshot: inv.unit || 'KG'
-              }
-            }),
+            additionalCharges: charges,
+            additionalCost: addCost > 0 ? addCost : undefined,
+            additionalCostBasicRate: addCostBasic > 0 ? addCostBasic : undefined,
+            additionalCostRemarks: addCostRemarks || undefined,
+            roundOff: v.roundOff || undefined,
+            roundOffAdjustment: v.roundOff || undefined,
+            taxableAmount: v.taxableAmount,
+            cgstAmount: v.cgstAmount,
+            sgstAmount: v.sgstAmount,
+            igstAmount: v.igstAmount,
+            items: sanitizedItems,
             fy: '2025-2026',
             createdAt: Date.now(),
             history: []
