@@ -1,11 +1,14 @@
 import { describe, it, expect } from 'vitest'
+import fs from 'fs'
+import path from 'path'
 import {
   sanitizeTallyXmlString,
+  decodeXmlFileBuffer,
   parseTallyXmlDate,
   normalizeTallyVoucherType,
   parseTallyXmlVouchers
 } from './tally-xml-parser'
-import { Customer, Supplier } from './types'
+import { Customer, Supplier, Item } from './types'
 
 describe('Native Tally XML Ingestion Engine', () => {
   const mockCustomers: Customer[] = [
@@ -268,5 +271,90 @@ describe('Native Tally XML Ingestion Engine', () => {
     const noVchRes = parseTallyXmlVouchers('<ENVELOPE><HEADER></HEADER></ENVELOPE>')
     expect(noVchRes.vouchers.length).toBe(0)
     expect(noVchRes.warnings.length).toBeGreaterThan(0)
+  })
+
+  it('decodes UTF-16LE and UTF-8 buffers accurately with decodeXmlFileBuffer', () => {
+    // UTF-16LE buffer with BOM
+    const str = '<ENVELOPE><BODY><DATA>Test</DATA></BODY></ENVELOPE>'
+    const utf16leBuf = new Uint8Array([
+      0xFF, 0xFE, // BOM
+      ...Array.from(str).flatMap(c => [c.charCodeAt(0), 0x00])
+    ])
+    const decodedLe = decodeXmlFileBuffer(utf16leBuf)
+    expect(decodedLe).toContain('<DATA>Test</DATA>')
+
+    // Standard UTF-8
+    const utf8Buf = new TextEncoder().encode(str)
+    const decodedUtf8 = decodeXmlFileBuffer(utf8Buf)
+    expect(decodedUtf8).toBe(str)
+  })
+
+  it('enforces strict master entity & item matching without automatic master creation', () => {
+    const xmlWithUnmappedItem = `<ENVELOPE>
+      <BODY>
+        <IMPORTDATA>
+          <REQUESTDATA>
+            <TALLYMESSAGE>
+              <VOUCHER VCHTYPE="Sales" DATE="20260415">
+                <VOUCHERNUMBER>INV-UNMAPPED</VOUCHERNUMBER>
+                <PARTYNAME>Alpha Traders Ltd</PARTYNAME>
+                <ALLLEDGERENTRIES.LIST>
+                  <LEDGERNAME>Alpha Traders Ltd</LEDGERNAME>
+                  <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+                  <AMOUNT>-5000.00</AMOUNT>
+                </ALLLEDGERENTRIES.LIST>
+                <ALLLEDGERENTRIES.LIST>
+                  <LEDGERNAME>Sales Account</LEDGERNAME>
+                  <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+                  <AMOUNT>5000.00</AMOUNT>
+                </ALLLEDGERENTRIES.LIST>
+                <ALLINVENTORYENTRIES.LIST>
+                  <STOCKITEMNAME>Unknown Brand New Item 999</STOCKITEMNAME>
+                  <ACTUALQTY>10 PCS</ACTUALQTY>
+                  <RATE>500</RATE>
+                  <AMOUNT>5000.00</AMOUNT>
+                </ALLINVENTORYENTRIES.LIST>
+              </VOUCHER>
+            </TALLYMESSAGE>
+          </REQUESTDATA>
+        </IMPORTDATA>
+      </BODY>
+    </ENVELOPE>`
+
+    const result = parseTallyXmlVouchers(xmlWithUnmappedItem, {
+      customers: mockCustomers,
+      suppliers: mockSuppliers,
+      items: [{ id: 'it-1', name: 'Known Item A', unit: 'PCS' }]
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.vouchers).toHaveLength(1)
+    const vch = result.vouchers[0]
+    expect(vch.matchedEntityType).toBe('customer')
+    expect(vch.skipReason).toContain('Unmapped Item: Unknown Brand New Item 999')
+    expect(result.summary.unmappedCount).toBe(1)
+    expect(result.summary.matchedCount).toBe(0)
+  })
+
+  it('parses real export Transactions.xml (UTF-16LE) correctly without runtime errors', () => {
+    const transactionsPath = path.resolve(process.cwd(), 'Transactions.xml')
+    if (fs.existsSync(transactionsPath)) {
+      const rawBuf = fs.readFileSync(transactionsPath)
+      const decoded = decodeXmlFileBuffer(rawBuf)
+      expect(decoded.length).toBeGreaterThan(10000)
+
+      const result = parseTallyXmlVouchers(decoded, {
+        customers: mockCustomers,
+        suppliers: mockSuppliers
+      })
+
+      expect(result.success).toBe(true)
+      expect(result.summary.totalParsed).toBe(1042)
+      expect(result.summary.salesCount).toBe(448)
+      expect(result.summary.purchaseCount).toBe(103)
+      expect(result.summary.receiptCount).toBe(216)
+      expect(result.summary.paymentCount).toBe(213)
+      expect(result.summary.skippedCount).toBe(62) // 26 Contra + 36 Journal skipped per standard audit policy
+    }
   })
 })

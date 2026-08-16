@@ -18,6 +18,12 @@ export interface TallyRawExcelRow {
   'Ledger Name'?: string
   'Ledger Amount'?: string | number
   'Ledger Amount Dr/Cr'?: string
+  'Item Name'?: string
+  'Billed Quantity'?: string | number
+  'Item Rate'?: string | number
+  'Item Rate per'?: string
+  'Item Amount'?: string | number
+  'Change Mode'?: string
   // Support flexible key names and extra columns
   [key: string]: any
 }
@@ -47,7 +53,7 @@ export interface PaymentVoucher {
 }
 
 /**
- * Exact 8-column header structure expected by Tally for export
+ * Official 14-Column Tally Prime Export Structure ("Accounting Voucher" sheet)
  */
 export interface TallyExportRow {
   'Voucher Date': string
@@ -58,6 +64,12 @@ export interface TallyExportRow {
   'Ledger Name': string
   'Ledger Amount': number
   'Ledger Amount Dr/Cr': 'Dr' | 'Cr'
+  'Item Name'?: string
+  'Billed Quantity'?: string
+  'Item Rate'?: number | string
+  'Item Rate per'?: string
+  'Item Amount'?: number | string
+  'Change Mode'?: 'Item Invoice' | 'Accounting Invoice'
 }
 
 export interface ImportSummary {

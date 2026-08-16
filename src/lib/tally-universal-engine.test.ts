@@ -1,10 +1,12 @@
 import { describe, it, expect } from 'vitest'
+import * as XLSX from 'xlsx'
 import {
   generateTallySalesVouchers,
   generateTallyPurchaseVouchers,
   generateTallyCreditNoteVouchers,
   generateTallyDebitNoteVouchers,
   generateTallyExpenseVouchers,
+  exportCompoundVouchersToTallyExcel,
   generateTallyXML,
   DEFAULT_TALLY_LEDGER_MAPPING
 } from './tally-universal-engine'
@@ -285,5 +287,56 @@ describe('Universal Tally Compound Double-Entry Engine', () => {
     expect(xml).toContain('<AMOUNT>-11800.00</AMOUNT>') // Debit is negative in Tally XML
     expect(xml).toContain('<LEDGERNAME>Sales Account</LEDGERNAME>')
     expect(xml).toContain('<AMOUNT>10000.00</AMOUNT>') // Credit is positive in Tally XML
+  })
+
+  it('exports compound vouchers to official 14-column Accounting Voucher Excel workbook', () => {
+    const salesInvoices: SalesInvoice[] = [
+      {
+        id: 'si-item',
+        customerId: 'c1',
+        invoiceNo: 'INV-102',
+        invoiceDate: '2026-04-10',
+        invoiceAmount: 500,
+        totalAmount: 500,
+        items: [
+          {
+            itemId: 'item-3pct',
+            enteredQuantity: 1,
+            enteredUnit: 'GM',
+            baseQuantity: 1,
+            rate: 500,
+            amount: 500,
+            gstRate: 3
+          }
+        ],
+        fy: '2026-2027'
+      }
+    ]
+
+    const vouchers = generateTallySalesVouchers(salesInvoices, mockCustomers, mockItems, DEFAULT_TALLY_LEDGER_MAPPING, '19')
+    expect(vouchers[0].changeMode).toBe('Item Invoice')
+    expect(vouchers[0].legs.some(l => l.itemName === 'Gold Dust (3% Tax Slab)')).toBe(true)
+
+    const exportResult = exportCompoundVouchersToTallyExcel(vouchers, { filename: 'test-14col.xlsx' })
+    expect(exportResult.buffer).toBeInstanceOf(Uint8Array)
+    expect(exportResult.workbook.SheetNames).toContain('Accounting Voucher')
+
+    const sheet = exportResult.workbook.Sheets['Accounting Voucher']
+    const rows = XLSX.utils.sheet_to_json<any>(sheet)
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows[0]).toHaveProperty('Voucher Date')
+    expect(rows[0]).toHaveProperty('Voucher Type Name')
+    expect(rows[0]).toHaveProperty('Voucher Number')
+    expect(rows[0]).toHaveProperty('Buyer/Supplier - Address')
+    expect(rows[0]).toHaveProperty('Buyer/Supplier - Pincode')
+    expect(rows[0]).toHaveProperty('Ledger Name')
+    expect(rows[0]).toHaveProperty('Ledger Amount')
+    expect(rows[0]).toHaveProperty('Ledger Amount Dr/Cr')
+    expect(rows[0]).toHaveProperty('Item Name')
+    expect(rows[0]).toHaveProperty('Billed Quantity')
+    expect(rows[0]).toHaveProperty('Item Rate')
+    expect(rows[0]).toHaveProperty('Item Rate per')
+    expect(rows[0]).toHaveProperty('Item Amount')
+    expect(rows[0]).toHaveProperty('Change Mode')
   })
 })

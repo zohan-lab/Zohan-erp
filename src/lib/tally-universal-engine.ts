@@ -66,6 +66,11 @@ export interface TallyCompoundLeg {
   ledgerName: string
   amount: number
   drCr: 'Dr' | 'Cr'
+  itemName?: string
+  billedQty?: string
+  itemRate?: number
+  itemRatePer?: string
+  itemAmount?: number
 }
 
 export interface TallyCompoundVoucher {
@@ -73,7 +78,8 @@ export interface TallyCompoundVoucher {
   voucherNumber: string
   voucherDate: string // YYYY-MM-DD
   displayDate: string // DD-MM-YYYY
-  voucherType: 'Sales' | 'Purchase' | 'Credit Note' | 'Debit Note' | 'Payment' | 'Receipt' | 'Journal'
+  voucherType: 'Sales' | 'Purchase' | 'Credit Note' | 'Debit Note' | 'Payment' | 'Receipt' | 'Journal' | 'Contra'
+  changeMode?: 'Item Invoice' | 'Accounting Invoice'
   partyName: string
   partyAddress?: string
   partyPincode?: string
@@ -146,6 +152,8 @@ export function generateTallySalesVouchers(
     let sgst = roundCurrency(inv.sgstAmount ?? 0)
     let roundOff = roundCurrency(grossAmount - (taxableAmount + igst + cgst + sgst))
 
+    let computedBreakdowns: any[] | undefined
+
     // If missing taxableAmount or has false round-off >= ₹1.00, recompute dynamically using items master
     if (taxableAmount <= 0 || Math.abs(roundOff) >= 1.00) {
       if (inv.items && inv.items.length > 0) {
@@ -163,6 +171,7 @@ export function generateTallySalesVouchers(
         cgst = taxSummary.cgstAmount
         sgst = taxSummary.sgstAmount
         roundOff = taxSummary.roundOff
+        computedBreakdowns = taxSummary.lineBreakdowns
       } else {
         taxableAmount = grossAmount
         igst = 0
@@ -174,10 +183,52 @@ export function generateTallySalesVouchers(
 
     const legs: TallyCompoundLeg[] = [
       // 1. Dr Customer Ledger (Gross Invoice Value)
-      { ledgerName: partyName, amount: grossAmount, drCr: 'Dr' },
-      // 2. Cr Sales Account (Base Taxable)
-      { ledgerName: mapping.salesLedgerName, amount: taxableAmount, drCr: 'Cr' }
+      { ledgerName: partyName, amount: grossAmount, drCr: 'Dr' }
     ]
+
+    const itemMap = new Map(items.map(it => [it.id, it]))
+    const isItemInvoice = Boolean(inv.items && inv.items.length > 0)
+
+    if (isItemInvoice && inv.items) {
+      // Breakdown item lines
+      inv.items.forEach((line, lineIdx) => {
+        const itemDef = itemMap.get(line.itemId || '')
+        const itemName = itemDef?.name || line.itemNameSnapshot || 'Stock Item'
+        const unit = itemDef?.unit || line.enteredUnit || line.itemUnitSnapshot || 'PCS'
+        const qty = line.baseQuantity ?? line.enteredQuantity ?? 1
+        const rate = line.rate ?? (qty > 0 ? (line.taxableAmount ?? line.amount ?? 0) / qty : 0)
+        
+        let lineTaxable = line.taxableAmount !== undefined ? roundCurrency(line.taxableAmount) : 0
+        if (lineTaxable <= 0 && computedBreakdowns && computedBreakdowns[lineIdx]) {
+          lineTaxable = computedBreakdowns[lineIdx].taxableAmount
+        }
+        if (lineTaxable <= 0) {
+          if (inv.items && inv.items.length === 1 && taxableAmount > 0) {
+            lineTaxable = taxableAmount
+          } else {
+            lineTaxable = roundCurrency(line.amount ?? (qty * rate))
+          }
+        }
+
+        legs.push({
+          ledgerName: mapping.salesLedgerName,
+          amount: lineTaxable,
+          drCr: 'Cr',
+          itemName,
+          billedQty: `${qty.toFixed(3)} ${unit}`,
+          itemRate: rate,
+          itemRatePer: unit,
+          itemAmount: lineTaxable
+        })
+      })
+    } else {
+      // 2. Cr Sales Account (Base Taxable)
+      legs.push({
+        ledgerName: mapping.salesLedgerName,
+        amount: taxableAmount,
+        drCr: 'Cr'
+      })
+    }
 
     // 3. Tax Ledgers
     if (isInterState || igst > 0) {
@@ -202,6 +253,7 @@ export function generateTallySalesVouchers(
       voucherDate: iso,
       displayDate: dmy,
       voucherType: 'Sales',
+      changeMode: isItemInvoice ? 'Item Invoice' : 'Accounting Invoice',
       partyName,
       partyAddress: [cust?.address, cust?.city, cust?.stateName || getStateName(partyState)].filter(Boolean).join(', '),
       partyPincode: cust?.pincode,
@@ -246,6 +298,8 @@ export function generateTallyPurchaseVouchers(
     let sgst = roundCurrency(inv.sgstAmount ?? 0)
     let roundOff = roundCurrency(grossAmount - (taxableAmount + igst + cgst + sgst))
 
+    let computedBreakdowns: any[] | undefined
+
     // If missing taxableAmount or has false round-off >= ₹1.00, recompute dynamically using items master
     if (taxableAmount <= 0 || Math.abs(roundOff) >= 1.00) {
       if (inv.items && inv.items.length > 0) {
@@ -263,6 +317,7 @@ export function generateTallyPurchaseVouchers(
         cgst = taxSummary.cgstAmount
         sgst = taxSummary.sgstAmount
         roundOff = taxSummary.roundOff
+        computedBreakdowns = taxSummary.lineBreakdowns
       } else {
         taxableAmount = grossAmount
         igst = 0
@@ -274,10 +329,52 @@ export function generateTallyPurchaseVouchers(
 
     const legs: TallyCompoundLeg[] = [
       // 1. Cr Supplier Ledger (Gross Payable)
-      { ledgerName: partyName, amount: grossAmount, drCr: 'Cr' },
-      // 2. Dr Purchase Account (Base Taxable)
-      { ledgerName: mapping.purchaseLedgerName, amount: taxableAmount, drCr: 'Dr' }
+      { ledgerName: partyName, amount: grossAmount, drCr: 'Cr' }
     ]
+
+    const itemMap = new Map(items.map(it => [it.id, it]))
+    const isItemInvoice = Boolean(inv.items && inv.items.length > 0)
+
+    if (isItemInvoice && inv.items) {
+      // Breakdown item lines
+      inv.items.forEach((line, lineIdx) => {
+        const itemDef = itemMap.get(line.itemId || '')
+        const itemName = itemDef?.name || line.itemNameSnapshot || 'Raw Material'
+        const unit = itemDef?.unit || line.enteredUnit || line.itemUnitSnapshot || 'TON'
+        const qty = line.baseQuantity ?? line.enteredQuantity ?? 1
+        const rate = line.rate ?? (qty > 0 ? (line.taxableAmount ?? line.amount ?? 0) / qty : 0)
+        
+        let lineTaxable = line.taxableAmount !== undefined ? roundCurrency(line.taxableAmount) : 0
+        if (lineTaxable <= 0 && computedBreakdowns && computedBreakdowns[lineIdx]) {
+          lineTaxable = computedBreakdowns[lineIdx].taxableAmount
+        }
+        if (lineTaxable <= 0) {
+          if (inv.items && inv.items.length === 1 && taxableAmount > 0) {
+            lineTaxable = taxableAmount
+          } else {
+            lineTaxable = roundCurrency(line.amount ?? (qty * rate))
+          }
+        }
+
+        legs.push({
+          ledgerName: mapping.purchaseLedgerName,
+          amount: lineTaxable,
+          drCr: 'Dr',
+          itemName,
+          billedQty: `${qty.toFixed(3)} ${unit}`,
+          itemRate: rate,
+          itemRatePer: unit,
+          itemAmount: lineTaxable
+        })
+      })
+    } else {
+      // 2. Dr Purchase Account (Base Taxable)
+      legs.push({
+        ledgerName: mapping.purchaseLedgerName,
+        amount: taxableAmount,
+        drCr: 'Dr'
+      })
+    }
 
     // 3. Tax Ledgers
     if (isInterState || igst > 0) {
@@ -302,6 +399,7 @@ export function generateTallyPurchaseVouchers(
       voucherDate: iso,
       displayDate: dmy,
       voucherType: 'Purchase',
+      changeMode: isItemInvoice ? 'Item Invoice' : 'Accounting Invoice',
       partyName,
       partyAddress: [sup?.address, sup?.city, sup?.stateName || getStateName(partyState)].filter(Boolean).join(', '),
       partyPincode: sup?.pincode,
@@ -586,13 +684,14 @@ export function exportCompoundVouchersToTallyExcel(
   rowCount: number
 } {
   const filename = options?.filename || `Tally_Prime_Export_${Date.now()}.xlsx`
-  const sheetName = options?.sheetName || 'TallyVouchers'
+  const sheetName = options?.sheetName || 'Accounting Voucher'
 
   const exportRows: TallyExportRow[] = []
 
   vouchers.forEach(v => {
     const address = v.partyAddress || ''
     const pincode = v.partyPincode || ''
+    const changeMode = v.changeMode || (v.legs.some(l => !!l.itemName) ? 'Item Invoice' : 'Accounting Invoice')
 
     v.legs.forEach(leg => {
       exportRows.push({
@@ -602,8 +701,14 @@ export function exportCompoundVouchersToTallyExcel(
         'Buyer/Supplier - Address': address,
         'Buyer/Supplier - Pincode': pincode,
         'Ledger Name': leg.ledgerName,
-        'Ledger Amount': leg.amount,
-        'Ledger Amount Dr/Cr': leg.drCr
+        'Ledger Amount': roundCurrency(leg.amount),
+        'Ledger Amount Dr/Cr': leg.drCr,
+        'Item Name': leg.itemName || '',
+        'Billed Quantity': leg.billedQty || '',
+        'Item Rate': leg.itemRate !== undefined ? leg.itemRate : '',
+        'Item Rate per': leg.itemRatePer || '',
+        'Item Amount': leg.itemAmount !== undefined ? roundCurrency(leg.itemAmount) : '',
+        'Change Mode': changeMode
       })
     })
   })
@@ -620,7 +725,13 @@ export function exportCompoundVouchersToTallyExcel(
     { wch: 24 }, // Buyer/Supplier - Pincode
     { wch: 32 }, // Ledger Name
     { wch: 16 }, // Ledger Amount
-    { wch: 20 }  // Ledger Amount Dr/Cr
+    { wch: 20 }, // Ledger Amount Dr/Cr
+    { wch: 28 }, // Item Name
+    { wch: 18 }, // Billed Quantity
+    { wch: 14 }, // Item Rate
+    { wch: 14 }, // Item Rate per
+    { wch: 16 }, // Item Amount
+    { wch: 20 }  // Change Mode
   ]
 
   const workbook = XLSX.utils.book_new()

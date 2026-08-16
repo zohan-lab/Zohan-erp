@@ -63,6 +63,7 @@ import {
   downloadTallyXML
 } from '@/lib/tally-universal-engine'
 import {
+  parseTallyAccountingVouchersExcel,
   parseTallyPayments,
   exportPaymentsToTallyExcel,
   generateSampleTallyExcel,
@@ -639,6 +640,7 @@ export function TallyExportDialog({
 
 import {
   parseTallyXmlVouchers,
+  decodeXmlFileBuffer,
   TallyParsedXmlVoucher
 } from '@/lib/tally-xml-parser'
 
@@ -679,6 +681,13 @@ export function TallyImportDialog({
 
   const supplierMap = useMemo(() => new Map(suppliers.map(s => [s.name.trim().toLowerCase(), s])), [suppliers])
   const customerMap = useMemo(() => new Map(customers.map(c => [c.name.trim().toLowerCase(), c])), [customers])
+  const itemMap = useMemo(() => {
+    const map = new Map(items.map(it => [it.name.trim().toLowerCase(), it]))
+    items.forEach(it => {
+      if (it.itemCode) map.set(it.itemCode.trim().toLowerCase(), it)
+    })
+    return map
+  }, [items])
 
   const processedList = useMemo(() => {
     return parsedVouchers.map(v => {
@@ -696,16 +705,32 @@ export function TallyImportDialog({
         }
       }
 
+      // Check inventory item matching
+      const unmappedItems = (v.inventory || []).filter(inv => !itemMap.has(inv.itemName.trim().toLowerCase()))
+      const hasUnmappedItem = unmappedItems.length > 0
+      let unmappedReason = v.skipReason
+
+      if (v.normalizedType !== 'skipped') {
+        if (matchedEntityType === 'unmapped') {
+          unmappedReason = `Unmapped Master: ${v.partyName}`
+        } else if (hasUnmappedItem) {
+          unmappedReason = `Unmapped Item: ${unmappedItems.map(i => i.itemName).join(', ')}`
+        }
+      }
+
       return {
         ...v,
         matchedEntityType,
-        matchedEntityId
+        matchedEntityId,
+        hasUnmappedItem,
+        unmappedItemNames: unmappedItems.map(i => i.itemName),
+        skipReason: unmappedReason
       }
     })
-  }, [parsedVouchers, supplierMap, customerMap])
+  }, [parsedVouchers, supplierMap, customerMap, itemMap])
 
-  const validCount = processedList.filter(v => v.normalizedType !== 'skipped' && v.matchedEntityType !== 'unmapped').length
-  const unmappedCount = processedList.filter(v => v.normalizedType !== 'skipped' && v.matchedEntityType === 'unmapped').length
+  const validCount = processedList.filter(v => v.normalizedType !== 'skipped' && v.matchedEntityType !== 'unmapped' && !v.hasUnmappedItem).length
+  const unmappedCount = processedList.filter(v => v.normalizedType !== 'skipped' && (v.matchedEntityType === 'unmapped' || v.hasUnmappedItem)).length
   const skippedCount = processedList.filter(v => v.normalizedType === 'skipped').length
 
   const processFile = async (file: File) => {
@@ -725,7 +750,8 @@ export function TallyImportDialog({
 
     try {
       if (isXml) {
-        const text = await file.text()
+        const buffer = await file.arrayBuffer()
+        const text = decodeXmlFileBuffer(buffer)
         const result = parseTallyXmlVouchers(text, {
           customers,
           suppliers,
@@ -744,53 +770,19 @@ export function TallyImportDialog({
         }
       } else {
         const buffer = await file.arrayBuffer()
-        const result: TallyImportResult = parseTallyPayments(buffer)
-
-        const converted: TallyParsedXmlVoucher[] = result.data.map((pv, idx) => {
-          const normParty = pv.partyLedger.trim().toLowerCase()
-          let mType: 'customer' | 'supplier' | 'unmapped' = 'unmapped'
-          let mId: string | undefined
-
-          if (customerMap.has(normParty)) {
-            mType = 'customer'
-            mId = customerMap.get(normParty)?.id
-          } else if (supplierMap.has(normParty)) {
-            mType = 'supplier'
-            mId = supplierMap.get(normParty)?.id
-          }
-
-          const isPay = pv.type === 'PAYMENT'
-          const vDate = pv.voucherDate || new Date().toISOString().slice(0, 10)
-          const dispDate = pv.displayDate || vDate
-          return {
-            id: pv.id || `excel-vch-${idx + 1}`,
-            voucherNumber: pv.voucherNumber,
-            voucherDate: vDate,
-            displayDate: dispDate,
-            rawVoucherType: pv.type,
-            normalizedType: isPay ? 'payment' : 'receipt',
-            partyName: pv.partyLedger,
-            legs: [
-              { ledgerName: pv.partyLedger, amount: pv.amount, drCr: isPay ? 'Dr' : 'Cr', isDeemedPositive: isPay },
-              { ledgerName: pv.bankCashLedger, amount: pv.amount, drCr: isPay ? 'Cr' : 'Dr', isDeemedPositive: !isPay }
-            ],
-            inventory: [],
-            drTotal: pv.amount,
-            crTotal: pv.amount,
-            totalAmount: pv.amount,
-            isBalanced: pv.isValid ?? true,
-            imbalanceDifference: 0,
-            matchedEntityType: mType,
-            matchedEntityId: mId
-          }
+        const result = parseTallyAccountingVouchersExcel(buffer, {
+          customers,
+          suppliers,
+          items,
+          expenseTypes
         })
 
-        setParsedVouchers(converted)
+        setParsedVouchers(result.vouchers)
 
-        if (result.success && converted.length > 0) {
-          toast.success(`Parsed ${converted.length} Tally voucher(s) from Excel`)
-        } else if (converted.length > 0) {
-          toast.warning(`Parsed ${converted.length} voucher(s) with validation notices`)
+        if (result.success && result.vouchers.length > 0) {
+          toast.success(`Parsed ${result.vouchers.length} Tally voucher(s) from Excel`)
+        } else if (result.vouchers.length > 0) {
+          toast.warning(`Parsed ${result.vouchers.length} voucher(s) with validation notices`)
         } else {
           toast.error(result.errors[0] || 'No valid vouchers found in file')
         }
@@ -828,7 +820,7 @@ export function TallyImportDialog({
     let skipped = 0
 
     processedList.forEach((v, idx) => {
-      if (v.normalizedType === 'skipped') {
+      if (v.normalizedType === 'skipped' || v.matchedEntityType === 'unmapped' || v.hasUnmappedItem) {
         skipped++
         return
       }
@@ -865,7 +857,7 @@ export function TallyImportDialog({
           taxableAmount: v.legs.find(l => l.ledgerName.toLowerCase().includes('sale'))?.amount || v.totalAmount,
           status: 'Confirmed',
           items: v.inventory.map(inv => ({
-            itemId: items.find(it => it.name.toLowerCase() === inv.itemName.toLowerCase())?.id || 'item-gen',
+            itemId: itemMap.get(inv.itemName.toLowerCase())?.id || 'item-gen',
             baseQuantity: inv.quantity,
             rate: inv.rate,
             amount: inv.amount
@@ -881,7 +873,7 @@ export function TallyImportDialog({
           totalAmount: v.totalAmount,
           taxableAmount: v.legs.find(l => l.ledgerName.toLowerCase().includes('purchase'))?.amount || v.totalAmount,
           items: v.inventory.map(inv => ({
-            itemId: items.find(it => it.name.toLowerCase() === inv.itemName.toLowerCase())?.id || 'item-gen',
+            itemId: itemMap.get(inv.itemName.toLowerCase())?.id || 'item-gen',
             baseQuantity: inv.quantity,
             rate: inv.rate,
             amount: inv.amount
@@ -923,7 +915,7 @@ export function TallyImportDialog({
     })
 
     toast.success(`Successfully imported ${imported} voucher(s) into ERP ledger accounts`, {
-      description: skipped > 0 ? `${skipped} unmapped/journal vouchers skipped per audit policy` : undefined
+      description: skipped > 0 ? `${skipped} unmapped/journal vouchers skipped per strict master policy` : undefined
     })
 
     setParsedVouchers([])
@@ -1058,8 +1050,13 @@ export function TallyImportDialog({
                       <TableCell>{getVoucherBadge(v.normalizedType, v.rawVoucherType)}</TableCell>
                       <TableCell className="font-mono text-slate-900">{v.voucherNumber}</TableCell>
                       <TableCell className="font-mono text-slate-500 text-[11px]">{v.displayDate}</TableCell>
-                      <TableCell className="font-semibold text-slate-800 max-w-[140px] truncate" title={v.partyName}>
-                        {v.partyName}
+                      <TableCell className="font-semibold text-slate-800 max-w-[160px]">
+                        <div className="truncate" title={v.partyName}>{v.partyName}</div>
+                        {v.inventory && v.inventory.length > 0 && (
+                          <div className="text-[10px] text-slate-400 font-normal truncate" title={v.inventory.map(i => `${i.quantity} ${i.unit || ''} ${i.itemName}`).join(', ')}>
+                            {v.inventory.length} item{v.inventory.length > 1 ? 's' : ''}: {v.inventory[0].itemName}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-right font-mono font-bold text-slate-900">
                         {formatCurrency(v.totalAmount)}
@@ -1067,12 +1064,20 @@ export function TallyImportDialog({
                       <TableCell className="text-center">
                         {v.normalizedType === 'skipped' ? (
                           <Badge variant="outline" className="text-[10px] text-slate-400">Skip Journal</Badge>
+                        ) : v.matchedEntityType === 'unmapped' ? (
+                          <Badge variant="outline" className="text-[10px] text-rose-700 bg-rose-50 border-rose-200" title={`Unmapped Master: ${v.partyName}`}>
+                            Unmapped Master: {v.partyName.length > 12 ? v.partyName.slice(0, 12) + '...' : v.partyName}
+                          </Badge>
+                        ) : v.hasUnmappedItem ? (
+                          <Badge variant="outline" className="text-[10px] text-amber-700 bg-amber-50 border-amber-200" title={`Unmapped Item: ${v.unmappedItemNames?.join(', ')}`}>
+                            Unmapped Item
+                          </Badge>
                         ) : v.matchedEntityType === 'supplier' ? (
                           <Badge className="bg-blue-100 text-blue-800 text-[10px]">Supplier Match</Badge>
                         ) : v.matchedEntityType === 'customer' ? (
                           <Badge className="bg-emerald-100 text-emerald-800 text-[10px]">Customer Match</Badge>
                         ) : (
-                          <Badge variant="outline" className="text-[10px] text-amber-700 bg-amber-50 border-amber-200">Unmapped</Badge>
+                          <Badge variant="outline" className="text-[10px] text-slate-600 bg-slate-50 border-slate-200">General Match</Badge>
                         )}
                       </TableCell>
                     </TableRow>

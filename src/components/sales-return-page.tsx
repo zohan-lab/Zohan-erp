@@ -54,7 +54,7 @@ export default function SalesReturnPage({
   const [editingItem, setEditingItem] = useState<SalesReturn | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [itemToDelete, setItemToDelete] = useState<SalesReturn | null>(null)
-  
+
   // List Filters
   const [fromDate, setFromDate] = useState<string>('')
   const [toDate, setToDate] = useState<string>('')
@@ -84,21 +84,21 @@ export default function SalesReturnPage({
 
   const filteredReturns = useMemo(() => {
     let result = salesReturns
-    
+
     if (fromDate) {
       result = result.filter(p => p.returnDate >= fromDate)
     }
     if (toDate) {
       result = result.filter(p => p.returnDate <= toDate)
     }
-    
+
     if (selectedCustomerFilter !== 'all') {
       result = result.filter(p => p.customerId === selectedCustomerFilter)
     }
-    
+
     return result.sort((a, b) => new Date(b.returnDate).getTime() - new Date(a.returnDate).getTime())
   }, [salesReturns, fromDate, toDate, selectedCustomerFilter])
-  
+
   const totalAmount = filteredReturns.reduce((sum, p) => sum + p.amount, 0)
 
   // Calculations for active form
@@ -252,7 +252,7 @@ export default function SalesReturnPage({
       if (idx !== index) return itemRow
       const selectedDef = items.find(i => i.id === (field === 'itemId' ? value : itemRow.itemId))
       const updated = { ...itemRow, [field]: value }
-      
+
       if (field === 'itemId') {
         const defaultUnit = selectedDef?.alternativeUnit && selectedDef.alternativeUnit !== 'NONE' ? selectedDef.alternativeUnit : (selectedDef?.unit || 'KG')
         updated.enteredUnit = defaultUnit
@@ -298,7 +298,7 @@ export default function SalesReturnPage({
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    
+
     if (isLocked) {
       toast.error('Cannot save in locked mode')
       return
@@ -345,31 +345,31 @@ export default function SalesReturnPage({
       createdAt: editingItem?.createdAt || Date.now(),
       history: editingItem
         ? [
-            ...(editingItem.history || []),
-            {
-              timestamp: new Date().toISOString(),
-              action: 'updated',
-              changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
-              changes: [
-                ...(editingItem.amount !== calculatedTotalAmount ? [{ field: 'Amount', from: String(editingItem.amount), to: String(calculatedTotalAmount) }] : []),
-                ...(editingItem.customerId !== selectedCustomerId ? [{ field: 'Customer', from: customers.find(c => c.id === editingItem.customerId)?.name || '-', to: customers.find(c => c.id === selectedCustomerId)?.name || '-' }] : []),
-                ...(editingItem.returnDate !== returnDate ? [{ field: 'Date', from: editingItem.returnDate, to: returnDate }] : [])
-              ]
-            }
-          ]
+          ...(editingItem.history || []),
+          {
+            timestamp: new Date().toISOString(),
+            action: 'updated',
+            changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
+            changes: [
+              ...(editingItem.amount !== calculatedTotalAmount ? [{ field: 'Amount', from: String(editingItem.amount), to: String(calculatedTotalAmount) }] : []),
+              ...(editingItem.customerId !== selectedCustomerId ? [{ field: 'Customer', from: customers.find(c => c.id === editingItem.customerId)?.name || '-', to: customers.find(c => c.id === selectedCustomerId)?.name || '-' }] : []),
+              ...(editingItem.returnDate !== returnDate ? [{ field: 'Date', from: editingItem.returnDate, to: returnDate }] : [])
+            ]
+          }
+        ]
         : [
-            {
-              timestamp: new Date().toISOString(),
-              action: 'created',
-              changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
-              changes: [
-                { field: 'Return No', from: '', to: finalReturnNo },
-                { field: 'Customer', from: '', to: customers.find(c => c.id === selectedCustomerId)?.name || '-' },
-                { field: 'Amount', from: '', to: String(calculatedTotalAmount) },
-                { field: 'Date', from: '', to: returnDate }
-              ]
-            }
-          ]
+          {
+            timestamp: new Date().toISOString(),
+            action: 'created',
+            changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
+            changes: [
+              { field: 'Return No', from: '', to: finalReturnNo },
+              { field: 'Customer', from: '', to: customers.find(c => c.id === selectedCustomerId)?.name || '-' },
+              { field: 'Amount', from: '', to: String(calculatedTotalAmount) },
+              { field: 'Date', from: '', to: returnDate }
+            ]
+          }
+        ]
     }
 
     // Auto-create / update Customer Credit Note with structured statutory GST breakdown
@@ -397,7 +397,7 @@ export default function SalesReturnPage({
       reason: '01 - Sales Return',
       remarks: `Sales Return #${finalReturnNo}${remarks ? ' - ' + remarks : ''}`,
       fy: getFYFromDate(returnDate),
-      
+
       // Statutory GST breakdown fields
       taxableAmount: noteTaxBreakdown.taxableAmount,
       gstRate: noteTaxBreakdown.gstRate,
@@ -418,24 +418,24 @@ export default function SalesReturnPage({
       sourceId: returnId,
       history: editingItem
         ? [
-            ...(creditNotes.find(c => c.id === creditNoteId)?.history || []),
-            {
-              timestamp: new Date().toISOString(),
-              action: 'updated',
-              changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
-              changes: [
-                ...(editingItem.amount !== calculatedTotalAmount ? [{ field: 'Amount', from: String(editingItem.amount), to: String(calculatedTotalAmount) }] : [])
-              ]
-            }
-          ]
+          ...(creditNotes.find(c => c.id === creditNoteId)?.history || []),
+          {
+            timestamp: new Date().toISOString(),
+            action: 'updated',
+            changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
+            changes: [
+              ...(editingItem.amount !== calculatedTotalAmount ? [{ field: 'Amount', from: String(editingItem.amount), to: String(calculatedTotalAmount) }] : [])
+            ]
+          }
+        ]
         : [
-            {
-              timestamp: new Date().toISOString(),
-              action: 'created',
-              changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
-              details: 'Auto-generated from Sales Return'
-            }
-          ]
+          {
+            timestamp: new Date().toISOString(),
+            action: 'created',
+            changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
+            details: 'Auto-generated from Sales Return'
+          }
+        ]
     }
 
     // Save Sales Return
@@ -540,7 +540,7 @@ export default function SalesReturnPage({
                   <TrendUp className="h-3.5 w-3.5" weight="bold" /> 0% from last month
                 </p>
               </div>
-              
+
               {/* Decorative Violet Wave */}
               <svg className="absolute bottom-0 right-0 w-48 h-24 opacity-25 pointer-events-none" viewBox="0 0 200 80" fill="none">
                 <path d="M0 60 C40 20, 80 70, 120 30 C160 -10, 180 40, 200 20 L200 80 L0 80 Z" fill="url(#violet-grad-sr)" />
@@ -593,9 +593,9 @@ export default function SalesReturnPage({
                 </div>
                 <h2 className="text-lg font-bold text-slate-900">Sales Return List</h2>
               </div>
-              <Button 
-                onClick={handleOpenAdd} 
-                disabled={isLocked} 
+              <Button
+                onClick={handleOpenAdd}
+                disabled={isLocked}
                 className="bg-[#5B5FEF] hover:bg-[#4B4FEF] text-white font-bold rounded-2xl px-5 py-2.5 shadow-md shadow-[#5B5FEF]/25 flex items-center gap-2 transition-all"
               >
                 <Plus className="h-4 w-4" weight="bold" />
@@ -678,26 +678,26 @@ export default function SalesReturnPage({
                         <div className="w-32 h-32 mx-auto relative flex items-center justify-center">
                           <svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <circle cx="64" cy="64" r="52" fill="#F4F5FD" />
-                            
+
                             {/* Open Box Base */}
                             <path d="M38 72L64 84L90 72V94L64 104L38 94V72Z" fill="#8B5CF6" opacity="0.8" />
                             <path d="M38 72L64 84V104L38 94V72Z" fill="#7C3AED" />
                             <path d="M64 84L90 72V94L64 104V84Z" fill="#A78BFA" />
-                            
+
                             {/* Open Flaps */}
                             <path d="M38 72L24 60L50 52L64 64L38 72Z" fill="#C4B5FD" />
                             <path d="M90 72L104 60L78 52L64 64L90 72Z" fill="#DDD6FE" />
-                            
+
                             {/* Floating Document */}
                             <rect x="46" y="24" width="36" height="46" rx="5" fill="white" stroke="#A78BFA" strokeWidth="2" />
                             <line x1="52" y1="34" x2="68" y2="34" stroke="#CBD5E1" strokeWidth="2" strokeLinecap="round" />
                             <line x1="52" y1="40" x2="74" y2="40" stroke="#CBD5E1" strokeWidth="2" strokeLinecap="round" />
                             <line x1="52" y1="46" x2="64" y2="46" stroke="#CBD5E1" strokeWidth="2" strokeLinecap="round" />
-                            
+
                             {/* Refresh Icon Circle on Document */}
                             <circle cx="64" cy="54" r="9" fill="#5B5FEF" />
                             <path d="M61.5 54A2.5 2.5 0 0 1 66 52.5M66.5 54A2.5 2.5 0 0 1 62 55.5" stroke="white" strokeWidth="2" strokeLinecap="round" />
-                            
+
                             {/* Sparkles */}
                             <circle cx="24" cy="38" r="2.5" fill="#A78BFA" />
                             <circle cx="104" cy="34" r="3" fill="#A78BFA" />
@@ -744,13 +744,13 @@ export default function SalesReturnPage({
                           {formatCurrency(item.amount)}
                         </TableCell>
                         <TableCell className="text-right py-4 px-6">
-                            <ThreeDotDropdown
-                              onEdit={() => handleOpenEdit(item)}
-                              onDelete={() => { setItemToDelete(item); setDeleteDialogOpen(true) }}
-                              history={item.history}
-                              entityType="Sales Return"
-                              isLocked={isLocked}
-                            />
+                          <ThreeDotDropdown
+                            onEdit={() => handleOpenEdit(item)}
+                            onDelete={() => { setItemToDelete(item); setDeleteDialogOpen(true) }}
+                            history={item.history}
+                            entityType="Sales Return"
+                            isLocked={isLocked}
+                          />
                         </TableCell>
                       </TableRow>
                     )
@@ -825,7 +825,7 @@ export default function SalesReturnPage({
                       <div className="flex items-center justify-between p-3.5 bg-[#5B5FEF]/10 border-2 border-[#5B5FEF] rounded-2xl shadow-sm">
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="w-10 h-10 rounded-xl bg-[#5B5FEF] text-white flex items-center justify-center font-extrabold text-sm shrink-0 shadow-sm">
-                            {(selectedCustomer?.name || 'CU').substring(0, 2).toUpperCase()}
+                            {selectedCustomer.name.substring(0, 2).toUpperCase()}
                           </div>
                           <div className="min-w-0">
                             <div className="text-sm font-extrabold text-slate-900 truncate">
@@ -920,20 +920,20 @@ export default function SalesReturnPage({
 
                   <div className="space-y-1.5">
                     <Label htmlFor="returnNo" className="text-xs font-medium">Return / Ref Number <span className="text-destructive">*</span></Label>
-                    <Input 
-                      id="returnNo" 
+                    <Input
+                      id="returnNo"
                       value={returnNo}
                       onChange={e => setReturnNo(e.target.value)}
                       placeholder="SR-001"
                       className="h-8 bg-background text-xs font-mono"
-                      required 
+                      required
                     />
                   </div>
 
                   <div className="space-y-1.5">
                     <Label htmlFor="returnDate" className="text-xs font-medium">Return Date <span className="text-destructive">*</span></Label>
-                    <Input 
-                      id="returnDate" 
+                    <Input
+                      id="returnDate"
                       type="date"
                       value={returnDate}
                       onChange={e => setReturnDate(e.target.value)}
@@ -1076,10 +1076,10 @@ export default function SalesReturnPage({
                       </div>
                     </div>
                     <div className="erp-footer-section-content">
-                      <Textarea 
-                        value={remarks} 
-                        onChange={(e) => setRemarks(e.target.value)} 
-                        placeholder="Enter return notes or reasons..." 
+                      <Textarea
+                        value={remarks}
+                        onChange={(e) => setRemarks(e.target.value)}
+                        placeholder="Enter return notes or reasons..."
                         rows={5}
                       />
                     </div>

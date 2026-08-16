@@ -109,7 +109,7 @@ export default function SalesInvoicesPage({
       if (charge.id !== id) return charge
 
       const updated = { ...charge, [field]: value }
-      
+
       // Recalculate finalAmt if necessary
       if (field === 'basicRate' || field === 'taxMode' || field === 'gstRate') {
         const basic = Number(updated.basicRate) || 0
@@ -147,7 +147,7 @@ export default function SalesInvoicesPage({
   const [invoiceNotes, setInvoiceNotes] = useState('')
   const [showInvoiceTerms, setShowInvoiceTerms] = useState(false)
   const [invoiceTerms, setInvoiceTerms] = useState('')
-  
+
   const filteredInvoices = useMemo(() => {
     let result = salesInvoices.filter(inv => isRecordInPeriod(inv.invoiceDate, inv.fy, periodFilter, currentFY))
     if (selectedCustomer !== 'all') {
@@ -155,7 +155,7 @@ export default function SalesInvoicesPage({
     }
     return result
   }, [salesInvoices, periodFilter, currentFY, selectedCustomer])
-  
+
   const totalMT = filteredInvoices.reduce((sum, inv) => sum + getInvoiceQtyForUnit(inv, 'MT', items), 0)
   const totalAmount = filteredInvoices.reduce((sum, inv) => sum + inv.invoiceAmount, 0)
   const gstPercentage = 18
@@ -201,7 +201,7 @@ export default function SalesInvoicesPage({
     let newCounters = [...counters]
     let newTransactions = [...transactions]
     const txnId = `txn-cp-${paymentId}`
-    
+
     if (receivedAmount <= 0) {
       if (oldPayment?.counterId) {
         newCounters = newCounters.map(c => c.id === oldPayment.counterId ? { ...c, currentBalance: c.currentBalance - oldPayment.amount } : c)
@@ -214,9 +214,9 @@ export default function SalesInvoicesPage({
       if (counterId) {
         newCounters = newCounters.map(c => c.id === counterId ? { ...c, currentBalance: c.currentBalance + receivedAmount } : c)
       }
-      
+
       const customerName = customers.find(c => c.id === customerId)?.name || 'Unknown'
-      
+
       const existingTxn = newTransactions.find(t => t.id === txnId)
       if (existingTxn) {
         newTransactions = newTransactions.map(t => t.id === txnId ? {
@@ -239,7 +239,7 @@ export default function SalesInvoicesPage({
         })
       }
     }
-    
+
     onUpdateCashBank(newCounters, newTransactions)
 
     if (receivedAmount > 0) {
@@ -290,14 +290,14 @@ export default function SalesInvoicesPage({
 
     setInvoiceItems(prev => {
       const existingIndex = prev.findIndex(existing => existing.itemId === itemId)
-      
+
       if (existingIndex !== -1) {
         // Item already exists, merge quantities
         const updated = [...prev]
         const existing = updated[existingIndex]
         const newEnteredQuantity = (existing.enteredQuantity || (existing as any).entryQuantity || 0) + enteredQuantity
         const newNorm = normalizeLineItem(item, newEnteredQuantity, activeUnit, existing.rate)
-        
+
         updated[existingIndex] = {
           ...existing,
           enteredQuantity: newEnteredQuantity,
@@ -348,14 +348,14 @@ export default function SalesInvoicesPage({
       const updated = [...prev]
       const itemRow = { ...updated[index] }
       const selectedItemDef = items.find(i => i.id === itemRow.itemId)
-      
+
       if (field === 'itemId') {
         const newItemId = value as string
         const selectedDef = items.find(i => i.id === newItemId)
         const defaultUnit = selectedDef?.alternativeUnit && selectedDef.alternativeUnit !== 'NONE' ? selectedDef.alternativeUnit : (selectedDef?.unit || 'KG')
-        
+
         const existingIndex = prev.findIndex((r, i) => r.itemId === newItemId && i !== index)
-        
+
         if (existingIndex !== -1) {
           // Merge into existing row
           const existing = { ...updated[existingIndex] }
@@ -366,7 +366,7 @@ export default function SalesInvoicesPage({
           existing.baseQuantity = normCombined.baseQuantity
           existing.amount = parseFloat((normCombined.baseAmount).toFixed(2))
           updated[existingIndex] = existing
-          
+
           // Clear current row
           itemRow.itemId = ''
           itemRow.enteredQuantity = 0
@@ -395,7 +395,7 @@ export default function SalesInvoicesPage({
         itemRow.rate = rateWithTax
         itemRow.basicRate = calculateBasicRateFromInclusive(rateWithTax, itemGstPct)
       }
-      
+
       const currentEnteredQty = itemRow.enteredQuantity !== undefined && itemRow.enteredQuantity !== null ? itemRow.enteredQuantity : ((itemRow as any).entryQuantity || 0)
       const currentUnit = itemRow.enteredUnit || (itemRow as any).entryUnit || selectedItemDef?.unit || 'KG'
       const currentRate = itemRow.rate || 0
@@ -426,14 +426,14 @@ export default function SalesInvoicesPage({
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    
+
     if (isLocked) {
       toast.error('Cannot save in locked mode', {
         description: 'Unlock the data in Settings to make changes'
       })
       return
     }
-    
+
     const formData = new FormData(e.currentTarget)
     const customerId = selectedCustomerId || (formData.get('customerId') as string)
     const invoiceDate = formData.get('invoiceDate') as string
@@ -477,7 +477,7 @@ export default function SalesInvoicesPage({
     const amountValue = amountReceived || formData.get('amountReceived') as string
     const finalAmountReceived = Math.max(0, parseFloat(amountValue) || 0)
     const counterId = formData.get('counterId') as string
-    
+
     if (finalAmountReceived > 0 && !counterId) {
       toast.error('Please select a payment account')
       return
@@ -929,950 +929,950 @@ export default function SalesInvoicesPage({
           </div>
         )}
 
-          {open ? (
-            <div className="erp-invoice-page-shell">
-              <form onSubmit={handleSubmit} key={editingInvoice?.id || 'new-sales-invoice'} className="erp-invoice-form erp-invoice-page-form">
-                <div className="erp-invoice-page-header">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-10 w-10 shrink-0 rounded-full"
-                      onClick={() => handleOpenChange(false)}
-                      aria-label="Back to sales invoices"
-                    >
-                      <ArrowLeft size={24} />
-                    </Button>
-                    <div className="min-w-0">
-                      <h2 className="truncate text-xl font-semibold">
-                        {editingInvoice ? 'Edit Sales Invoice' : 'Create Sales Invoice'}
-                      </h2>
-                      <p className="text-sm text-muted-foreground">Bill to customer and add invoice items</p>
-                    </div>
-                  </div>
-                  <div className="erp-reference-actions">
-                    <Button type="button" variant="ghost" size="icon" className="erp-keyboard-button" aria-label="Keyboard shortcuts">
-                      <Keyboard size={20} weight="fill" />
-                    </Button>
-                    <Button type="button" variant="outline" className="erp-upload-button">
-                      <Barcode size={18} weight="bold" />
-                      Upload using Phone
-                    </Button>
-                    <Button type="button" variant="outline" className="erp-settings-button">
-                      <GearSix size={22} weight="duotone" />
-                      Settings
-                    </Button>
-                    <Button type="button" variant="outline" className="erp-save-new-button" disabled>
-                      Save & New
-                    </Button>
-                    <Button type="submit" className="erp-save-button" disabled={invoiceItems.length === 0}>
-                      {editingInvoice ? 'Update' : 'Save'}
-                    </Button>
+        {open ? (
+          <div className="erp-invoice-page-shell">
+            <form onSubmit={handleSubmit} key={editingInvoice?.id || 'new-sales-invoice'} className="erp-invoice-form erp-invoice-page-form">
+              <div className="erp-invoice-page-header">
+                <div className="flex min-w-0 items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-10 w-10 shrink-0 rounded-full"
+                    onClick={() => handleOpenChange(false)}
+                    aria-label="Back to sales invoices"
+                  >
+                    <ArrowLeft size={24} />
+                  </Button>
+                  <div className="min-w-0">
+                    <h2 className="truncate text-xl font-semibold">
+                      {editingInvoice ? 'Edit Sales Invoice' : 'Create Sales Invoice'}
+                    </h2>
+                    <p className="text-sm text-muted-foreground">Bill to customer and add invoice items</p>
                   </div>
                 </div>
-                <div className="erp-invoice-body erp-invoice-page-body">
-                      <div className="erp-form-panel">
-                        <h3 className="erp-section-title">Bill To</h3>
-                        <div className="erp-responsive-grid">
-                          <div className="erp-party-picker-field">
-                            <input type="hidden" name="customerId" value={selectedCustomerId} />
-                              {!customerPickerOpen && selectedInvoiceCustomer ? (
-                                <div className="flex items-center justify-between p-3.5 bg-[#5B5FEF]/10 border-2 border-[#5B5FEF] rounded-2xl shadow-sm">
-                                  <div className="flex items-center gap-3 min-w-0">
-                                    <div className="w-10 h-10 rounded-xl bg-[#5B5FEF] text-white flex items-center justify-center font-extrabold text-sm shrink-0 shadow-sm">
-                                      {(selectedInvoiceCustomer?.name || 'CU').substring(0, 2).toUpperCase()}
-                                    </div>
-                                    <div className="min-w-0">
-                                      <div className="text-sm font-extrabold text-slate-900 truncate">
-                                        {selectedInvoiceCustomer.name}
-                                      </div>
-                                      <div className="text-xs font-bold text-[#5B5FEF]">
-                                        Balance: {formatCurrency(selectedInvoiceCustomer.openingBalance || 0)}
-                                      </div>
-                                    </div>
-                                  </div>
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => {
-                                      setCustomerPickerOpen(true)
-                                      setCustomerSearch('')
-                                    }}
-                                    className="h-8 px-3 text-xs font-bold text-[#5B5FEF] bg-white border-[#5B5FEF]/30 hover:bg-[#5B5FEF] hover:text-white rounded-xl shadow-2xs transition-all shrink-0 ml-2"
-                                  >
-                                    Change Party
-                                  </Button>
-                                </div>
-                              ) : !customerPickerOpen && !selectedInvoiceCustomer ? (
-                                <button
-                                  type="button"
-                                  className="erp-party-add-box"
-                                  onClick={() => setCustomerPickerOpen(true)}
-                                >
-                                  <Plus size={18} weight="bold" />
-                                  Add Party
-                                </button>
-                              ) : (
-                                <div className="erp-party-dropdown-card">
-                                  <div className="erp-party-search-row">
-                                    <MagnifyingGlass size={20} />
-                                    <input
-                                      id="customerId"
-                                      type="text"
-                                      value={customerSearch}
-                                      onChange={(event) => setCustomerSearch(event.target.value)}
-                                      onFocus={() => setCustomerPickerOpen(true)}
-                                      placeholder="Search party by name or number"
-                                      autoComplete="off"
-                                    />
-                                    <button
-                                      type="button"
-                                      aria-label="Toggle customer list"
-                                      onClick={() => setCustomerPickerOpen(false)}
-                                    >
-                                      <span>✕</span>
-                                    </button>
-                                  </div>
-
-                                  <div className="erp-party-options">
-                                    <div className="erp-party-options-head">
-                                      <span>Party Name</span>
-                                      <span>Balance</span>
-                                    </div>
-                                    {filteredCustomers.map((customer) => (
-                                      <button
-                                        type="button"
-                                        key={customer.id}
-                                        className="erp-party-option"
-                                        onClick={() => {
-                                          setSelectedCustomerId(customer.id)
-                                          setCustomerSearch('')
-                                          setCustomerPickerOpen(false)
-                                        }}
-                                      >
-                                        <span>{customer.name}</span>
-                                        <span>{formatCurrency(customer.openingBalance || 0)}</span>
-                                      </button>
-                                    ))}
-                                    <button
-                                      type="button"
-                                      className="erp-party-create-option"
-                                      onClick={() => {
-                                        setCustomerPickerOpen(false)
-                                        setShowQuickCustomer(true)
-                                      }}
-                                    >
-                                      <Plus size={16} weight="bold" />
-                                      Create Party
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
+                <div className="erp-reference-actions">
+                  <Button type="button" variant="ghost" size="icon" className="erp-keyboard-button" aria-label="Keyboard shortcuts">
+                    <Keyboard size={20} weight="fill" />
+                  </Button>
+                  <Button type="button" variant="outline" className="erp-upload-button">
+                    <Barcode size={18} weight="bold" />
+                    Upload using Phone
+                  </Button>
+                  <Button type="button" variant="outline" className="erp-settings-button">
+                    <GearSix size={22} weight="duotone" />
+                    Settings
+                  </Button>
+                  <Button type="button" variant="outline" className="erp-save-new-button" disabled>
+                    Save & New
+                  </Button>
+                  <Button type="submit" className="erp-save-button" disabled={invoiceItems.length === 0}>
+                    {editingInvoice ? 'Update' : 'Save'}
+                  </Button>
+                </div>
+              </div>
+              <div className="erp-invoice-body erp-invoice-page-body">
+                <div className="erp-form-panel">
+                  <h3 className="erp-section-title">Bill To</h3>
+                  <div className="erp-responsive-grid">
+                    <div className="erp-party-picker-field">
+                      <input type="hidden" name="customerId" value={selectedCustomerId} />
+                      {!customerPickerOpen && selectedInvoiceCustomer ? (
+                        <div className="flex items-center justify-between p-3.5 bg-[#5B5FEF]/10 border-2 border-[#5B5FEF] rounded-2xl shadow-sm">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-10 h-10 rounded-xl bg-[#5B5FEF] text-white flex items-center justify-center font-extrabold text-sm shrink-0 shadow-sm">
+                              {selectedInvoiceCustomer.name.substring(0, 2).toUpperCase()}
                             </div>
-
-                          <div className="space-y-1.5">
-                            <Label htmlFor="invoiceNo" className="text-xs font-medium">Invoice Number <span className="text-destructive">*</span></Label>
-                            <Input
-                              id="invoiceNo"
-                              name="invoiceNo"
-                              placeholder="SI-001"
-                              className="h-8 bg-background text-xs"
-                              defaultValue={editingInvoice?.invoiceNo}
-                              required
+                            <div className="min-w-0">
+                              <div className="text-sm font-extrabold text-slate-900 truncate">
+                                {selectedInvoiceCustomer.name}
+                              </div>
+                              <div className="text-xs font-bold text-[#5B5FEF]">
+                                Balance: {formatCurrency(selectedInvoiceCustomer.openingBalance || 0)}
+                              </div>
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setCustomerPickerOpen(true)
+                              setCustomerSearch('')
+                            }}
+                            className="h-8 px-3 text-xs font-bold text-[#5B5FEF] bg-white border-[#5B5FEF]/30 hover:bg-[#5B5FEF] hover:text-white rounded-xl shadow-2xs transition-all shrink-0 ml-2"
+                          >
+                            Change Party
+                          </Button>
+                        </div>
+                      ) : !customerPickerOpen && !selectedInvoiceCustomer ? (
+                        <button
+                          type="button"
+                          className="erp-party-add-box"
+                          onClick={() => setCustomerPickerOpen(true)}
+                        >
+                          <Plus size={18} weight="bold" />
+                          Add Party
+                        </button>
+                      ) : (
+                        <div className="erp-party-dropdown-card">
+                          <div className="erp-party-search-row">
+                            <MagnifyingGlass size={20} />
+                            <input
+                              id="customerId"
+                              type="text"
+                              value={customerSearch}
+                              onChange={(event) => setCustomerSearch(event.target.value)}
+                              onFocus={() => setCustomerPickerOpen(true)}
+                              placeholder="Search party by name or number"
+                              autoComplete="off"
                             />
+                            <button
+                              type="button"
+                              aria-label="Toggle customer list"
+                              onClick={() => setCustomerPickerOpen(false)}
+                            >
+                              <span>✕</span>
+                            </button>
                           </div>
 
-                          <div className="space-y-1.5">
-                            <Label htmlFor="invoiceDate" className="text-xs font-medium">Invoice Date <span className="text-destructive">*</span></Label>
-                            <Input
-                              id="invoiceDate"
-                              name="invoiceDate"
-                              type="date"
-                              className="h-8 bg-background text-xs"
-                              defaultValue={editingInvoice?.invoiceDate || format(new Date(), 'yyyy-MM-dd')}
+                          <div className="erp-party-options">
+                            <div className="erp-party-options-head">
+                              <span>Party Name</span>
+                              <span>Balance</span>
+                            </div>
+                            {filteredCustomers.map((customer) => (
+                              <button
+                                type="button"
+                                key={customer.id}
+                                className="erp-party-option"
+                                onClick={() => {
+                                  setSelectedCustomerId(customer.id)
+                                  setCustomerSearch('')
+                                  setCustomerPickerOpen(false)
+                                }}
+                              >
+                                <span>{customer.name}</span>
+                                <span>{formatCurrency(customer.openingBalance || 0)}</span>
+                              </button>
+                            ))}
+                            <button
+                              type="button"
+                              className="erp-party-create-option"
+                              onClick={() => {
+                                setCustomerPickerOpen(false)
+                                setShowQuickCustomer(true)
+                              }}
+                            >
+                              <Plus size={16} weight="bold" />
+                              Create Party
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
 
-                              required
-                            />
-                            <p className="text-[10px] text-muted-foreground">For payments, reports, ageing, and scheme eligibility</p>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="invoiceNo" className="text-xs font-medium">Invoice Number <span className="text-destructive">*</span></Label>
+                      <Input
+                        id="invoiceNo"
+                        name="invoiceNo"
+                        placeholder="SI-001"
+                        className="h-8 bg-background text-xs"
+                        defaultValue={editingInvoice?.invoiceNo}
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label htmlFor="invoiceDate" className="text-xs font-medium">Invoice Date <span className="text-destructive">*</span></Label>
+                      <Input
+                        id="invoiceDate"
+                        name="invoiceDate"
+                        type="date"
+                        className="h-8 bg-background text-xs"
+                        defaultValue={editingInvoice?.invoiceDate || format(new Date(), 'yyyy-MM-dd')}
+
+                        required
+                      />
+                      <p className="text-[10px] text-muted-foreground">For payments, reports, ageing, and scheme eligibility</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div id="sales-invoice-items" className="space-y-2.5">
+                  <div className="erp-section-toolbar">
+                    <h3 className="erp-section-title">
+                      Invoice Items <span className="text-destructive">*</span>
+                    </h3>
+                    <span className="text-[10px] text-muted-foreground font-medium">
+                      Rate uses item GST • fallback company GST: {gstPercentage}%
+                    </span>
+                  </div>
+
+                  <div className="erp-reference-table-wrap">
+                    {items.length === 0 && (
+                      <div className="px-4 py-3 text-sm text-muted-foreground border-b border-border/50">
+                        No item master found. Click <span className="font-semibold text-primary">Add Item</span>, then use Create New Item inside the list.
+                      </div>
+                    )}
+                    <div className="erp-reference-item-table">
+                      <div className="erp-reference-item-head">
+                        <span>No</span>
+                        <span>Items</span>
+                        <span>HSN/ SAC</span>
+                        <span>Qty</span>
+                        <span>Price (excl. Tax)</span>
+                        <span>Price (incl. Tax)</span>
+                        <span>Discount</span>
+                        <span>Tax</span>
+                        <span>Amount (₹)</span>
+                        <button type="button" className="erp-reference-row-plus" onClick={() => setItemPickerOpen(true)} aria-label="Add item">
+                          <Plus size={22} weight="bold" />
+                        </button>
+                      </div>
+
+                      {invoiceItems.map((item, index) => (
+                        <div className="erp-reference-item-row" key={index}>
+                          <span className="erp-reference-row-number">{index + 1}</span>
+                          <Select value={item.itemId} onValueChange={(value) => updateInvoiceItem(index, 'itemId', value)}>
+                            <SelectTrigger className="erp-reference-cell-input">
+                              <SelectValue placeholder="Select an item" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {items.map((itm) => (
+                                <SelectItem key={itm.id} value={itm.id}>
+                                  {itm.name} ({itm.unit})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Input value={items.find(i => i.id === item.itemId)?.hsnCode || '7214'} disabled className="erp-reference-cell-input text-center font-mono" />
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-1">
+                              <Input
+                                type="number"
+                                step="0.001"
+                                min="0"
+                                value={item.enteredQuantity ?? (item as any).entryQuantity ?? ''}
+                                onChange={(e) => updateInvoiceItem(index, 'enteredQuantity', e.target.value)}
+                                placeholder="0"
+                                className="erp-reference-cell-input font-mono text-right flex-1 min-w-[70px]"
+                              />
+                              {(() => {
+                                const sel = items.find(i => i.id === item.itemId)
+                                const baseUnit = sel?.unit || 'KG'
+                                const defaultAlt = sel?.alternativeUnit && sel.alternativeUnit !== 'NONE' ? sel.alternativeUnit : baseUnit
+                                const activeUnit = item.enteredUnit || (item as any).entryUnit || defaultAlt
+                                return (
+                                  <select
+                                    value={activeUnit}
+                                    onChange={(e) => updateInvoiceItem(index, 'enteredUnit', e.target.value)}
+                                    className="text-xs font-bold font-mono bg-slate-100 border border-slate-300 rounded px-1 py-1 text-slate-800 focus:outline-none"
+                                  >
+                                    {sel?.alternativeUnit && sel.alternativeUnit !== 'NONE' && (
+                                      <option value={sel.alternativeUnit}>{sel.alternativeUnit}</option>
+                                    )}
+                                    <option value={baseUnit}>{baseUnit}</option>
+                                  </select>
+                                )
+                              })()}
+                            </div>
+                            {(() => {
+                              const sel = items.find(i => i.id === item.itemId)
+                              if (!sel) return null
+                              const activeUnit = item.enteredUnit || (item as any).entryUnit || sel.unit
+                              const currentStock = stockMap.get(item.itemId)?.currentStock ?? sel.openingStock ?? 0
+                              const isShortage = currentStock <= 0 || (item.baseQuantity || item.enteredQuantity || 0) > currentStock
+
+                              return (
+                                <div className="flex flex-col gap-0.5">
+                                  {activeUnit !== sel.unit && (
+                                    <span className="text-[10px] font-mono font-bold text-indigo-700 bg-indigo-50 px-1 py-0.5 rounded text-right">
+                                      Base: {(item.baseQuantity ?? ((item.enteredQuantity || 0) * getItemConversionFactor(sel, activeUnit))).toLocaleString('en-IN')} {sel.unit}
+                                    </span>
+                                  )}
+                                  {isShortage && (
+                                    <span className="text-[9px] font-sans font-semibold text-amber-700 bg-amber-50 border border-amber-200/80 px-1 py-0.5 rounded text-right flex items-center justify-end gap-1">
+                                      <span>⚠️</span> Avail: {currentStock.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {sel.unit}
+                                    </span>
+                                  )}
+                                </div>
+                              )
+                            })()}
+                          </div>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={item.basicRate || ''}
+                            onChange={(e) => updateInvoiceItem(index, 'basicRate', e.target.value)}
+                            placeholder="Excl. Tax"
+                            className="erp-reference-cell-input font-mono text-right"
+                          />
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={item.rate || ''}
+                            onChange={(e) => updateInvoiceItem(index, 'rate', e.target.value)}
+                            placeholder="Incl. Tax"
+                            className="erp-reference-cell-input font-mono text-right font-bold text-blue-900 bg-blue-50/50 border-blue-200"
+                          />
+                          <Input value="-" disabled className="erp-reference-cell-input text-center" />
+                          <Input value={`GST @ ${getInvoiceItemGstRate(item.itemId)}%`} disabled className="erp-reference-cell-input text-center" />
+                          <Input value={formatCurrency(item.amount)} disabled className="erp-reference-cell-input font-mono text-right" />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="erp-reference-remove-row"
+                            onClick={() => removeInvoiceItem(index)}
+                            aria-label="Remove item"
+                          >
+                            <X size={16} weight="bold" />
+                          </Button>
+                        </div>
+                      ))}
+
+                      <div className="erp-reference-add-item-row">
+                        <button type="button" className="erp-reference-add-item-dashed" onClick={() => setItemPickerOpen(true)}>
+                          <Plus size={18} weight="bold" />
+                          Add Item
+                        </button>
+
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="erp-invoice-reference-footer">
+                    {/* Column 1: Invoice Information */}
+                    <div className="erp-footer-col erp-footer-col-left">
+                      <div className="erp-footer-section">
+                        <div className="erp-footer-section-header">
+                          <FileText size={20} weight="fill" />
+                          <div>
+                            <h3>Invoice Information</h3>
+                            <p>Add notes and terms related to this purchase.</p>
+                          </div>
+                        </div>
+                        <div className="erp-footer-section-content">
+                          {/* Invoice Notes */}
+                          <div className="erp-inner-card">
+                            <div className="erp-inner-card-header">
+                              <h4><FileText size={16} weight="bold" /> Invoice Notes</h4>
+                              {!showInvoiceNotes && (
+                                <button type="button" className="erp-inner-card-action" onClick={() => setShowInvoiceNotes(true)}>
+                                  <Plus size={14} weight="bold" /> Add Notes
+                                </button>
+                              )}
+                            </div>
+                            {showInvoiceNotes && (
+                              <div className="erp-inner-card-body">
+                                <Textarea
+                                  value={invoiceNotes}
+                                  onChange={(event) => setInvoiceNotes(event.target.value)}
+                                  placeholder="Enter notes here..."
+                                />
+                                <span className="erp-char-count">{invoiceNotes.length} / 500</span>
+                                <button type="button" className="absolute top-2 right-2 text-muted-foreground hover:text-destructive" onClick={() => { setShowInvoiceNotes(false); setInvoiceNotes('') }}>
+                                  <X size={16} weight="bold" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Terms & Conditions */}
+                          <div className="erp-inner-card">
+                            <div className="erp-inner-card-header">
+                              <h4><Receipt size={16} weight="bold" /> Terms & Conditions</h4>
+                              {!showInvoiceTerms && (
+                                <button type="button" className="erp-inner-card-action" onClick={() => { setShowInvoiceTerms(true); setInvoiceTerms((current) => current || DEFAULT_INVOICE_TERMS) }}>
+                                  <Plus size={14} weight="bold" /> Add Terms
+                                </button>
+                              )}
+                            </div>
+                            {showInvoiceTerms && (
+                              <div className="erp-inner-card-body">
+                                <Textarea
+                                  value={invoiceTerms}
+                                  onChange={(event) => setInvoiceTerms(event.target.value)}
+                                  placeholder="Enter terms and conditions..."
+                                />
+                                <span className="erp-char-count">{invoiceTerms.length} / 1000</span>
+                                <button type="button" className="absolute top-2 right-2 text-muted-foreground hover:text-destructive" onClick={() => { setShowInvoiceTerms(false); setInvoiceTerms('') }}>
+                                  <X size={16} weight="bold" />
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
+                    </div>
 
-                        <div id="sales-invoice-items" className="space-y-2.5">
-	                        <div className="erp-section-toolbar">
-	                          <h3 className="erp-section-title">
-	                            Invoice Items <span className="text-destructive">*</span>
-	                          </h3>
-                            <span className="text-[10px] text-muted-foreground font-medium">
-                              Rate uses item GST • fallback company GST: {gstPercentage}%
-                            </span>
-	                        </div>
-
-	                          <div className="erp-reference-table-wrap">
-                              {items.length === 0 && (
-                                <div className="px-4 py-3 text-sm text-muted-foreground border-b border-border/50">
-                                  No item master found. Click <span className="font-semibold text-primary">Add Item</span>, then use Create New Item inside the list.
-                                </div>
-                              )}
-                              <div className="erp-reference-item-table">
-                                <div className="erp-reference-item-head">
-                                  <span>No</span>
-                                  <span>Items</span>
-                                  <span>HSN/ SAC</span>
-                                  <span>Qty</span>
-                                  <span>Price (excl. Tax)</span>
-                                  <span>Price (incl. Tax)</span>
-                                  <span>Discount</span>
-                                  <span>Tax</span>
-                                  <span>Amount (₹)</span>
-                                  <button type="button" className="erp-reference-row-plus" onClick={() => setItemPickerOpen(true)} aria-label="Add item">
-                                    <Plus size={22} weight="bold" />
-                                  </button>
-                                </div>
-
-                                {invoiceItems.map((item, index) => (
-                                  <div className="erp-reference-item-row" key={index}>
-                                    <span className="erp-reference-row-number">{index + 1}</span>
-                                    <Select value={item.itemId} onValueChange={(value) => updateInvoiceItem(index, 'itemId', value)}>
-                                      <SelectTrigger className="erp-reference-cell-input">
-                                        <SelectValue placeholder="Select an item" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {items.map((itm) => (
-                                          <SelectItem key={itm.id} value={itm.id}>
-                                            {itm.name} ({itm.unit})
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                    <Input value={items.find(i => i.id === item.itemId)?.hsnCode || '7214'} disabled className="erp-reference-cell-input text-center font-mono" />
-                                    <div className="flex flex-col gap-0.5">
-                                       <div className="flex items-center gap-1">
-                                         <Input
-                                           type="number"
-                                           step="0.001"
-                                           min="0"
-                                           value={item.enteredQuantity ?? (item as any).entryQuantity ?? ''}
-                                           onChange={(e) => updateInvoiceItem(index, 'enteredQuantity', e.target.value)}
-                                           placeholder="0"
-                                           className="erp-reference-cell-input font-mono text-right flex-1 min-w-[70px]"
-                                         />
-                                         {(() => {
-                                           const sel = items.find(i => i.id === item.itemId)
-                                           const baseUnit = sel?.unit || 'KG'
-                                           const defaultAlt = sel?.alternativeUnit && sel.alternativeUnit !== 'NONE' ? sel.alternativeUnit : baseUnit
-                                           const activeUnit = item.enteredUnit || (item as any).entryUnit || defaultAlt
-                                           return (
-                                             <select
-                                               value={activeUnit}
-                                               onChange={(e) => updateInvoiceItem(index, 'enteredUnit', e.target.value)}
-                                               className="text-xs font-bold font-mono bg-slate-100 border border-slate-300 rounded px-1 py-1 text-slate-800 focus:outline-none"
-                                             >
-                                               {sel?.alternativeUnit && sel.alternativeUnit !== 'NONE' && (
-                                                 <option value={sel.alternativeUnit}>{sel.alternativeUnit}</option>
-                                               )}
-                                               <option value={baseUnit}>{baseUnit}</option>
-                                             </select>
-                                           )
-                                         })()}
-                                       </div>
-                                       {(() => {
-                                         const sel = items.find(i => i.id === item.itemId)
-                                         if (!sel) return null
-                                         const activeUnit = item.enteredUnit || (item as any).entryUnit || sel.unit
-                                         const currentStock = stockMap.get(item.itemId)?.currentStock ?? sel.openingStock ?? 0
-                                         const isShortage = currentStock <= 0 || (item.baseQuantity || item.enteredQuantity || 0) > currentStock
-                                         
-                                         return (
-                                           <div className="flex flex-col gap-0.5">
-                                             {activeUnit !== sel.unit && (
-                                               <span className="text-[10px] font-mono font-bold text-indigo-700 bg-indigo-50 px-1 py-0.5 rounded text-right">
-                                                 Base: {(item.baseQuantity ?? ((item.enteredQuantity || 0) * getItemConversionFactor(sel, activeUnit))).toLocaleString('en-IN')} {sel.unit}
-                                               </span>
-                                             )}
-                                             {isShortage && (
-                                               <span className="text-[9px] font-sans font-semibold text-amber-700 bg-amber-50 border border-amber-200/80 px-1 py-0.5 rounded text-right flex items-center justify-end gap-1">
-                                                 <span>⚠️</span> Avail: {currentStock.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {sel.unit}
-                                               </span>
-                                             )}
-                                           </div>
-                                         )
-                                       })()}
-                                     </div>
-                                    <Input
-                                      type="number"
-                                      step="0.01"
-                                      min="0"
-                                      value={item.basicRate || ''}
-                                      onChange={(e) => updateInvoiceItem(index, 'basicRate', e.target.value)}
-                                      placeholder="Excl. Tax"
-                                      className="erp-reference-cell-input font-mono text-right"
-                                    />
-                                    <Input
-                                      type="number"
-                                      step="0.01"
-                                      min="0"
-                                      value={item.rate || ''}
-                                      onChange={(e) => updateInvoiceItem(index, 'rate', e.target.value)}
-                                      placeholder="Incl. Tax"
-                                      className="erp-reference-cell-input font-mono text-right font-bold text-blue-900 bg-blue-50/50 border-blue-200"
-                                    />
-                                    <Input value="-" disabled className="erp-reference-cell-input text-center" />
-                                    <Input value={`GST @ ${getInvoiceItemGstRate(item.itemId)}%`} disabled className="erp-reference-cell-input text-center" />
-                                    <Input value={formatCurrency(item.amount)} disabled className="erp-reference-cell-input font-mono text-right" />
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon"
-                                      className="erp-reference-remove-row"
-                                      onClick={() => removeInvoiceItem(index)}
-                                      aria-label="Remove item"
-                                    >
-                                      <X size={16} weight="bold" />
-                                    </Button>
-                                  </div>
-                                ))}
-
-                                <div className="erp-reference-add-item-row">
-                                  <button type="button" className="erp-reference-add-item-dashed" onClick={() => setItemPickerOpen(true)}>
-                                    <Plus size={18} weight="bold" />
-                                    Add Item
-                                  </button>
-
-                                </div>
-                              </div>
+                    {/* Column 2: Payment Settlement */}
+                    <div className="erp-footer-col erp-footer-col-middle">
+                      <div className="erp-footer-section">
+                        <div className="erp-footer-section-header">
+                          <Wallet size={20} weight="fill" />
+                          <div>
+                            <h3>Payment Settlement</h3>
+                            <p>Record the amount paid while saving this purchase invoice.</p>
+                          </div>
                         </div>
+                        <div className="erp-footer-section-content">
+                          <input type="hidden" name="amountReceived" value={amountReceived} />
+                          {amountReceived && parseFloat(amountReceived) > 0 && (
+                            <input type="hidden" name="counterId" value={selectedCounterId} />
+                          )}
 
-                        <div className="erp-invoice-reference-footer">
-                          {/* Column 1: Invoice Information */}
-                          <div className="erp-footer-col erp-footer-col-left">
-                            <div className="erp-footer-section">
-                              <div className="erp-footer-section-header">
-                                <FileText size={20} weight="fill" />
-                                <div>
-                                  <h3>Invoice Information</h3>
-                                  <p>Add notes and terms related to this purchase.</p>
-                                </div>
+                          <div className="erp-payment-fields-row mt-1">
+                            <div className="erp-payment-field">
+                              <label>Amount Paid</label>
+                              <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono">₹</span>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  max={finalInvoiceAmountPreview || undefined}
+                                  value={amountReceived}
+                                  onChange={(event) => setAmountReceived(event.target.value)}
+                                  placeholder="0.00"
+                                  className="pl-8 font-mono text-right"
+                                />
                               </div>
-                              <div className="erp-footer-section-content">
-                                {/* Invoice Notes */}
-                                <div className="erp-inner-card">
-                                  <div className="erp-inner-card-header">
-                                    <h4><FileText size={16} weight="bold" /> Invoice Notes</h4>
-                                    {!showInvoiceNotes && (
-                                      <button type="button" className="erp-inner-card-action" onClick={() => setShowInvoiceNotes(true)}>
-                                        <Plus size={14} weight="bold" /> Add Notes
-                                      </button>
-                                    )}
-                                  </div>
-                                  {showInvoiceNotes && (
-                                    <div className="erp-inner-card-body">
-                                      <Textarea 
-                                        value={invoiceNotes} 
-                                        onChange={(event) => setInvoiceNotes(event.target.value)} 
-                                        placeholder="Enter notes here..." 
-                                      />
-                                      <span className="erp-char-count">{invoiceNotes.length} / 500</span>
-                                      <button type="button" className="absolute top-2 right-2 text-muted-foreground hover:text-destructive" onClick={() => { setShowInvoiceNotes(false); setInvoiceNotes('') }}>
-                                        <X size={16} weight="bold" />
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-
-                                {/* Terms & Conditions */}
-                                <div className="erp-inner-card">
-                                  <div className="erp-inner-card-header">
-                                    <h4><Receipt size={16} weight="bold" /> Terms & Conditions</h4>
-                                    {!showInvoiceTerms && (
-                                      <button type="button" className="erp-inner-card-action" onClick={() => { setShowInvoiceTerms(true); setInvoiceTerms((current) => current || DEFAULT_INVOICE_TERMS) }}>
-                                        <Plus size={14} weight="bold" /> Add Terms
-                                      </button>
-                                    )}
-                                  </div>
-                                  {showInvoiceTerms && (
-                                    <div className="erp-inner-card-body">
-                                      <Textarea 
-                                        value={invoiceTerms} 
-                                        onChange={(event) => setInvoiceTerms(event.target.value)} 
-                                        placeholder="Enter terms and conditions..."
-                                      />
-                                      <span className="erp-char-count">{invoiceTerms.length} / 1000</span>
-                                      <button type="button" className="absolute top-2 right-2 text-muted-foreground hover:text-destructive" onClick={() => { setShowInvoiceTerms(false); setInvoiceTerms('') }}>
-                                        <X size={16} weight="bold" />
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
+                            </div>
+                            <div className="erp-payment-field">
+                              <label>Payment Account</label>
+                              <Select value={selectedCounterId} onValueChange={setSelectedCounterId} required={parseFloat(amountReceived) > 0}>
+                                <SelectTrigger className="h-10 text-sm">
+                                  <SelectValue placeholder="Select Cash/Bank account" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {counters.map(c => (
+                                    <SelectItem key={c.id} value={c.id}>
+                                      {c.name} ({c.type}) - Bal: ₹{c.currentBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </div>
                           </div>
 
-                          {/* Column 2: Payment Settlement */}
-                          <div className="erp-footer-col erp-footer-col-middle">
-                            <div className="erp-footer-section">
-                              <div className="erp-footer-section-header">
-                                <Wallet size={20} weight="fill" />
-                                <div>
-                                  <h3>Payment Settlement</h3>
-                                  <p>Record the amount paid while saving this purchase invoice.</p>
-                                </div>
-                              </div>
-                              <div className="erp-footer-section-content">
-                                <input type="hidden" name="amountReceived" value={amountReceived} />
-                                {amountReceived && parseFloat(amountReceived) > 0 && (
-                                  <input type="hidden" name="counterId" value={selectedCounterId} />
-                                )}
 
-                                <div className="erp-payment-fields-row mt-1">
-                                  <div className="erp-payment-field">
-                                    <label>Amount Paid</label>
-                                    <div className="relative">
-                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono">₹</span>
+                          <div className="erp-payment-summary-box">
+                            <div className="erp-payment-summary-row">
+                              <span>Total Payable</span>
+                              <span className="value">₹{finalInvoiceAmountPreview.toFixed(2)}</span>
+                            </div>
+                            <div className="erp-payment-summary-row">
+                              <span>Amount Paid</span>
+                              <span className="value text-blue-600">₹{receivedAmountPreview.toFixed(2)}</span>
+                            </div>
+                            <div className="erp-payment-summary-row divider"></div>
+                            <div className="erp-payment-summary-row balance">
+                              <span>Balance Due</span>
+                              <span className="value">₹{balanceAmountPreview.toFixed(2)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Column 3: Additional Charges & Summary */}
+                    <div className="erp-footer-col erp-footer-col-right">
+                      <div className="erp-footer-section">
+                        <div className="erp-footer-section-header w-full justify-between items-center mb-1">
+                          <div className="flex items-center gap-2">
+                            <div className="icon-container flex items-center justify-center text-blue-500 bg-blue-50 p-1 rounded">
+                              <Receipt size={18} weight="bold" />
+                            </div>
+                            <h3 className="m-0 text-base">Additional Charges</h3>
+                          </div>
+                          <div className="text-sm font-semibold">
+                            Total Charges: <span className="font-mono text-blue-600 ml-1">₹{additionalCostFinal.toFixed(2)}</span>
+                          </div>
+                        </div>
+                        <div className="erp-footer-section-content">
+                          {additionalCharges.length === 0 ? (
+                            <button type="button" className="erp-add-charge-btn" onClick={addAnotherCharge}>
+                              <Plus size={16} weight="bold" /> Add Additional Charge
+                            </button>
+                          ) : (
+                            <div className="flex flex-col gap-3">
+                              {additionalCharges.map((charge) => (
+                                <div key={charge.id} className="erp-charge-dashed-card">
+                                  <Input
+                                    type="text"
+                                    value={charge.remarks}
+                                    onChange={(e) => handleUpdateCharge(charge.id, 'remarks', e.target.value)}
+                                    placeholder="e.g. Transport Charge"
+                                    className="bg-muted/50 border-muted"
+                                  />
+                                  <div className="erp-charge-row-inputs">
+                                    <div className="relative flex-1">
+                                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono text-sm">₹</span>
                                       <Input
                                         type="number"
                                         step="0.01"
                                         min="0"
-                                        max={finalInvoiceAmountPreview || undefined}
-                                        value={amountReceived}
-                                        onChange={(event) => setAmountReceived(event.target.value)}
+                                        value={charge.basicRate || ''}
+                                        onChange={(e) => handleUpdateCharge(charge.id, 'basicRate', e.target.value)}
                                         placeholder="0.00"
-                                        className="pl-8 font-mono text-right"
+                                        className="pl-7 font-mono text-right"
                                       />
                                     </div>
-                                  </div>
-                                  <div className="erp-payment-field">
-                                    <label>Payment Account</label>
-                                    <Select value={selectedCounterId} onValueChange={setSelectedCounterId} required={parseFloat(amountReceived) > 0}>
-                                      <SelectTrigger className="h-10 text-sm">
-                                        <SelectValue placeholder="Select Cash/Bank account" />
+                                    <Select value={charge.taxMode} onValueChange={(value: any) => handleUpdateCharge(charge.id, 'taxMode', value)}>
+                                      <SelectTrigger className="w-[140px]">
+                                        <SelectValue />
                                       </SelectTrigger>
                                       <SelectContent>
-                                        {counters.map(c => (
-                                          <SelectItem key={c.id} value={c.id}>
-                                            {c.name} ({c.type}) - Bal: ₹{c.currentBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                                          </SelectItem>
-                                        ))}
+                                        <SelectItem value="none">No Tax Applicable</SelectItem>
+                                        <SelectItem value="gst">GST Applicable</SelectItem>
                                       </SelectContent>
                                     </Select>
-                                  </div>
-                                </div>
-
-
-                                <div className="erp-payment-summary-box">
-                                  <div className="erp-payment-summary-row">
-                                    <span>Total Payable</span>
-                                    <span className="value">₹{finalInvoiceAmountPreview.toFixed(2)}</span>
-                                  </div>
-                                  <div className="erp-payment-summary-row">
-                                    <span>Amount Paid</span>
-                                    <span className="value text-blue-600">₹{receivedAmountPreview.toFixed(2)}</span>
-                                  </div>
-                                  <div className="erp-payment-summary-row divider"></div>
-                                  <div className="erp-payment-summary-row balance">
-                                    <span>Balance Due</span>
-                                    <span className="value">₹{balanceAmountPreview.toFixed(2)}</span>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Column 3: Additional Charges & Summary */}
-                          <div className="erp-footer-col erp-footer-col-right">
-                            <div className="erp-footer-section">
-                              <div className="erp-footer-section-header w-full justify-between items-center mb-1">
-                                <div className="flex items-center gap-2">
-                                  <div className="icon-container flex items-center justify-center text-blue-500 bg-blue-50 p-1 rounded">
-                                    <Receipt size={18} weight="bold" />
-                                  </div>
-                                  <h3 className="m-0 text-base">Additional Charges</h3>
-                                </div>
-                                <div className="text-sm font-semibold">
-                                  Total Charges: <span className="font-mono text-blue-600 ml-1">₹{additionalCostFinal.toFixed(2)}</span>
-                                </div>
-                              </div>
-                              <div className="erp-footer-section-content">
-                                {additionalCharges.length === 0 ? (
-                                  <button type="button" className="erp-add-charge-btn" onClick={addAnotherCharge}>
-                                    <Plus size={16} weight="bold" /> Add Additional Charge
-                                  </button>
-                                ) : (
-                                  <div className="flex flex-col gap-3">
-                                    {additionalCharges.map((charge) => (
-                                      <div key={charge.id} className="erp-charge-dashed-card">
-                                        <Input
-                                          type="text"
-                                          value={charge.remarks}
-                                          onChange={(e) => handleUpdateCharge(charge.id, 'remarks', e.target.value)}
-                                          placeholder="e.g. Transport Charge"
-                                          className="bg-muted/50 border-muted"
-                                        />
-                                        <div className="erp-charge-row-inputs">
-                                          <div className="relative flex-1">
-                                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono text-sm">₹</span>
-                                            <Input
-                                              type="number"
-                                              step="0.01"
-                                              min="0"
-                                              value={charge.basicRate || ''}
-                                              onChange={(e) => handleUpdateCharge(charge.id, 'basicRate', e.target.value)}
-                                              placeholder="0.00"
-                                              className="pl-7 font-mono text-right"
-                                            />
-                                          </div>
-                                          <Select value={charge.taxMode} onValueChange={(value: any) => handleUpdateCharge(charge.id, 'taxMode', value)}>
-                                            <SelectTrigger className="w-[140px]">
-                                              <SelectValue />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              <SelectItem value="none">No Tax Applicable</SelectItem>
-                                              <SelectItem value="gst">GST Applicable</SelectItem>
-                                            </SelectContent>
-                                          </Select>
-                                          {charge.taxMode === 'gst' && (
-                                            <Input
-                                              type="number"
-                                              step="0.01"
-                                              min="0"
-                                              value={charge.gstRate || ''}
-                                              onChange={(e) => handleUpdateCharge(charge.id, 'gstRate', e.target.value)}
-                                              placeholder="GST %"
-                                              className="w-20 font-mono text-right"
-                                            />
-                                          )}
-                                          <button type="button" onClick={() => removeCharge(charge.id)} className="flex items-center justify-center shrink-0">
-                                            <Trash size={16} />
-                                          </button>
-                                        </div>
-                                      </div>
-                                    ))}
-                                    <div className="pt-1 px-1">
-                                      <button type="button" className="erp-text-link" onClick={addAnotherCharge}>
-                                        <Plus size={14} weight="bold" /> Add Another Charge
-                                      </button>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="erp-footer-section flex-1">
-                              <div className="erp-footer-section-header items-center mb-1">
-                                <FileText size={20} weight="fill" />
-                                <h3 className="m-0 text-base">Invoice Summary</h3>
-                              </div>
-                              <div className="erp-footer-section-content justify-end">
-                                <div className="erp-invoice-summary-list">
-                                  <div className="erp-summary-item">
-                                    <span>Total Quantity</span>
-                                    <span className="value">{formatMT(totalInvoiceQty)}</span>
-                                  </div>
-                                  <div className="erp-summary-item">
-                                    <span>Taxable Value</span>
-                                    <span className="value">₹{taxSummary.taxableAmount.toFixed(2)}</span>
-                                  </div>
-                                  <div className="erp-summary-divider"></div>
-                                  {!taxSummary.isInterState ? (
-                                    <>
-                                      <div className="erp-summary-item">
-                                        <span>CGST @ {taxSummary.cgstRate}%</span>
-                                        <span className="value">₹{taxSummary.cgstAmount.toFixed(2)}</span>
-                                      </div>
-                                      <div className="erp-summary-divider"></div>
-                                      <div className="erp-summary-item">
-                                        <span>SGST @ {taxSummary.sgstRate}%</span>
-                                        <span className="value">₹{taxSummary.sgstAmount.toFixed(2)}</span>
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <div className="erp-summary-item">
-                                      <span>IGST @ {taxSummary.igstRate}%</span>
-                                      <span className="value">₹{taxSummary.igstAmount.toFixed(2)}</span>
-                                    </div>
-                                  )}
-                                  {additionalCostFinal > 0 && (
-                                    <>
-                                      <div className="erp-summary-divider"></div>
-                                      <div className="erp-summary-item">
-                                        <span>Additional Charges</span>
-                                        <span className="value">₹{additionalCostFinal.toFixed(2)}</span>
-                                      </div>
-                                    </>
-                                  )}
-                                  <div className="erp-summary-divider"></div>
-                                  <div className="erp-summary-item discount flex items-center justify-between">
-                                    <div className="flex items-center gap-1.5">
-                                      <span>Round Off</span>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          const rawTotal = totalInvoiceAmount + additionalCostFinal
-                                          if (roundOffAdjustment !== 0) {
-                                            setRoundOffAdjustment(0)
-                                          } else {
-                                            const nearestInt = Math.round(rawTotal)
-                                            const diff = parseFloat((nearestInt - rawTotal).toFixed(2))
-                                            setRoundOffAdjustment(diff)
-                                          }
-                                        }}
-                                        className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-[#5B5FEF] border border-indigo-200 shadow-2xs transition-all cursor-pointer"
-                                        title="Auto calculate round-off to nearest rupee or clear"
-                                      >
-                                        {roundOffAdjustment !== 0 ? 'Clear' : 'Auto Round'}
-                                      </button>
-                                    </div>
-                                    <div className="flex items-center gap-1">
+                                    {charge.taxMode === 'gst' && (
                                       <Input
                                         type="number"
                                         step="0.01"
-                                        value={roundOffAdjustment || ''}
-                                        onChange={e => setRoundOffAdjustment(parseFloat(e.target.value) || 0)}
-                                        placeholder="0.00"
-                                        className="h-6 w-20 text-right font-mono text-xs px-1.5 py-0 border-slate-200 rounded"
+                                        min="0"
+                                        value={charge.gstRate || ''}
+                                        onChange={(e) => handleUpdateCharge(charge.id, 'gstRate', e.target.value)}
+                                        placeholder="GST %"
+                                        className="w-20 font-mono text-right"
                                       />
-                                    </div>
+                                    )}
+                                    <button type="button" onClick={() => removeCharge(charge.id)} className="flex items-center justify-center shrink-0">
+                                      <Trash size={16} />
+                                    </button>
                                   </div>
-                                  {receivedAmountPreview > 0 && (
-                                    <>
-                                      <div className="erp-summary-divider"></div>
-                                      <div className="erp-summary-item text-emerald-600 font-bold">
-                                        <span>Amount Paid</span>
-                                        <span className="value text-emerald-600 font-bold">₹{receivedAmountPreview.toFixed(2)}</span>
-                                      </div>
-                                      <div className="erp-summary-divider"></div>
-                                      <div className="erp-summary-item text-[#5B5FEF] font-bold">
-                                        <span>Balance Due</span>
-                                        <span className="value text-[#5B5FEF] font-bold">₹{balanceAmountPreview.toFixed(2)}</span>
-                                      </div>
-                                    </>
-                                  )}
                                 </div>
-                                
-                                <div className="erp-final-amount-block mt-auto">
-                                  <span className="label">Final Invoice Amount</span>
-                                  <span className="amount">₹{(totalInvoiceAmount + additionalCostFinal + roundOffAdjustment).toFixed(2)}</span>
-                                  <input type="hidden" name="roundOffAdjustment" value={roundOffAdjustment} />
-                                </div>
+                              ))}
+                              <div className="pt-1 px-1">
+                                <button type="button" className="erp-text-link" onClick={addAnotherCharge}>
+                                  <Plus size={14} weight="bold" /> Add Another Charge
+                                </button>
                               </div>
                             </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="erp-footer-section flex-1">
+                        <div className="erp-footer-section-header items-center mb-1">
+                          <FileText size={20} weight="fill" />
+                          <h3 className="m-0 text-base">Invoice Summary</h3>
+                        </div>
+                        <div className="erp-footer-section-content justify-end">
+                          <div className="erp-invoice-summary-list">
+                            <div className="erp-summary-item">
+                              <span>Total Quantity</span>
+                              <span className="value">{formatMT(totalInvoiceQty)}</span>
+                            </div>
+                            <div className="erp-summary-item">
+                              <span>Taxable Value</span>
+                              <span className="value">₹{taxSummary.taxableAmount.toFixed(2)}</span>
+                            </div>
+                            <div className="erp-summary-divider"></div>
+                            {!taxSummary.isInterState ? (
+                              <>
+                                <div className="erp-summary-item">
+                                  <span>CGST @ {taxSummary.cgstRate}%</span>
+                                  <span className="value">₹{taxSummary.cgstAmount.toFixed(2)}</span>
+                                </div>
+                                <div className="erp-summary-divider"></div>
+                                <div className="erp-summary-item">
+                                  <span>SGST @ {taxSummary.sgstRate}%</span>
+                                  <span className="value">₹{taxSummary.sgstAmount.toFixed(2)}</span>
+                                </div>
+                              </>
+                            ) : (
+                              <div className="erp-summary-item">
+                                <span>IGST @ {taxSummary.igstRate}%</span>
+                                <span className="value">₹{taxSummary.igstAmount.toFixed(2)}</span>
+                              </div>
+                            )}
+                            {additionalCostFinal > 0 && (
+                              <>
+                                <div className="erp-summary-divider"></div>
+                                <div className="erp-summary-item">
+                                  <span>Additional Charges</span>
+                                  <span className="value">₹{additionalCostFinal.toFixed(2)}</span>
+                                </div>
+                              </>
+                            )}
+                            <div className="erp-summary-divider"></div>
+                            <div className="erp-summary-item discount flex items-center justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <span>Round Off</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const rawTotal = totalInvoiceAmount + additionalCostFinal
+                                    if (roundOffAdjustment !== 0) {
+                                      setRoundOffAdjustment(0)
+                                    } else {
+                                      const nearestInt = Math.round(rawTotal)
+                                      const diff = parseFloat((nearestInt - rawTotal).toFixed(2))
+                                      setRoundOffAdjustment(diff)
+                                    }
+                                  }}
+                                  className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 hover:bg-indigo-100 text-[#5B5FEF] border border-indigo-200 shadow-2xs transition-all cursor-pointer"
+                                  title="Auto calculate round-off to nearest rupee or clear"
+                                >
+                                  {roundOffAdjustment !== 0 ? 'Clear' : 'Auto Round'}
+                                </button>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  value={roundOffAdjustment || ''}
+                                  onChange={e => setRoundOffAdjustment(parseFloat(e.target.value) || 0)}
+                                  placeholder="0.00"
+                                  className="h-6 w-20 text-right font-mono text-xs px-1.5 py-0 border-slate-200 rounded"
+                                />
+                              </div>
+                            </div>
+                            {receivedAmountPreview > 0 && (
+                              <>
+                                <div className="erp-summary-divider"></div>
+                                <div className="erp-summary-item text-emerald-600 font-bold">
+                                  <span>Amount Paid</span>
+                                  <span className="value text-emerald-600 font-bold">₹{receivedAmountPreview.toFixed(2)}</span>
+                                </div>
+                                <div className="erp-summary-divider"></div>
+                                <div className="erp-summary-item text-[#5B5FEF] font-bold">
+                                  <span>Balance Due</span>
+                                  <span className="value text-[#5B5FEF] font-bold">₹{balanceAmountPreview.toFixed(2)}</span>
+                                </div>
+                              </>
+                            )}
+                          </div>
+
+                          <div className="erp-final-amount-block mt-auto">
+                            <span className="label">Final Invoice Amount</span>
+                            <span className="amount">₹{(totalInvoiceAmount + additionalCostFinal + roundOffAdjustment).toFixed(2)}</span>
+                            <input type="hidden" name="roundOffAdjustment" value={roundOffAdjustment} />
                           </div>
                         </div>
-
-                        <div className="erp-global-footer-alert">
-                          <Info size={18} weight="fill" />
-                          Values are updated automatically based on your entries.
-                        </div>
                       </div>
                     </div>
-
-                    <div className="erp-dialog-footer">
-                      <div className="erp-dialog-actions">
-                        <Button 
-                          type="button" 
-                          variant="outline" 
-                          className="erp-secondary-action flex-1" 
-                          onClick={() => handleOpenChange(false)}
-                        >
-                          Cancel
-                        </Button>
-                        <Button 
-                          type="submit" 
-                          className="erp-primary-action flex-1" 
-                          disabled={invoiceItems.length === 0}
-                        >
-                          {editingInvoice ? 'Update Invoice' : 'Create Invoice'}
-                        </Button>
-                      </div>
-                    </div>
-              </form>
-            </div>
-          ) : null}
-
-            <Dialog
-              open={itemPickerOpen}
-              onOpenChange={(nextOpen) => {
-                setItemPickerOpen(nextOpen)
-                if (!nextOpen) resetItemPicker()
-              }}
-            >
-              <DialogContent
-                className="erp-item-picker-dialog max-h-[82dvh] p-0"
-                style={{ width: 'min(1180px, calc(100vw - 2rem))', maxWidth: 'min(1180px, calc(100vw - 2rem))' }}
-              >
-                <DialogHeader className="erp-item-picker-header border-b border-border px-6 py-5">
-                  <DialogTitle className="erp-item-picker-title text-xl">Add Items to Bill</DialogTitle>
-                </DialogHeader>
-
-                <div className="erp-item-picker-body space-y-4 px-6 py-5">
-                  <div className="erp-item-picker-toolbar grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_auto]">
-                    <div className="erp-item-picker-search relative">
-                      <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        value={itemSearch}
-                        onChange={(event) => setItemSearch(event.target.value)}
-                        placeholder="Search by Item/ Serial no./ HSN code/ SKU/ Custom Field / Category"
-                        className="erp-item-picker-input h-11 pl-10 pr-10"
-                      />
-                      <Barcode size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    </div>
-                    <Select value={selectedItemCategory} onValueChange={setSelectedItemCategory}>
-                      <SelectTrigger className="erp-item-picker-category h-11">
-                        <SelectValue placeholder="Select Category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Categories</SelectItem>
-                        {[...new Set(items.map(item => item.category).filter(Boolean))].map(category => (
-                          <SelectItem key={category} value={category!}>{category}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button type="button" className="erp-item-picker-create h-11" onClick={() => setShowQuickItem(true)}>
-                      Create New Item
-                    </Button>
                   </div>
 
-                  <div className="erp-item-picker-table-card overflow-hidden rounded-xl border border-border">
-                    <div className="erp-item-picker-table-scroll max-h-[420px] overflow-y-auto">
-                      <Table className="erp-item-picker-table">
-                        <TableHeader className="erp-item-picker-table-head sticky top-0 z-10 bg-muted">
-                          <TableRow>
-                            <TableHead className="w-[26%]">Item Name</TableHead>
-                            <TableHead className="w-[12%]">Item Code</TableHead>
-                            <TableHead className="text-right w-[14%]">Stock</TableHead>
-                            <TableHead className="text-right w-[14%]">Sales Price</TableHead>
-                            <TableHead className="text-right w-[14%]">Purchase Price</TableHead>
-                            <TableHead className="text-right w-[20%] min-w-[180px]">Quantity</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {filteredPickerItems.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={6} className="h-72 text-center text-muted-foreground">
-                                No items found
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            filteredPickerItems.map(item => {
-                              const pickerQuantity = pickerQuantities[item.id] !== undefined ? pickerQuantities[item.id] : 0
-                              const isSelected = pickerQuantities[item.id] !== undefined
-                              const defaultAlt = item.alternativeUnit && item.alternativeUnit !== 'NONE' ? item.alternativeUnit : item.unit
-                              const activeUnit = pickerUnits[item.id] || defaultAlt
-                              
-                              return (
-                                <TableRow
-                                  key={item.id}
-                                  className={isSelected ? 'erp-item-picker-row is-selected bg-primary/10' : 'erp-item-picker-row'}
-                                >
-                                  <TableCell className="font-medium">{item.name}</TableCell>
-                                  <TableCell>{item.itemCode || '-'}</TableCell>
-                                  <TableCell className="text-right font-mono font-semibold">
-                                    {(() => {
-                                      const currentStock = stockMap.get(item.id)?.currentStock ?? item.openingStock ?? 0
-                                      const isNegative = currentStock <= 0
-                                      return (
-                                        <div className="flex flex-col items-end">
-                                          <span className={isNegative ? 'text-amber-600 font-bold' : 'text-blue-700'}>
-                                            {currentStock.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {item.unit}
-                                          </span>
-                                          {isNegative && (
-                                            <span className="inline-flex items-center gap-0.5 text-[9px] px-1 py-0.2 rounded bg-amber-50 text-amber-700 border border-amber-200 font-sans font-bold">
-                                              Negative Stock
-                                            </span>
-                                          )}
-                                        </div>
-                                      )
-                                    })()}
-                                  </TableCell>
-                                  <TableCell className="text-right font-mono">{item.salesPrice ? formatCurrency(item.salesPrice) : '-'}</TableCell>
-                                  <TableCell className="text-right font-mono">{item.purchasePrice ? formatCurrency(item.purchasePrice) : '-'}</TableCell>
-                                  <TableCell className="text-right">
-                                    {isSelected ? (
-                                      <div className="inline-flex items-center justify-end gap-1 bg-slate-100/90 p-0.5 rounded-lg border border-slate-200 shrink-0">
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-7 w-7 text-slate-600 hover:bg-white hover:text-slate-900 rounded-md shrink-0"
-                                          onClick={() => updatePickerQuantity(item.id, pickerQuantity <= 1 ? null : pickerQuantity - 1)}
-                                        >
-                                          -
-                                        </Button>
-                                        <Input
-                                          type="number"
-                                          min="0"
-                                          step="0.001"
-                                          value={pickerQuantity}
-                                          onChange={(event) => updatePickerQuantity(item.id, event.target.value === '' ? 0 : parseFloat(event.target.value))}
-                                          className="h-7 w-14 px-1 text-center font-mono text-xs bg-white border-0 shadow-none focus-visible:ring-0 font-bold"
-                                        />
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-7 w-7 text-slate-600 hover:bg-white hover:text-slate-900 rounded-md shrink-0"
-                                          onClick={() => updatePickerQuantity(item.id, pickerQuantity + 1)}
-                                        >
-                                          +
-                                        </Button>
-                                        {item.alternativeUnit && item.alternativeUnit !== 'NONE' ? (
-                                          <select
-                                            value={activeUnit}
-                                            onChange={(e) => updatePickerUnit(item.id, e.target.value)}
-                                            className="h-7 text-xs font-bold font-mono bg-white border border-slate-200 rounded-md px-1 text-slate-800 focus:outline-none cursor-pointer ml-0.5"
-                                          >
-                                            <option value={item.alternativeUnit}>{item.alternativeUnit}</option>
-                                            <option value={item.unit}>{item.unit}</option>
-                                          </select>
-                                        ) : (
-                                          <span className="text-xs font-bold font-mono text-slate-600 px-1.5">{item.unit}</span>
-                                        )}
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center justify-end gap-1.5">
-                                        <Button
-                                          type="button"
-                                          variant="outline"
-                                          size="sm"
-                                          className="h-8 px-3 text-xs font-semibold border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 shrink-0"
-                                          onClick={() => {
-                                            setSelectedPickerItemId(item.id)
-                                            updatePickerQuantity(item.id, 1)
-                                          }}
-                                        >
-                                          + Add
-                                        </Button>
-                                        {item.alternativeUnit && item.alternativeUnit !== 'NONE' ? (
-                                          <select
-                                            value={activeUnit}
-                                            onChange={(e) => updatePickerUnit(item.id, e.target.value)}
-                                            className="h-8 text-xs font-bold font-mono bg-slate-100 border border-slate-300 rounded-md px-1.5 text-slate-800 focus:outline-none cursor-pointer shrink-0"
-                                          >
-                                            <option value={item.alternativeUnit}>{item.alternativeUnit}</option>
-                                            <option value={item.unit}>{item.unit}</option>
-                                          </select>
-                                        ) : (
-                                          <span className="text-xs font-bold font-mono text-slate-500 min-w-[32px] text-left">{item.unit}</span>
-                                        )}
-                                      </div>
-                                    )}
-                                  </TableCell>
-                                </TableRow>
-                              )
-                            })
-                          )}
-                        </TableBody>
-                      </Table>
-                    </div>
+                  <div className="erp-global-footer-alert">
+                    <Info size={18} weight="fill" />
+                    Values are updated automatically based on your entries.
                   </div>
                 </div>
-
-                <div className="erp-item-picker-footer flex items-center justify-between border-t border-border px-6 py-4">
-                  <div className="erp-item-picker-selected-count text-sm text-primary">
-                    Show {Object.values(pickerQuantities).filter((quantity) => quantity > 0).length} Item(s) Selected
-                  </div>
-                  <div className="erp-item-picker-actions flex gap-3">
-                    <Button type="button" variant="outline" onClick={() => {
-                      setItemPickerOpen(false)
-                      resetItemPicker()
-                    }}>
-                      Cancel [ESC]
-                    </Button>
-                    <Button type="button" onClick={handleAddSelectedItemToBill} disabled={Object.values(pickerQuantities).every((quantity) => quantity <= 0)}>
-                      Add to Bill [F7]
-                    </Button>
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            <ItemEditorDialog
-              open={showQuickItem}
-              onOpenChange={setShowQuickItem}
-              existingItems={items}
-              onSave={(item) => {
-                setItems((prev) => [...prev, item])
-                setSelectedPickerItemId(item.id)
-                setShowQuickItem(false)
-                toast.success(`Item "${item.name}" created`)
-              }}
-            />
-          {!open && (
-            <>
-              {/* Filter Sub-bar */}
-              <div className="px-5 py-3.5 bg-slate-50/70 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4">
-                <div className="flex flex-wrap items-center gap-4">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
-                    <SlidersHorizontal className="h-4 w-4" weight="bold" />
-                    <span>Filters:</span>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    <Select value={selectedCustomer} onValueChange={setSelectedCustomer}>
-                      <SelectTrigger className="w-48 h-9 bg-white border-slate-200 text-xs font-medium rounded-xl">
-                        <span className="text-slate-400 mr-1">Customer:</span>
-                        <SelectValue placeholder="All Customers" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Customers</SelectItem>
-                        {customers.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <PeriodDateFilter currentFY={currentFY} value={periodFilter} onChange={setPeriodFilter} />
-                </div>
-
-                <span className="bg-slate-100 text-slate-700 text-xs font-semibold px-3 py-1 rounded-full border border-slate-200/60">
-                  {filteredInvoices.length} invoices found
-                </span>
               </div>
 
-              {/* Table */}
-              <Table>
-                <TableHeader className="bg-[#edf3fc]">
-                  <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
-                    <TableHead className="font-bold text-xs uppercase tracking-wider text-slate-700 py-3.5">INVOICE NO</TableHead>
-                    <TableHead className="font-bold text-xs uppercase tracking-wider text-slate-700 py-3.5">DATE</TableHead>
-                    <TableHead className="font-bold text-xs uppercase tracking-wider text-slate-700 py-3.5">CUSTOMER</TableHead>
-                    <TableHead className="font-bold text-xs uppercase tracking-wider text-slate-700 py-3.5 text-right">AMOUNT</TableHead>
-                    <TableHead className="font-bold text-xs uppercase tracking-wider text-slate-700 py-3.5 text-right">ACTIONS</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredInvoices.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="py-16 text-center">
-                        <div className="max-w-sm mx-auto space-y-3">
-                          <div className="w-16 h-16 rounded-full bg-blue-50 text-[#0256e8] flex items-center justify-center mx-auto border border-blue-100 shadow-2xs">
-                            <Receipt size={32} weight="duotone" />
-                          </div>
-                          <h3 className="text-base font-bold text-slate-900">No invoices found</h3>
-                          <p className="text-xs text-slate-500">
-                            No sales invoices found for FY {currentFY}. Add your first invoice to get started.
-                          </p>
-                          <button
-                            onClick={handleAdd}
-                            className="inline-flex items-center gap-1.5 text-sm font-bold text-[#0256e8] hover:underline pt-2"
-                          >
-                            <Plus className="h-4 w-4" weight="bold" />
-                            Create First Invoice
-                          </button>
+              <div className="erp-dialog-footer">
+                <div className="erp-dialog-actions">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="erp-secondary-action flex-1"
+                    onClick={() => handleOpenChange(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    className="erp-primary-action flex-1"
+                    disabled={invoiceItems.length === 0}
+                  >
+                    {editingInvoice ? 'Update Invoice' : 'Create Invoice'}
+                  </Button>
+                </div>
+              </div>
+            </form>
+          </div>
+        ) : null}
+
+        <Dialog
+          open={itemPickerOpen}
+          onOpenChange={(nextOpen) => {
+            setItemPickerOpen(nextOpen)
+            if (!nextOpen) resetItemPicker()
+          }}
+        >
+          <DialogContent
+            className="erp-item-picker-dialog max-h-[82dvh] p-0"
+            style={{ width: 'min(1180px, calc(100vw - 2rem))', maxWidth: 'min(1180px, calc(100vw - 2rem))' }}
+          >
+            <DialogHeader className="erp-item-picker-header border-b border-border px-6 py-5">
+              <DialogTitle className="erp-item-picker-title text-xl">Add Items to Bill</DialogTitle>
+            </DialogHeader>
+
+            <div className="erp-item-picker-body space-y-4 px-6 py-5">
+              <div className="erp-item-picker-toolbar grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_auto]">
+                <div className="erp-item-picker-search relative">
+                  <MagnifyingGlass size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={itemSearch}
+                    onChange={(event) => setItemSearch(event.target.value)}
+                    placeholder="Search by Item/ Serial no./ HSN code/ SKU/ Custom Field / Category"
+                    className="erp-item-picker-input h-11 pl-10 pr-10"
+                  />
+                  <Barcode size={18} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                </div>
+                <Select value={selectedItemCategory} onValueChange={setSelectedItemCategory}>
+                  <SelectTrigger className="erp-item-picker-category h-11">
+                    <SelectValue placeholder="Select Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Categories</SelectItem>
+                    {[...new Set(items.map(item => item.category).filter(Boolean))].map(category => (
+                      <SelectItem key={category} value={category!}>{category}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button type="button" className="erp-item-picker-create h-11" onClick={() => setShowQuickItem(true)}>
+                  Create New Item
+                </Button>
+              </div>
+
+              <div className="erp-item-picker-table-card overflow-hidden rounded-xl border border-border">
+                <div className="erp-item-picker-table-scroll max-h-[420px] overflow-y-auto">
+                  <Table className="erp-item-picker-table">
+                    <TableHeader className="erp-item-picker-table-head sticky top-0 z-10 bg-muted">
+                      <TableRow>
+                        <TableHead className="w-[26%]">Item Name</TableHead>
+                        <TableHead className="w-[12%]">Item Code</TableHead>
+                        <TableHead className="text-right w-[14%]">Stock</TableHead>
+                        <TableHead className="text-right w-[14%]">Sales Price</TableHead>
+                        <TableHead className="text-right w-[14%]">Purchase Price</TableHead>
+                        <TableHead className="text-right w-[20%] min-w-[180px]">Quantity</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredPickerItems.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="h-72 text-center text-muted-foreground">
+                            No items found
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        filteredPickerItems.map(item => {
+                          const pickerQuantity = pickerQuantities[item.id] !== undefined ? pickerQuantities[item.id] : 0
+                          const isSelected = pickerQuantities[item.id] !== undefined
+                          const defaultAlt = item.alternativeUnit && item.alternativeUnit !== 'NONE' ? item.alternativeUnit : item.unit
+                          const activeUnit = pickerUnits[item.id] || defaultAlt
+
+                          return (
+                            <TableRow
+                              key={item.id}
+                              className={isSelected ? 'erp-item-picker-row is-selected bg-primary/10' : 'erp-item-picker-row'}
+                            >
+                              <TableCell className="font-medium">{item.name}</TableCell>
+                              <TableCell>{item.itemCode || '-'}</TableCell>
+                              <TableCell className="text-right font-mono font-semibold">
+                                {(() => {
+                                  const currentStock = stockMap.get(item.id)?.currentStock ?? item.openingStock ?? 0
+                                  const isNegative = currentStock <= 0
+                                  return (
+                                    <div className="flex flex-col items-end">
+                                      <span className={isNegative ? 'text-amber-600 font-bold' : 'text-blue-700'}>
+                                        {currentStock.toLocaleString('en-IN', { maximumFractionDigits: 3 })} {item.unit}
+                                      </span>
+                                      {isNegative && (
+                                        <span className="inline-flex items-center gap-0.5 text-[9px] px-1 py-0.2 rounded bg-amber-50 text-amber-700 border border-amber-200 font-sans font-bold">
+                                          Negative Stock
+                                        </span>
+                                      )}
+                                    </div>
+                                  )
+                                })()}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">{item.salesPrice ? formatCurrency(item.salesPrice) : '-'}</TableCell>
+                              <TableCell className="text-right font-mono">{item.purchasePrice ? formatCurrency(item.purchasePrice) : '-'}</TableCell>
+                              <TableCell className="text-right">
+                                {isSelected ? (
+                                  <div className="inline-flex items-center justify-end gap-1 bg-slate-100/90 p-0.5 rounded-lg border border-slate-200 shrink-0">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 text-slate-600 hover:bg-white hover:text-slate-900 rounded-md shrink-0"
+                                      onClick={() => updatePickerQuantity(item.id, pickerQuantity <= 1 ? null : pickerQuantity - 1)}
+                                    >
+                                      -
+                                    </Button>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      step="0.001"
+                                      value={pickerQuantity}
+                                      onChange={(event) => updatePickerQuantity(item.id, event.target.value === '' ? 0 : parseFloat(event.target.value))}
+                                      className="h-7 w-14 px-1 text-center font-mono text-xs bg-white border-0 shadow-none focus-visible:ring-0 font-bold"
+                                    />
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 text-slate-600 hover:bg-white hover:text-slate-900 rounded-md shrink-0"
+                                      onClick={() => updatePickerQuantity(item.id, pickerQuantity + 1)}
+                                    >
+                                      +
+                                    </Button>
+                                    {item.alternativeUnit && item.alternativeUnit !== 'NONE' ? (
+                                      <select
+                                        value={activeUnit}
+                                        onChange={(e) => updatePickerUnit(item.id, e.target.value)}
+                                        className="h-7 text-xs font-bold font-mono bg-white border border-slate-200 rounded-md px-1 text-slate-800 focus:outline-none cursor-pointer ml-0.5"
+                                      >
+                                        <option value={item.alternativeUnit}>{item.alternativeUnit}</option>
+                                        <option value={item.unit}>{item.unit}</option>
+                                      </select>
+                                    ) : (
+                                      <span className="text-xs font-bold font-mono text-slate-600 px-1.5">{item.unit}</span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-8 px-3 text-xs font-semibold border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 shrink-0"
+                                      onClick={() => {
+                                        setSelectedPickerItemId(item.id)
+                                        updatePickerQuantity(item.id, 1)
+                                      }}
+                                    >
+                                      + Add
+                                    </Button>
+                                    {item.alternativeUnit && item.alternativeUnit !== 'NONE' ? (
+                                      <select
+                                        value={activeUnit}
+                                        onChange={(e) => updatePickerUnit(item.id, e.target.value)}
+                                        className="h-8 text-xs font-bold font-mono bg-slate-100 border border-slate-300 rounded-md px-1.5 text-slate-800 focus:outline-none cursor-pointer shrink-0"
+                                      >
+                                        <option value={item.alternativeUnit}>{item.alternativeUnit}</option>
+                                        <option value={item.unit}>{item.unit}</option>
+                                      </select>
+                                    ) : (
+                                      <span className="text-xs font-bold font-mono text-slate-500 min-w-[32px] text-left">{item.unit}</span>
+                                    )}
+                                  </div>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </div>
+
+            <div className="erp-item-picker-footer flex items-center justify-between border-t border-border px-6 py-4">
+              <div className="erp-item-picker-selected-count text-sm text-primary">
+                Show {Object.values(pickerQuantities).filter((quantity) => quantity > 0).length} Item(s) Selected
+              </div>
+              <div className="erp-item-picker-actions flex gap-3">
+                <Button type="button" variant="outline" onClick={() => {
+                  setItemPickerOpen(false)
+                  resetItemPicker()
+                }}>
+                  Cancel [ESC]
+                </Button>
+                <Button type="button" onClick={handleAddSelectedItemToBill} disabled={Object.values(pickerQuantities).every((quantity) => quantity <= 0)}>
+                  Add to Bill [F7]
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <ItemEditorDialog
+          open={showQuickItem}
+          onOpenChange={setShowQuickItem}
+          existingItems={items}
+          onSave={(item) => {
+            setItems((prev) => [...prev, item])
+            setSelectedPickerItemId(item.id)
+            setShowQuickItem(false)
+            toast.success(`Item "${item.name}" created`)
+          }}
+        />
+        {!open && (
+          <>
+            {/* Filter Sub-bar */}
+            <div className="px-5 py-3.5 bg-slate-50/70 border-b border-slate-100 flex flex-wrap items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                  <SlidersHorizontal className="h-4 w-4" weight="bold" />
+                  <span>Filters:</span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Select value={selectedCustomer} onValueChange={setSelectedCustomer}>
+                    <SelectTrigger className="w-48 h-9 bg-white border-slate-200 text-xs font-medium rounded-xl">
+                      <span className="text-slate-400 mr-1">Customer:</span>
+                      <SelectValue placeholder="All Customers" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Customers</SelectItem>
+                      {customers.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <PeriodDateFilter currentFY={currentFY} value={periodFilter} onChange={setPeriodFilter} />
+              </div>
+
+              <span className="bg-slate-100 text-slate-700 text-xs font-semibold px-3 py-1 rounded-full border border-slate-200/60">
+                {filteredInvoices.length} invoices found
+              </span>
+            </div>
+
+            {/* Table */}
+            <Table>
+              <TableHeader className="bg-[#edf3fc]">
+                <TableRow className="border-b border-slate-200/80 hover:bg-transparent">
+                  <TableHead className="font-bold text-xs uppercase tracking-wider text-slate-700 py-3.5">INVOICE NO</TableHead>
+                  <TableHead className="font-bold text-xs uppercase tracking-wider text-slate-700 py-3.5">DATE</TableHead>
+                  <TableHead className="font-bold text-xs uppercase tracking-wider text-slate-700 py-3.5">CUSTOMER</TableHead>
+                  <TableHead className="font-bold text-xs uppercase tracking-wider text-slate-700 py-3.5 text-right">AMOUNT</TableHead>
+                  <TableHead className="font-bold text-xs uppercase tracking-wider text-slate-700 py-3.5 text-right">ACTIONS</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredInvoices.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="py-16 text-center">
+                      <div className="max-w-sm mx-auto space-y-3">
+                        <div className="w-16 h-16 rounded-full bg-blue-50 text-[#0256e8] flex items-center justify-center mx-auto border border-blue-100 shadow-2xs">
+                          <Receipt size={32} weight="duotone" />
                         </div>
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredInvoices.map((invoice) => {
-                      return (
-                        <TableRow key={invoice.id} className="hover:bg-slate-50/80 border-b border-slate-100">
-                          <TableCell className="font-mono font-bold text-slate-900 text-sm">{invoice.invoiceNo}</TableCell>
-                          <TableCell className="text-slate-600 text-xs font-medium">{new Date(invoice.invoiceDate).toLocaleDateString('en-IN')}</TableCell>
-                          <TableCell className="font-semibold text-slate-800 text-sm">{getCustomerName(invoice.customerId)}</TableCell>
-                          <TableCell className="text-right font-mono font-bold text-slate-900 text-sm">{formatCurrency(invoice.invoiceAmount)}</TableCell>
+                        <h3 className="text-base font-bold text-slate-900">No invoices found</h3>
+                        <p className="text-xs text-slate-500">
+                          No sales invoices found for FY {currentFY}. Add your first invoice to get started.
+                        </p>
+                        <button
+                          onClick={handleAdd}
+                          className="inline-flex items-center gap-1.5 text-sm font-bold text-[#0256e8] hover:underline pt-2"
+                        >
+                          <Plus className="h-4 w-4" weight="bold" />
+                          Create First Invoice
+                        </button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredInvoices.map((invoice) => {
+                    return (
+                      <TableRow key={invoice.id} className="hover:bg-slate-50/80 border-b border-slate-100">
+                        <TableCell className="font-mono font-bold text-slate-900 text-sm">{invoice.invoiceNo}</TableCell>
+                        <TableCell className="text-slate-600 text-xs font-medium">{new Date(invoice.invoiceDate).toLocaleDateString('en-IN')}</TableCell>
+                        <TableCell className="font-semibold text-slate-800 text-sm">{getCustomerName(invoice.customerId)}</TableCell>
+                        <TableCell className="text-right font-mono font-bold text-slate-900 text-sm">{formatCurrency(invoice.invoiceAmount)}</TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
                             <Button
@@ -1908,21 +1908,21 @@ export default function SalesInvoicesPage({
                     )
                   })
                 )}
-                </TableBody>
-              </Table>
+              </TableBody>
+            </Table>
 
-              {/* Table Footer */}
-              <div className="p-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium bg-white">
-                <div>Showing 0 to {filteredInvoices.length} of {filteredInvoices.length} entries</div>
-                <div className="flex items-center gap-1">
-                  <button className="h-7 w-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 disabled:opacity-50" disabled>‹</button>
-                  <button className="h-7 w-7 rounded-lg bg-[#0256e8] text-white font-bold flex items-center justify-center">1</button>
-                  <button className="h-7 w-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 disabled:opacity-50" disabled>›</button>
-                </div>
+            {/* Table Footer */}
+            <div className="p-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium bg-white">
+              <div>Showing 0 to {filteredInvoices.length} of {filteredInvoices.length} entries</div>
+              <div className="flex items-center gap-1">
+                <button className="h-7 w-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 disabled:opacity-50" disabled>‹</button>
+                <button className="h-7 w-7 rounded-lg bg-[#0256e8] text-white font-bold flex items-center justify-center">1</button>
+                <button className="h-7 w-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 disabled:opacity-50" disabled>›</button>
               </div>
-            </>
-          )}
-        </div>
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Floating Plus Button */}
       {!open && (
@@ -1966,7 +1966,7 @@ export default function SalesInvoicesPage({
               Delete Sales Invoice
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete sales invoice <strong>{invoiceToDelete?.invoiceNo}</strong> for <strong>{getCustomerName(invoiceToDelete?.customerId || '')}</strong>? 
+              Are you sure you want to delete sales invoice <strong>{invoiceToDelete?.invoiceNo}</strong> for <strong>{getCustomerName(invoiceToDelete?.customerId || '')}</strong>?
               <br /><br />
               This action cannot be undone and will affect all related calculations and reports.
             </AlertDialogDescription>

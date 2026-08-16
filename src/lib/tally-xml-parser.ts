@@ -71,6 +71,23 @@ export interface TallyXmlImportResult {
 }
 
 /**
+ * Safely decodes raw file buffer supporting UTF-16LE (with or without BOM), UTF-16BE, and UTF-8.
+ */
+export function decodeXmlFileBuffer(buffer: ArrayBuffer | Uint8Array): string {
+  const uint8 = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer)
+  if (uint8.length >= 2 && uint8[0] === 0xFF && uint8[1] === 0xFE) {
+    return new TextDecoder('utf-16le').decode(uint8)
+  }
+  if (uint8.length >= 2 && uint8[0] === 0xFE && uint8[1] === 0xFF) {
+    return new TextDecoder('utf-16be').decode(uint8)
+  }
+  if (uint8.length >= 4 && uint8[1] === 0x00 && uint8[3] === 0x00) {
+    return new TextDecoder('utf-16le').decode(uint8)
+  }
+  return new TextDecoder('utf-8').decode(uint8)
+}
+
+/**
  * Sanitizes XML text by removing invalid ASCII control characters and numeric character references.
  */
 export function sanitizeTallyXmlString(rawText: string): string {
@@ -145,11 +162,11 @@ function extractXmlTag(xml: string, tag: string): string {
 }
 
 function extractAllXmlBlocks(xml: string, tag: string): string[] {
-  const regex = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, 'gi')
+  const regex = new RegExp(`<${tag}[^>]*>[\\s\\S]*?<\\/${tag}>`, 'gi')
   const matches: string[] = []
   let match: RegExpExecArray | null
   while ((match = regex.exec(xml)) !== null) {
-    matches.push(match[1])
+    matches.push(match[0])
   }
   return matches
 }
@@ -297,7 +314,7 @@ function parseVouchersWithRegex(xmlContent: string): RawXmlVoucherData[] {
  * Ingests Sales, Purchases, Receipts, Payments, Credit Notes, Debit Notes, and skips internal Journals.
  */
 export function parseTallyXmlVouchers(
-  xmlContent: string,
+  xmlInput: string | ArrayBuffer | Uint8Array,
   context?: {
     customers?: Customer[]
     suppliers?: Supplier[]
@@ -312,8 +329,20 @@ export function parseTallyXmlVouchers(
 
   const customers = context?.customers || []
   const suppliers = context?.suppliers || []
+  const items = context?.items || []
   const custMap = new Map(customers.map(c => [c.name.trim().toLowerCase(), c]))
   const suppMap = new Map(suppliers.map(s => [s.name.trim().toLowerCase(), s]))
+  const itemMap = new Map(items.map(it => [it.name.trim().toLowerCase(), it]))
+  items.forEach(it => {
+    if (it.itemCode) itemMap.set(it.itemCode.trim().toLowerCase(), it)
+  })
+
+  let xmlContent = ''
+  if (typeof xmlInput === 'string') {
+    xmlContent = xmlInput
+  } else if (xmlInput) {
+    xmlContent = decodeXmlFileBuffer(xmlInput)
+  }
 
   if (!xmlContent || !xmlContent.trim()) {
     return {
@@ -408,7 +437,7 @@ export function parseTallyXmlVouchers(
     const isBalanced = imbalanceDifference === 0
     const totalAmount = drTotal || crTotal || (inventory.reduce((s, it) => s + it.amount, 0))
 
-    // Match against ERP master records
+    // Strict master matching (NO auto-creation of customers, suppliers, or items)
     const normParty = (partyName || '').trim().toLowerCase()
     let matchedEntityType: TallyParsedXmlVoucher['matchedEntityType'] = 'unmapped'
     let matchedEntityId: string | undefined
@@ -424,6 +453,16 @@ export function parseTallyXmlVouchers(
     let skipReason: string | undefined
     if (normalizedType === 'skipped') {
       skipReason = `Non-billing voucher type (${raw.rawVoucherType}) skipped per standard ERP audit policy`
+    } else if (matchedEntityType === 'unmapped') {
+      skipReason = `Unmapped Master: ${partyName}`
+    }
+
+    // Check inventory items matching
+    if (inventory.length > 0) {
+      const unmappedItems = inventory.filter(inv => !itemMap.has(inv.itemName.trim().toLowerCase()))
+      if (unmappedItems.length > 0 && !skipReason) {
+        skipReason = `Unmapped Item: ${unmappedItems.map(i => i.itemName).join(', ')}`
+      }
     }
 
     vouchers.push({
@@ -457,8 +496,8 @@ export function parseTallyXmlVouchers(
   const creditNoteCount = vouchers.filter(v => v.normalizedType === 'credit_note').length
   const debitNoteCount = vouchers.filter(v => v.normalizedType === 'debit_note').length
   const skippedCount = vouchers.filter(v => v.normalizedType === 'skipped').length
-  const matchedCount = vouchers.filter(v => v.matchedEntityType !== 'unmapped').length
-  const unmappedCount = vouchers.filter(v => v.matchedEntityType === 'unmapped' && v.normalizedType !== 'skipped').length
+  const matchedCount = vouchers.filter(v => v.matchedEntityType !== 'unmapped' && v.normalizedType !== 'skipped' && (!v.skipReason || !v.skipReason.startsWith('Unmapped Item'))).length
+  const unmappedCount = vouchers.filter(v => (v.matchedEntityType === 'unmapped' || Boolean(v.skipReason && v.skipReason.startsWith('Unmapped Item'))) && v.normalizedType !== 'skipped').length
 
   return {
     success: vouchers.length > 0 && errors.length === 0,

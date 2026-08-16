@@ -2,13 +2,17 @@ import { describe, expect, it } from 'vitest'
 import * as XLSX from 'xlsx'
 import {
   parseTallyPayments,
+  parseTallyAccountingVouchersExcel,
   exportPaymentsToTallyExcel,
+  generateSampleTallyExcel,
   normalizeTallyDate,
   parseTallyAmount,
   normalizeDrCr,
   normalizeVoucherType,
+  TALLY_COLUMN_HEADERS,
   PaymentVoucher
 } from './tally-payment-excel'
+import { Customer, Supplier, Item } from './types'
 
 describe('normalizeTallyDate', () => {
   it('converts standard ISO date strings', () => {
@@ -336,5 +340,194 @@ describe('exportPaymentsToTallyExcel & Round-Trip', () => {
     expect(recVoucher?.partyLedger).toBe('Modern Constructions')
     expect(recVoucher?.bankCashLedger).toBe('Main Cash Box')
     expect(recVoucher?.amount).toBe(85000)
+  })
+})
+
+describe('Official 14-Column Tally Prime AccountingVouchers.xlsx Schema & Strict Ingestion', () => {
+  const mockCustomers: Customer[] = [
+    { id: 'c-alpha', name: 'Alpha Traders Ltd', gstin: '19AAACA1234F1Z1', stateCode: '19' }
+  ]
+
+  const mockSuppliers: Supplier[] = [
+    { id: 's-apex', name: 'Apex Steel Corp', gstin: '19AAACS9999F1Z3', stateCode: '19', paymentCDRules: [], invoiceCloseCDRules: [] }
+  ]
+
+  const mockItems: Item[] = [
+    { id: 'item-ferroseal', name: 'FERROSEAL 3.15X450 (6X90 Pc)', unit: 'PCS', gstRate: 18 }
+  ]
+
+  it('defines the official 14-column canonical headers in exact order', () => {
+    expect(TALLY_COLUMN_HEADERS).toEqual([
+      'Voucher Date',
+      'Voucher Type Name',
+      'Voucher Number',
+      'Buyer/Supplier - Address',
+      'Buyer/Supplier - Pincode',
+      'Ledger Name',
+      'Ledger Amount',
+      'Ledger Amount Dr/Cr',
+      'Item Name',
+      'Billed Quantity',
+      'Item Rate',
+      'Item Rate per',
+      'Item Amount',
+      'Change Mode'
+    ])
+  })
+
+  it('generates a 14-column sample workbook with "Accounting Voucher" sheet name', () => {
+    const res = generateSampleTallyExcel('test-sample.xlsx')
+    expect(res.buffer).toBeInstanceOf(Uint8Array)
+    expect(res.workbook.SheetNames).toContain('Accounting Voucher')
+
+    const sheet = res.workbook.Sheets['Accounting Voucher']
+    const rows = XLSX.utils.sheet_to_json<any>(sheet)
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows[0]['Change Mode']).toBeDefined()
+  })
+
+  it('parses 14-column multi-module Excel vouchers with strict master entity matching', () => {
+    const rawRows = [
+      // Sales Invoice with Item
+      {
+        'Voucher Date': '01-12-2025',
+        'Voucher Type Name': 'Sales',
+        'Voucher Number': 'SKT/25-26/816',
+        'Buyer/Supplier - Address': 'Kolkata, WB',
+        'Buyer/Supplier - Pincode': '700091',
+        'Ledger Name': 'Alpha Traders Ltd',
+        'Ledger Amount': 4486.00,
+        'Ledger Amount Dr/Cr': 'Dr',
+        'Item Name': '',
+        'Billed Quantity': '',
+        'Item Rate': '',
+        'Item Rate per': '',
+        'Item Amount': '',
+        'Change Mode': 'Item Invoice'
+      },
+      {
+        'Voucher Date': '01-12-2025',
+        'Voucher Type Name': 'Sales',
+        'Voucher Number': 'SKT/25-26/816',
+        'Buyer/Supplier - Address': 'Kolkata, WB',
+        'Buyer/Supplier - Pincode': '700091',
+        'Ledger Name': 'Sales Accounts',
+        'Ledger Amount': 3801.60,
+        'Ledger Amount Dr/Cr': 'Cr',
+        'Item Name': 'FERROSEAL 3.15X450 (6X90 Pc)',
+        'Billed Quantity': '1080.000 PCS',
+        'Item Rate': 3.52,
+        'Item Rate per': 'PCS',
+        'Item Amount': 3801.60,
+        'Change Mode': 'Item Invoice'
+      },
+      {
+        'Voucher Date': '01-12-2025',
+        'Voucher Type Name': 'Sales',
+        'Voucher Number': 'SKT/25-26/816',
+        'Buyer/Supplier - Address': 'Kolkata, WB',
+        'Buyer/Supplier - Pincode': '700091',
+        'Ledger Name': 'Output CGST',
+        'Ledger Amount': 342.14,
+        'Ledger Amount Dr/Cr': 'Cr',
+        'Item Name': '',
+        'Billed Quantity': '',
+        'Item Rate': '',
+        'Item Rate per': '',
+        'Item Amount': '',
+        'Change Mode': 'Item Invoice'
+      },
+      {
+        'Voucher Date': '01-12-2025',
+        'Voucher Type Name': 'Sales',
+        'Voucher Number': 'SKT/25-26/816',
+        'Buyer/Supplier - Address': 'Kolkata, WB',
+        'Buyer/Supplier - Pincode': '700091',
+        'Ledger Name': 'Output SGST',
+        'Ledger Amount': 342.14,
+        'Ledger Amount Dr/Cr': 'Cr',
+        'Item Name': '',
+        'Billed Quantity': '',
+        'Item Rate': '',
+        'Item Rate per': '',
+        'Item Amount': '',
+        'Change Mode': 'Item Invoice'
+      },
+      {
+        'Voucher Date': '01-12-2025',
+        'Voucher Type Name': 'Sales',
+        'Voucher Number': 'SKT/25-26/816',
+        'Buyer/Supplier - Address': 'Kolkata, WB',
+        'Buyer/Supplier - Pincode': '700091',
+        'Ledger Name': 'Round Off',
+        'Ledger Amount': 0.12,
+        'Ledger Amount Dr/Cr': 'Cr',
+        'Item Name': '',
+        'Billed Quantity': '',
+        'Item Rate': '',
+        'Item Rate per': '',
+        'Item Amount': '',
+        'Change Mode': 'Item Invoice'
+      },
+
+      // Unknown Customer Voucher (Should be marked Unmapped Master, NOT auto-created)
+      {
+        'Voucher Date': '02-12-2025',
+        'Voucher Type Name': 'Receipt',
+        'Voucher Number': 'REC-999',
+        'Buyer/Supplier - Address': 'Delhi',
+        'Buyer/Supplier - Pincode': '110001',
+        'Ledger Name': 'HDFC Bank Ltd',
+        'Ledger Amount': 50000.00,
+        'Ledger Amount Dr/Cr': 'Dr',
+        'Item Name': '',
+        'Change Mode': 'Accounting Invoice'
+      },
+      {
+        'Voucher Date': '02-12-2025',
+        'Voucher Type Name': 'Receipt',
+        'Voucher Number': 'REC-999',
+        'Buyer/Supplier - Address': 'Delhi',
+        'Buyer/Supplier - Pincode': '110001',
+        'Ledger Name': 'Unknown Foreign Buyer Inc',
+        'Ledger Amount': 50000.00,
+        'Ledger Amount Dr/Cr': 'Cr',
+        'Item Name': '',
+        'Change Mode': 'Accounting Invoice'
+      }
+    ]
+
+    const ws = XLSX.utils.json_to_sheet(rawRows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Accounting Voucher')
+    const buffer = new Uint8Array(XLSX.write(wb, { bookType: 'xlsx', type: 'array' }))
+
+    const result = parseTallyAccountingVouchersExcel(buffer, {
+      customers: mockCustomers,
+      suppliers: mockSuppliers,
+      items: mockItems
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.vouchers).toHaveLength(2)
+
+    // Voucher 1: Sales invoice with item
+    const salesVch = result.vouchers.find(v => v.normalizedType === 'sales')
+    expect(salesVch).toBeDefined()
+    expect(salesVch?.voucherNumber).toBe('SKT/25-26/816')
+    expect(salesVch?.partyName).toBe('Alpha Traders Ltd')
+    expect(salesVch?.matchedEntityType).toBe('customer')
+    expect(salesVch?.matchedEntityId).toBe('c-alpha')
+    expect(salesVch?.isBalanced).toBe(true)
+    expect(salesVch?.inventory).toHaveLength(1)
+    expect(salesVch?.inventory[0].itemName).toBe('FERROSEAL 3.15X450 (6X90 Pc)')
+    expect(salesVch?.inventory[0].quantity).toBe(1080)
+
+    // Voucher 2: Unmapped party
+    const unmappedVch = result.vouchers.find(v => v.voucherNumber === 'REC-999')
+    expect(unmappedVch).toBeDefined()
+    expect(unmappedVch?.partyName).toBe('Unknown Foreign Buyer Inc')
+    expect(unmappedVch?.matchedEntityType).toBe('unmapped')
+    expect(unmappedVch?.skipReason).toContain('Unmapped Master: Unknown Foreign Buyer Inc')
   })
 })

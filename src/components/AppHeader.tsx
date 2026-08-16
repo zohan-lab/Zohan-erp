@@ -27,13 +27,14 @@ import { toast } from 'sonner'
 import { generateFYList } from '@/lib/calculations'
 import {
   parseTallyPayments,
+  parseTallyAccountingVouchersExcel,
   exportPaymentsToTallyExcel,
   generateSampleTallyExcel,
   PaymentVoucher,
   TallyImportResult,
 } from '@/lib/tally-payment-excel'
-import { parseTallyXmlVouchers } from '@/lib/tally-xml-parser'
-import { Payment, CustomerPayment, Supplier, Customer } from '@/lib/types'
+import { parseTallyXmlVouchers, decodeXmlFileBuffer } from '@/lib/tally-xml-parser'
+import { Payment, CustomerPayment, Supplier, Customer, Item, ExpenseType } from '@/lib/types'
 
 interface AppHeaderProps {
   sidebarExpanded: boolean
@@ -138,7 +139,8 @@ export function AppHeader({
     setIsImporting(true)
     try {
       if (isXml) {
-        const text = await file.text()
+        const buffer = await file.arrayBuffer()
+        const text = decodeXmlFileBuffer(buffer)
         const xmlResult = parseTallyXmlVouchers(text, { customers, suppliers })
         if (xmlResult.success && xmlResult.vouchers.length > 0) {
           const paymentVouchers: PaymentVoucher[] = xmlResult.vouchers
@@ -167,20 +169,32 @@ export function AppHeader({
         }
       } else {
         const arrayBuffer = await file.arrayBuffer()
-        const result: TallyImportResult = parseTallyPayments(arrayBuffer)
+        const excelResult = parseTallyAccountingVouchersExcel(arrayBuffer, { customers, suppliers })
 
-        if (result.success && result.data.length > 0) {
+        if (excelResult.success && excelResult.vouchers.length > 0) {
+          const paymentVouchers: PaymentVoucher[] = excelResult.vouchers
+            .filter(v => v.normalizedType === 'payment' || v.normalizedType === 'receipt')
+            .map((v, idx) => ({
+              id: v.id || `excel-vch-${idx}`,
+              voucherNumber: v.voucherNumber,
+              voucherDate: v.voucherDate,
+              displayDate: v.displayDate,
+              type: v.normalizedType === 'payment' ? 'PAYMENT' : 'RECEIPT',
+              partyLedger: v.partyName,
+              bankCashLedger: v.legs.find(l => l.ledgerName !== v.partyName)?.ledgerName || 'Bank Account',
+              amount: v.totalAmount,
+              status: v.isBalanced ? 'valid' : 'warning',
+              isValid: v.isBalanced
+            }))
+
           toast.success(
-            `Imported ${result.data.length} Tally voucher(s) (${result.summary.paymentCount} Payments, ${result.summary.receiptCount} Receipts)`
+            `Imported ${excelResult.vouchers.length} Tally voucher(s) from Excel (${excelResult.summary.salesCount} Sales, ${excelResult.summary.purchaseCount} Purchases, ${excelResult.summary.paymentCount} Payments, ${excelResult.summary.receiptCount} Receipts)`
           )
-          onImportTally?.(result.data)
-        } else if (result.data.length > 0) {
-          toast.warning(
-            `Imported ${result.data.length} vouchers with ${result.errors.length} issue(s)`
-          )
-          onImportTally?.(result.data)
+          if (paymentVouchers.length > 0) {
+            onImportTally?.(paymentVouchers)
+          }
         } else {
-          toast.error(result.errors[0] || 'No valid Payment/Receipt vouchers found in the uploaded file')
+          toast.error(excelResult.errors[0] || 'No valid vouchers found in the uploaded Excel file')
         }
       }
     } catch (err: any) {

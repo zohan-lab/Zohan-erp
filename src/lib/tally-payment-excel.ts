@@ -8,12 +8,14 @@ import {
   ImportSummary,
   ExportOptions
 } from './tally-payment-types'
+import { Customer, Supplier, Item, ExpenseType } from './types'
+import { TallyParsedXmlVoucher, TallyXmlImportResult, normalizeTallyVoucherType } from './tally-xml-parser'
 
 // Re-export all types so callers can import everything from this single module
 export * from './tally-payment-types'
 
 /**
- * Standard Tally Column Header Keys (canonical order)
+ * Official 14-Column Tally Prime Column Header Keys (canonical order A-N)
  */
 export const TALLY_COLUMN_HEADERS = [
   'Voucher Date',
@@ -23,7 +25,13 @@ export const TALLY_COLUMN_HEADERS = [
   'Buyer/Supplier - Pincode',
   'Ledger Name',
   'Ledger Amount',
-  'Ledger Amount Dr/Cr'
+  'Ledger Amount Dr/Cr',
+  'Item Name',
+  'Billed Quantity',
+  'Item Rate',
+  'Item Rate per',
+  'Item Amount',
+  'Change Mode'
 ] as const
 
 /**
@@ -502,12 +510,10 @@ export function parseTallyPayments(fileBuffer: ArrayBuffer | Uint8Array): TallyI
 /**
  * EXPORT BUILDER: exportPaymentsToTallyExcel
  * 
- * Transforms an array of payment/receipt vouchers back into Tally's exact Excel 2-row format.
+ * Transforms an array of payment/receipt vouchers into Tally Prime's canonical 14-column "Accounting Voucher" format.
  * - Payment: Row 1 is Dr (Party), Row 2 is Cr (Bank/Cash)
  * - Receipt: Row 1 is Dr (Bank/Cash), Row 2 is Cr (Party)
  * - Contra:  Row 1 is Dr (Destination), Row 2 is Cr (Source)
- * 
- * Returns the workbook, buffer, filename, and triggers browser download if in browser environment.
  */
 export function exportPaymentsToTallyExcel(
   vouchers: PaymentVoucher[],
@@ -520,7 +526,7 @@ export function exportPaymentsToTallyExcel(
 } {
   const opts: ExportOptions = typeof options === 'string' ? { filename: options } : options || {}
   const filename = opts.filename || `Tally_Payments_Export_${Date.now()}.xlsx`
-  const sheetName = opts.sheetName || 'Vouchers'
+  const sheetName = opts.sheetName || 'Accounting Voucher'
 
   const exportRows: TallyExportRow[] = []
 
@@ -548,7 +554,13 @@ export function exportPaymentsToTallyExcel(
         'Buyer/Supplier - Pincode': pincode,
         'Ledger Name': v.partyLedger,
         'Ledger Amount': v.amount,
-        'Ledger Amount Dr/Cr': 'Dr'
+        'Ledger Amount Dr/Cr': 'Dr',
+        'Item Name': '',
+        'Billed Quantity': '',
+        'Item Rate': '',
+        'Item Rate per': '',
+        'Item Amount': '',
+        'Change Mode': 'Accounting Invoice'
       })
       // Row 2: Bank/Cash (Cr)
       exportRows.push({
@@ -559,7 +571,13 @@ export function exportPaymentsToTallyExcel(
         'Buyer/Supplier - Pincode': pincode,
         'Ledger Name': v.bankCashLedger,
         'Ledger Amount': v.amount,
-        'Ledger Amount Dr/Cr': 'Cr'
+        'Ledger Amount Dr/Cr': 'Cr',
+        'Item Name': '',
+        'Billed Quantity': '',
+        'Item Rate': '',
+        'Item Rate per': '',
+        'Item Amount': '',
+        'Change Mode': 'Accounting Invoice'
       })
     } else if (v.type === 'RECEIPT') {
       // Row 1: Bank/Cash (Dr)
@@ -571,7 +589,13 @@ export function exportPaymentsToTallyExcel(
         'Buyer/Supplier - Pincode': pincode,
         'Ledger Name': v.bankCashLedger,
         'Ledger Amount': v.amount,
-        'Ledger Amount Dr/Cr': 'Dr'
+        'Ledger Amount Dr/Cr': 'Dr',
+        'Item Name': '',
+        'Billed Quantity': '',
+        'Item Rate': '',
+        'Item Rate per': '',
+        'Item Amount': '',
+        'Change Mode': 'Accounting Invoice'
       })
       // Row 2: Party (Cr)
       exportRows.push({
@@ -582,7 +606,13 @@ export function exportPaymentsToTallyExcel(
         'Buyer/Supplier - Pincode': pincode,
         'Ledger Name': v.partyLedger,
         'Ledger Amount': v.amount,
-        'Ledger Amount Dr/Cr': 'Cr'
+        'Ledger Amount Dr/Cr': 'Cr',
+        'Item Name': '',
+        'Billed Quantity': '',
+        'Item Rate': '',
+        'Item Rate per': '',
+        'Item Amount': '',
+        'Change Mode': 'Accounting Invoice'
       })
     } else {
       // Contra
@@ -595,7 +625,13 @@ export function exportPaymentsToTallyExcel(
         'Buyer/Supplier - Pincode': pincode,
         'Ledger Name': v.bankCashLedger,
         'Ledger Amount': v.amount,
-        'Ledger Amount Dr/Cr': 'Dr'
+        'Ledger Amount Dr/Cr': 'Dr',
+        'Item Name': '',
+        'Billed Quantity': '',
+        'Item Rate': '',
+        'Item Rate per': '',
+        'Item Amount': '',
+        'Change Mode': 'Accounting Invoice'
       })
       // Row 2: Source Account (Cr)
       exportRows.push({
@@ -606,17 +642,23 @@ export function exportPaymentsToTallyExcel(
         'Buyer/Supplier - Pincode': pincode,
         'Ledger Name': v.partyLedger,
         'Ledger Amount': v.amount,
-        'Ledger Amount Dr/Cr': 'Cr'
+        'Ledger Amount Dr/Cr': 'Cr',
+        'Item Name': '',
+        'Billed Quantity': '',
+        'Item Rate': '',
+        'Item Rate per': '',
+        'Item Amount': '',
+        'Change Mode': 'Accounting Invoice'
       })
     }
   })
 
-  // Create worksheet with canonical column order
+  // Create worksheet with canonical 14-column order
   const worksheet = XLSX.utils.json_to_sheet(exportRows, {
     header: [...TALLY_COLUMN_HEADERS],
   })
 
-  // Set optimal column widths
+  // Set optimal 14-column widths
   worksheet['!cols'] = [
     { wch: 14 }, // Voucher Date
     { wch: 20 }, // Voucher Type Name
@@ -626,6 +668,12 @@ export function exportPaymentsToTallyExcel(
     { wch: 32 }, // Ledger Name
     { wch: 16 }, // Ledger Amount
     { wch: 20 }, // Ledger Amount Dr/Cr
+    { wch: 28 }, // Item Name
+    { wch: 18 }, // Billed Quantity
+    { wch: 14 }, // Item Rate
+    { wch: 14 }, // Item Rate per
+    { wch: 16 }, // Item Amount
+    { wch: 20 }  // Change Mode
   ]
 
   const workbook = XLSX.utils.book_new()
@@ -661,76 +709,586 @@ export function exportPaymentsToTallyExcel(
 }
 
 /**
- * SAMPLE TEMPLATE GENERATOR
- * Creates and downloads a clean sample Tally Payment & Receipt Excel file
+ * SAMPLE TEMPLATE GENERATOR: 14-Column Tally Prime AccountingVouchers.xlsx
+ * Creates and downloads a rich sample Tally Prime 14-column template ("Accounting Voucher" sheet).
  */
-export function generateSampleTallyExcel(filename = 'Tally_Payment_Receipt_Sample.xlsx') {
-  const sampleVouchers: PaymentVoucher[] = [
+export function generateSampleTallyExcel(filename = 'AccountingVouchers_Sample.xlsx') {
+  const sampleRows: TallyExportRow[] = [
+    // 1. Sales Invoice (Item Invoice)
     {
-      id: 'sample-1',
-      voucherNumber: 'PAY-2026-001',
-      voucherDate: '2026-04-02',
-      displayDate: '02-04-2026',
-      type: 'PAYMENT',
-      partyLedger: 'Tata Steel Ltd',
-      bankCashLedger: 'HDFC Bank Ltd (Current A/c)',
-      amount: 450000,
-      address: 'Plot 42, Industrial Area, Jamshedpur',
-      pincode: '831001',
-      status: 'valid'
+      'Voucher Date': '01-12-2025',
+      'Voucher Type Name': 'Sales',
+      'Voucher Number': 'SKT/25-26/816',
+      'Buyer/Supplier - Address': 'Salt Lake Sector V, Kolkata, West Bengal',
+      'Buyer/Supplier - Pincode': '700091',
+      'Ledger Name': 'Alpha Traders Ltd',
+      'Ledger Amount': 4486.00,
+      'Ledger Amount Dr/Cr': 'Dr',
+      'Item Name': '',
+      'Billed Quantity': '',
+      'Item Rate': '',
+      'Item Rate per': '',
+      'Item Amount': '',
+      'Change Mode': 'Item Invoice'
     },
     {
-      id: 'sample-2',
-      voucherNumber: 'PAY-2026-002',
-      voucherDate: '2026-04-05',
-      displayDate: '05-04-2026',
-      type: 'PAYMENT',
-      partyLedger: 'JSW Steel Processing Co',
-      bankCashLedger: 'State Bank of India (Cash Credit)',
-      amount: 1250000,
-      address: 'Bandra Kurla Complex, Mumbai',
-      pincode: '400051',
-      status: 'valid'
+      'Voucher Date': '01-12-2025',
+      'Voucher Type Name': 'Sales',
+      'Voucher Number': 'SKT/25-26/816',
+      'Buyer/Supplier - Address': 'Salt Lake Sector V, Kolkata, West Bengal',
+      'Buyer/Supplier - Pincode': '700091',
+      'Ledger Name': 'Sales Accounts',
+      'Ledger Amount': 3801.60,
+      'Ledger Amount Dr/Cr': 'Cr',
+      'Item Name': 'FERROSEAL 3.15X450 (6X90 Pc)',
+      'Billed Quantity': '1080.000 PCS',
+      'Item Rate': 3.52,
+      'Item Rate per': 'PCS',
+      'Item Amount': 3801.60,
+      'Change Mode': 'Item Invoice'
     },
     {
-      id: 'sample-3',
-      voucherNumber: 'REC-2026-001',
-      voucherDate: '2026-04-08',
-      displayDate: '08-04-2026',
-      type: 'RECEIPT',
-      partyLedger: 'Metro Infrastructure Infra Corp',
-      bankCashLedger: 'HDFC Bank Ltd (Current A/c)',
-      amount: 875000,
-      address: 'Salt Lake Sector V, Kolkata',
-      pincode: '700091',
-      status: 'valid'
+      'Voucher Date': '01-12-2025',
+      'Voucher Type Name': 'Sales',
+      'Voucher Number': 'SKT/25-26/816',
+      'Buyer/Supplier - Address': 'Salt Lake Sector V, Kolkata, West Bengal',
+      'Buyer/Supplier - Pincode': '700091',
+      'Ledger Name': 'Output CGST',
+      'Ledger Amount': 342.14,
+      'Ledger Amount Dr/Cr': 'Cr',
+      'Item Name': '',
+      'Billed Quantity': '',
+      'Item Rate': '',
+      'Item Rate per': '',
+      'Item Amount': '',
+      'Change Mode': 'Item Invoice'
     },
     {
-      id: 'sample-4',
-      voucherNumber: 'REC-2026-002',
-      voucherDate: '2026-04-10',
-      displayDate: '10-04-2026',
-      type: 'RECEIPT',
-      partyLedger: 'Apex Building Solutions',
-      bankCashLedger: 'Main Cash Counter',
-      amount: 45000,
-      address: 'GIDC Industrial Estate, Ahmedabad',
-      pincode: '382445',
-      status: 'valid'
+      'Voucher Date': '01-12-2025',
+      'Voucher Type Name': 'Sales',
+      'Voucher Number': 'SKT/25-26/816',
+      'Buyer/Supplier - Address': 'Salt Lake Sector V, Kolkata, West Bengal',
+      'Buyer/Supplier - Pincode': '700091',
+      'Ledger Name': 'Output SGST',
+      'Ledger Amount': 342.14,
+      'Ledger Amount Dr/Cr': 'Cr',
+      'Item Name': '',
+      'Billed Quantity': '',
+      'Item Rate': '',
+      'Item Rate per': '',
+      'Item Amount': '',
+      'Change Mode': 'Item Invoice'
     },
     {
-      id: 'sample-5',
-      voucherNumber: 'CNT-2026-001',
-      voucherDate: '2026-04-12',
-      displayDate: '12-04-2026',
-      type: 'CONTRA',
-      partyLedger: 'HDFC Bank Ltd (Current A/c)', // Source account (Cr)
-      bankCashLedger: 'Main Cash Counter',       // Destination account (Dr)
-      amount: 100000,
-      address: 'Cash withdrawal for operational petty cash',
-      status: 'valid'
+      'Voucher Date': '01-12-2025',
+      'Voucher Type Name': 'Sales',
+      'Voucher Number': 'SKT/25-26/816',
+      'Buyer/Supplier - Address': 'Salt Lake Sector V, Kolkata, West Bengal',
+      'Buyer/Supplier - Pincode': '700091',
+      'Ledger Name': 'Round Off',
+      'Ledger Amount': 0.12,
+      'Ledger Amount Dr/Cr': 'Cr',
+      'Item Name': '',
+      'Billed Quantity': '',
+      'Item Rate': '',
+      'Item Rate per': '',
+      'Item Amount': '',
+      'Change Mode': 'Item Invoice'
+    },
+
+    // 2. Purchase Invoice (Item Invoice)
+    {
+      'Voucher Date': '05-12-2025',
+      'Voucher Type Name': 'Purchase',
+      'Voucher Number': 'PUR-2025-088',
+      'Buyer/Supplier - Address': 'Bandra Kurla Complex, Mumbai, Maharashtra',
+      'Buyer/Supplier - Pincode': '400051',
+      'Ledger Name': 'Apex Steel Corp',
+      'Ledger Amount': 59000.00,
+      'Ledger Amount Dr/Cr': 'Cr',
+      'Item Name': '',
+      'Billed Quantity': '',
+      'Item Rate': '',
+      'Item Rate per': '',
+      'Item Amount': '',
+      'Change Mode': 'Item Invoice'
+    },
+    {
+      'Voucher Date': '05-12-2025',
+      'Voucher Type Name': 'Purchase',
+      'Voucher Number': 'PUR-2025-088',
+      'Buyer/Supplier - Address': 'Bandra Kurla Complex, Mumbai, Maharashtra',
+      'Buyer/Supplier - Pincode': '400051',
+      'Ledger Name': 'Purchase Accounts',
+      'Ledger Amount': 50000.00,
+      'Ledger Amount Dr/Cr': 'Dr',
+      'Item Name': 'TMT Rebars 12mm Fe550D',
+      'Billed Quantity': '1.000 TON',
+      'Item Rate': 50000.00,
+      'Item Rate per': 'TON',
+      'Item Amount': 50000.00,
+      'Change Mode': 'Item Invoice'
+    },
+    {
+      'Voucher Date': '05-12-2025',
+      'Voucher Type Name': 'Purchase',
+      'Voucher Number': 'PUR-2025-088',
+      'Buyer/Supplier - Address': 'Bandra Kurla Complex, Mumbai, Maharashtra',
+      'Buyer/Supplier - Pincode': '400051',
+      'Ledger Name': 'Input CGST',
+      'Ledger Amount': 4500.00,
+      'Ledger Amount Dr/Cr': 'Dr',
+      'Item Name': '',
+      'Billed Quantity': '',
+      'Item Rate': '',
+      'Item Rate per': '',
+      'Item Amount': '',
+      'Change Mode': 'Item Invoice'
+    },
+    {
+      'Voucher Date': '05-12-2025',
+      'Voucher Type Name': 'Purchase',
+      'Voucher Number': 'PUR-2025-088',
+      'Buyer/Supplier - Address': 'Bandra Kurla Complex, Mumbai, Maharashtra',
+      'Buyer/Supplier - Pincode': '400051',
+      'Ledger Name': 'Input SGST',
+      'Ledger Amount': 4500.00,
+      'Ledger Amount Dr/Cr': 'Dr',
+      'Item Name': '',
+      'Billed Quantity': '',
+      'Item Rate': '',
+      'Item Rate per': '',
+      'Item Amount': '',
+      'Change Mode': 'Item Invoice'
+    },
+
+    // 3. Payment Voucher (Accounting Invoice)
+    {
+      'Voucher Date': '10-12-2025',
+      'Voucher Type Name': 'Payment',
+      'Voucher Number': 'PAY-2025-101',
+      'Buyer/Supplier - Address': 'Industrial Area, Jamshedpur',
+      'Buyer/Supplier - Pincode': '831001',
+      'Ledger Name': 'Apex Steel Corp',
+      'Ledger Amount': 59000.00,
+      'Ledger Amount Dr/Cr': 'Dr',
+      'Item Name': '',
+      'Billed Quantity': '',
+      'Item Rate': '',
+      'Item Rate per': '',
+      'Item Amount': '',
+      'Change Mode': 'Accounting Invoice'
+    },
+    {
+      'Voucher Date': '10-12-2025',
+      'Voucher Type Name': 'Payment',
+      'Voucher Number': 'PAY-2025-101',
+      'Buyer/Supplier - Address': 'Industrial Area, Jamshedpur',
+      'Buyer/Supplier - Pincode': '831001',
+      'Ledger Name': 'HDFC Bank Ltd (Current A/c)',
+      'Ledger Amount': 59000.00,
+      'Ledger Amount Dr/Cr': 'Cr',
+      'Item Name': '',
+      'Billed Quantity': '',
+      'Item Rate': '',
+      'Item Rate per': '',
+      'Item Amount': '',
+      'Change Mode': 'Accounting Invoice'
+    },
+
+    // 4. Receipt Voucher (Accounting Invoice)
+    {
+      'Voucher Date': '12-12-2025',
+      'Voucher Type Name': 'Receipt',
+      'Voucher Number': 'REC-2025-201',
+      'Buyer/Supplier - Address': 'Salt Lake Sector V, Kolkata',
+      'Buyer/Supplier - Pincode': '700091',
+      'Ledger Name': 'HDFC Bank Ltd (Current A/c)',
+      'Ledger Amount': 4486.00,
+      'Ledger Amount Dr/Cr': 'Dr',
+      'Item Name': '',
+      'Billed Quantity': '',
+      'Item Rate': '',
+      'Item Rate per': '',
+      'Item Amount': '',
+      'Change Mode': 'Accounting Invoice'
+    },
+    {
+      'Voucher Date': '12-12-2025',
+      'Voucher Type Name': 'Receipt',
+      'Voucher Number': 'REC-2025-201',
+      'Buyer/Supplier - Address': 'Salt Lake Sector V, Kolkata',
+      'Buyer/Supplier - Pincode': '700091',
+      'Ledger Name': 'Alpha Traders Ltd',
+      'Ledger Amount': 4486.00,
+      'Ledger Amount Dr/Cr': 'Cr',
+      'Item Name': '',
+      'Billed Quantity': '',
+      'Item Rate': '',
+      'Item Rate per': '',
+      'Item Amount': '',
+      'Change Mode': 'Accounting Invoice'
     }
   ]
 
-  return exportPaymentsToTallyExcel(sampleVouchers, { filename })
+  const worksheet = XLSX.utils.json_to_sheet(sampleRows, {
+    header: [...TALLY_COLUMN_HEADERS]
+  })
+
+  worksheet['!cols'] = [
+    { wch: 14 }, // Voucher Date
+    { wch: 20 }, // Voucher Type Name
+    { wch: 18 }, // Voucher Number
+    { wch: 36 }, // Buyer/Supplier - Address
+    { wch: 24 }, // Buyer/Supplier - Pincode
+    { wch: 32 }, // Ledger Name
+    { wch: 16 }, // Ledger Amount
+    { wch: 20 }, // Ledger Amount Dr/Cr
+    { wch: 30 }, // Item Name
+    { wch: 18 }, // Billed Quantity
+    { wch: 14 }, // Item Rate
+    { wch: 14 }, // Item Rate per
+    { wch: 16 }, // Item Amount
+    { wch: 20 }  // Change Mode
+  ]
+
+  const workbook = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Accounting Voucher')
+
+  const rawBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' })
+  const buffer = new Uint8Array(rawBuffer)
+
+  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    try {
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch {
+      XLSX.writeFile(workbook, filename)
+    }
+  }
+
+  return { workbook, buffer, filename, rowCount: sampleRows.length }
 }
+
+/**
+ * Universal 14-Column Tally Prime "AccountingVouchers.xlsx" Excel Parser.
+ * Ingests Sales, Purchase, Payment, Receipt, Credit Note, Debit Note, Contra vouchers
+ * with strict master entity matching (No automatic master additions).
+ */
+export function parseTallyAccountingVouchersExcel(
+  fileBuffer: ArrayBuffer | Uint8Array,
+  context?: {
+    customers?: Customer[]
+    suppliers?: Supplier[]
+    items?: Item[]
+    expenseTypes?: ExpenseType[]
+    companyStateCode?: string
+  }
+): TallyXmlImportResult {
+  const errors: string[] = []
+  const warnings: string[] = []
+  const vouchers: TallyParsedXmlVoucher[] = []
+
+  const customers = context?.customers || []
+  const suppliers = context?.suppliers || []
+  const items = context?.items || []
+  const custMap = new Map(customers.map(c => [c.name.trim().toLowerCase(), c]))
+  const suppMap = new Map(suppliers.map(s => [s.name.trim().toLowerCase(), s]))
+  const itemMap = new Map(items.map(it => [it.name.trim().toLowerCase(), it]))
+  // also map itemCode
+  items.forEach(it => {
+    if (it.itemCode) itemMap.set(it.itemCode.trim().toLowerCase(), it)
+  })
+
+  let workbook: XLSX.WorkBook
+  try {
+    const uint8 = fileBuffer instanceof Uint8Array ? fileBuffer : new Uint8Array(fileBuffer)
+    workbook = XLSX.read(uint8, {
+      type: 'array',
+      cellDates: true,
+      cellNF: false,
+      cellText: false,
+    })
+  } catch (err: any) {
+    return {
+      success: false,
+      vouchers: [],
+      summary: {
+        totalParsed: 0,
+        salesCount: 0,
+        purchaseCount: 0,
+        receiptCount: 0,
+        paymentCount: 0,
+        creditNoteCount: 0,
+        debitNoteCount: 0,
+        skippedCount: 0,
+        matchedCount: 0,
+        unmappedCount: 0
+      },
+      errors: [`Failed to parse Excel workbook: ${err?.message || 'Invalid file format'}`],
+      warnings: []
+    }
+  }
+
+  const sheetName = workbook.SheetNames[0]
+  if (!sheetName) {
+    return {
+      success: false,
+      vouchers: [],
+      summary: {
+        totalParsed: 0,
+        salesCount: 0,
+        purchaseCount: 0,
+        receiptCount: 0,
+        paymentCount: 0,
+        creditNoteCount: 0,
+        debitNoteCount: 0,
+        skippedCount: 0,
+        matchedCount: 0,
+        unmappedCount: 0
+      },
+      errors: ['The Excel workbook contains no sheets.'],
+      warnings: []
+    }
+  }
+
+  const worksheet = workbook.Sheets[sheetName]
+  const rawRows: TallyRawExcelRow[] = XLSX.utils.sheet_to_json(worksheet, {
+    raw: true,
+    defval: '',
+    blankrows: false,
+  })
+
+  if (!rawRows || rawRows.length === 0) {
+    return {
+      success: false,
+      vouchers: [],
+      summary: {
+        totalParsed: 0,
+        salesCount: 0,
+        purchaseCount: 0,
+        receiptCount: 0,
+        paymentCount: 0,
+        creditNoteCount: 0,
+        debitNoteCount: 0,
+        skippedCount: 0,
+        matchedCount: 0,
+        unmappedCount: 0
+      },
+      errors: ['No data rows found in worksheet.'],
+      warnings: []
+    }
+  }
+
+  type GroupedVoucher = {
+    rawVoucherType: string
+    normalizedType: TallyParsedXmlVoucher['normalizedType']
+    voucherNo: string
+    isoDate: string
+    displayDate: string
+    partyAddress?: string
+    partyPincode?: string
+    rows: TallyRawExcelRow[]
+  }
+
+  const groups = new Map<string, GroupedVoucher>()
+
+  rawRows.forEach((row, idx) => {
+    const rawType = String(getRowField(row, 'Voucher Type Name', 'Voucher Type', 'Type') || '').trim()
+    const normalizedType = normalizeTallyVoucherType(rawType)
+
+    const rawDate = getRowField(row, 'Voucher Date', 'Date', 'VoucherDate')
+    const dateObj = normalizeTallyDate(rawDate)
+    const isoDate = dateObj ? dateObj.isoDate : new Date().toISOString().slice(0, 10)
+    const displayDate = dateObj ? dateObj.displayDate : isoDate
+
+    const rawVoucherNo = getRowField(row, 'Voucher Number', 'Voucher No', 'Vch No', 'VoucherNo', 'Number')
+    const voucherNo = rawVoucherNo !== undefined && rawVoucherNo !== null && String(rawVoucherNo).trim() !== ''
+      ? String(rawVoucherNo).trim()
+      : `VCH-${idx + 1}`
+
+    const address = getRowField(row, 'Buyer/Supplier - Address', 'Party Address', 'Address')
+    const pincode = getRowField(row, 'Buyer/Supplier - Pincode', 'Party Pincode', 'Pincode')
+
+    const groupKey = `${rawType}_${voucherNo}_${isoDate}`
+
+    if (!groups.has(groupKey)) {
+      groups.set(groupKey, {
+        rawVoucherType: rawType || 'Journal',
+        normalizedType,
+        voucherNo,
+        isoDate,
+        displayDate,
+        partyAddress: address ? String(address).trim() : undefined,
+        partyPincode: pincode ? String(pincode).trim() : undefined,
+        rows: []
+      })
+    }
+
+    groups.get(groupKey)!.rows.push(row)
+  })
+
+  let vchIndex = 0
+  groups.forEach((group, groupKey) => {
+    vchIndex++
+    const { rawVoucherType, normalizedType, voucherNo, isoDate, displayDate, partyAddress, partyPincode, rows } = group
+
+    const legs: { ledgerName: string; amount: number; drCr: 'Dr' | 'Cr'; isDeemedPositive: boolean }[] = []
+    const inventory: { itemName: string; quantity: number; unit?: string; rate: number; amount: number }[] = []
+
+    let partyName = ''
+
+    rows.forEach(r => {
+      const rawLedger = getRowField(r, 'Ledger Name', 'Ledger', 'Particulars', 'Account')
+      const ledgerName = rawLedger ? String(rawLedger).trim() : ''
+      const rawAmt = getRowField(r, 'Ledger Amount', 'Amount', 'Debit Amount', 'Credit Amount')
+      const amount = parseTallyAmount(rawAmt)
+      const rawDrCr = getRowField(r, 'Ledger Amount Dr/Cr', 'Dr/Cr', 'DR/CR', 'Dr / Cr', 'DR / CR')
+      const drCr = normalizeDrCr(rawDrCr)
+
+      const rawItem = getRowField(r, 'Item Name', 'Stock Item Name', 'Item', 'Item Description')
+      const itemName = rawItem ? String(rawItem).trim() : ''
+
+      if (ledgerName && amount > 0) {
+        legs.push({
+          ledgerName,
+          amount,
+          drCr,
+          isDeemedPositive: drCr === 'Dr'
+        })
+      }
+
+      if (itemName) {
+        const rawQty = getRowField(r, 'Billed Quantity', 'Billed Qty', 'Quantity', 'Qty', 'Actual Qty')
+        const rawQtyStr = rawQty !== undefined && rawQty !== null ? String(rawQty).trim() : '1'
+        const qtyNum = parseFloat(rawQtyStr.replace(/[^0-9.]/g, '')) || 1
+        const unit = rawQtyStr.replace(/[0-9.\s]/g, '') || String(getRowField(r, 'Item Rate per', 'Per', 'Unit') || 'PCS').trim() || 'PCS'
+        
+        const rawRate = getRowField(r, 'Item Rate', 'Rate')
+        const rate = typeof rawRate === 'number' ? rawRate : parseFloat(String(rawRate || '0').replace(/[^0-9.]/g, '')) || 0
+
+        const rawItemAmt = getRowField(r, 'Item Amount', 'Item Total')
+        const itemAmt = rawItemAmt ? parseTallyAmount(rawItemAmt) : (rate > 0 ? qtyNum * rate : amount)
+
+        inventory.push({
+          itemName,
+          quantity: qtyNum,
+          unit,
+          rate: rate || (qtyNum > 0 ? itemAmt / qtyNum : itemAmt),
+          amount: itemAmt || amount
+        })
+      }
+    })
+
+    // Infer party ledger name based on voucher type
+    if (normalizedType === 'sales' || normalizedType === 'credit_note') {
+      const drLeg = legs.find(l => l.drCr === 'Dr' && !l.ledgerName.toLowerCase().includes('round off'))
+      partyName = drLeg ? drLeg.ledgerName : (legs[0]?.ledgerName || 'Cash Customer')
+    } else if (normalizedType === 'purchase' || normalizedType === 'debit_note') {
+      const crLeg = legs.find(l => l.drCr === 'Cr' && !l.ledgerName.toLowerCase().includes('round off'))
+      partyName = crLeg ? crLeg.ledgerName : (legs[0]?.ledgerName || 'Supplier Account')
+    } else if (normalizedType === 'payment') {
+      const drLeg = legs.find(l => l.drCr === 'Dr')
+      partyName = drLeg ? drLeg.ledgerName : (legs[0]?.ledgerName || 'Payee')
+    } else if (normalizedType === 'receipt') {
+      const crLeg = legs.find(l => l.drCr === 'Cr')
+      partyName = crLeg ? crLeg.ledgerName : (legs[0]?.ledgerName || 'Customer')
+    } else {
+      partyName = legs[0]?.ledgerName || 'General Account'
+    }
+
+    const drTotal = legs.filter(l => l.drCr === 'Dr').reduce((s, l) => s + l.amount, 0)
+    const crTotal = legs.filter(l => l.drCr === 'Cr').reduce((s, l) => s + l.amount, 0)
+    const diff = Math.abs(drTotal - crTotal)
+    const isBalanced = diff < 0.01
+    const totalAmount = drTotal || crTotal || inventory.reduce((s, it) => s + it.amount, 0)
+
+    // Strict master matching (NO auto-creation of customers, suppliers, or items)
+    const normParty = partyName.trim().toLowerCase()
+    let matchedEntityType: TallyParsedXmlVoucher['matchedEntityType'] = 'unmapped'
+    let matchedEntityId: string | undefined
+
+    if (custMap.has(normParty)) {
+      matchedEntityType = 'customer'
+      matchedEntityId = custMap.get(normParty)?.id
+    } else if (suppMap.has(normParty)) {
+      matchedEntityType = 'supplier'
+      matchedEntityId = suppMap.get(normParty)?.id
+    }
+
+    let skipReason: string | undefined
+    if (normalizedType === 'skipped') {
+      skipReason = `Non-billing voucher type (${rawVoucherType}) skipped per standard ERP audit policy`
+    } else if (matchedEntityType === 'unmapped') {
+      skipReason = `Unmapped Master: ${partyName}`
+    }
+
+    // Check inventory items matching
+    if (inventory.length > 0) {
+      const unmappedItems = inventory.filter(inv => !itemMap.has(inv.itemName.trim().toLowerCase()))
+      if (unmappedItems.length > 0 && !skipReason) {
+        skipReason = `Unmapped Item: ${unmappedItems.map(i => i.itemName).join(', ')}`
+      }
+    }
+
+    vouchers.push({
+      id: `xlsx-vch-${vchIndex}`,
+      voucherNumber: voucherNo,
+      voucherDate: isoDate,
+      displayDate,
+      rawVoucherType,
+      normalizedType,
+      partyName,
+      partyGstin: undefined,
+      narration: `Imported from Tally Excel #${voucherNo}`,
+      legs,
+      inventory,
+      drTotal,
+      crTotal,
+      totalAmount,
+      isBalanced,
+      imbalanceDifference: diff,
+      matchedEntityId,
+      matchedEntityType,
+      skipReason
+    })
+  })
+
+  // Calculate summary counts
+  const salesCount = vouchers.filter(v => v.normalizedType === 'sales').length
+  const purchaseCount = vouchers.filter(v => v.normalizedType === 'purchase').length
+  const receiptCount = vouchers.filter(v => v.normalizedType === 'receipt').length
+  const paymentCount = vouchers.filter(v => v.normalizedType === 'payment').length
+  const creditNoteCount = vouchers.filter(v => v.normalizedType === 'credit_note').length
+  const debitNoteCount = vouchers.filter(v => v.normalizedType === 'debit_note').length
+  const skippedCount = vouchers.filter(v => v.normalizedType === 'skipped').length
+  const matchedCount = vouchers.filter(v => v.matchedEntityType !== 'unmapped' && v.normalizedType !== 'skipped').length
+  const unmappedCount = vouchers.filter(v => v.matchedEntityType === 'unmapped' && v.normalizedType !== 'skipped').length
+
+  return {
+    success: vouchers.length > 0 && errors.length === 0,
+    vouchers,
+    summary: {
+      totalParsed: vouchers.length,
+      salesCount,
+      purchaseCount,
+      receiptCount,
+      paymentCount,
+      creditNoteCount,
+      debitNoteCount,
+      skippedCount,
+      matchedCount,
+      unmappedCount
+    },
+    errors,
+    warnings
+  }
+}
+

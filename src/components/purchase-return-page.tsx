@@ -54,7 +54,7 @@ export default function PurchaseReturnPage({
   const [editingItem, setEditingItem] = useState<PurchaseReturn | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [itemToDelete, setItemToDelete] = useState<PurchaseReturn | null>(null)
-  
+
   // List Filters
   const [fromDate, setFromDate] = useState<string>('')
   const [toDate, setToDate] = useState<string>('')
@@ -62,21 +62,21 @@ export default function PurchaseReturnPage({
 
   const filteredReturns = useMemo(() => {
     let result = purchaseReturns
-    
+
     if (fromDate) {
       result = result.filter(p => p.returnDate >= fromDate)
     }
     if (toDate) {
       result = result.filter(p => p.returnDate <= toDate)
     }
-    
+
     if (selectedSupplierFilter !== 'all') {
       result = result.filter(p => p.supplierId === selectedSupplierFilter)
     }
-    
+
     return result.sort((a, b) => new Date(b.returnDate).getTime() - new Date(a.returnDate).getTime())
   }, [purchaseReturns, fromDate, toDate, selectedSupplierFilter])
-  
+
   const totalAmount = filteredReturns.reduce((sum, p) => sum + p.amount, 0)
 
   // Form State
@@ -103,7 +103,7 @@ export default function PurchaseReturnPage({
 
   const fyItems = useMemo(() => purchaseReturns.filter(p => p.fy === currentFY || (p.returnDate && getFYFromDate(p.returnDate) === currentFY)), [purchaseReturns, currentFY])
   const fyMonths = getFYMonths(currentFY)
-  
+
   // Calculations for active form
   const itemsSubtotal = useMemo(() => {
     return returnItems.reduce((sum, item) => sum + (item.amount || 0), 0)
@@ -255,7 +255,7 @@ export default function PurchaseReturnPage({
       if (idx !== index) return itemRow
       const selectedDef = items.find(i => i.id === (field === 'itemId' ? value : itemRow.itemId))
       const updated = { ...itemRow, [field]: value }
-      
+
       if (field === 'itemId') {
         const defaultUnit = selectedDef?.unit || 'KG'
         updated.enteredUnit = defaultUnit
@@ -301,7 +301,7 @@ export default function PurchaseReturnPage({
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    
+
     if (isLocked) {
       toast.error('Cannot save in locked mode')
       return
@@ -348,31 +348,31 @@ export default function PurchaseReturnPage({
       createdAt: editingItem?.createdAt || Date.now(),
       history: editingItem
         ? [
-            ...(editingItem.history || []),
-            {
-              timestamp: new Date().toISOString(),
-              action: 'updated',
-              changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
-              changes: [
-                ...(editingItem.amount !== calculatedTotalAmount ? [{ field: 'Amount', from: String(editingItem.amount), to: String(calculatedTotalAmount) }] : []),
-                ...(editingItem.supplierId !== selectedSupplierId ? [{ field: 'Supplier', from: suppliers.find(s => s.id === editingItem.supplierId)?.name || '-', to: suppliers.find(s => s.id === selectedSupplierId)?.name || '-' }] : []),
-                ...(editingItem.returnDate !== returnDate ? [{ field: 'Date', from: editingItem.returnDate, to: returnDate }] : [])
-              ]
-            }
-          ]
+          ...(editingItem.history || []),
+          {
+            timestamp: new Date().toISOString(),
+            action: 'updated',
+            changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
+            changes: [
+              ...(editingItem.amount !== calculatedTotalAmount ? [{ field: 'Amount', from: String(editingItem.amount), to: String(calculatedTotalAmount) }] : []),
+              ...(editingItem.supplierId !== selectedSupplierId ? [{ field: 'Supplier', from: suppliers.find(s => s.id === editingItem.supplierId)?.name || '-', to: suppliers.find(s => s.id === selectedSupplierId)?.name || '-' }] : []),
+              ...(editingItem.returnDate !== returnDate ? [{ field: 'Date', from: editingItem.returnDate, to: returnDate }] : [])
+            ]
+          }
+        ]
         : [
-            {
-              timestamp: new Date().toISOString(),
-              action: 'created',
-              changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
-              changes: [
-                { field: 'Return No', from: '', to: finalReturnNo },
-                { field: 'Supplier', from: '', to: suppliers.find(s => s.id === selectedSupplierId)?.name || '-' },
-                { field: 'Amount', from: '', to: String(calculatedTotalAmount) },
-                { field: 'Date', from: '', to: returnDate }
-              ]
-            }
-          ]
+          {
+            timestamp: new Date().toISOString(),
+            action: 'created',
+            changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
+            changes: [
+              { field: 'Return No', from: '', to: finalReturnNo },
+              { field: 'Supplier', from: '', to: suppliers.find(s => s.id === selectedSupplierId)?.name || '-' },
+              { field: 'Amount', from: '', to: String(calculatedTotalAmount) },
+              { field: 'Date', from: '', to: returnDate }
+            ]
+          }
+        ]
     }
 
     // Auto-create / update Supplier Debit Note with structured statutory GST breakdown
@@ -422,24 +422,24 @@ export default function PurchaseReturnPage({
       sourceId: returnId,
       history: editingItem
         ? [
-            ...(debitNotes.find(d => d.id === debitNoteId)?.history || []),
-            {
-              timestamp: new Date().toISOString(),
-              action: 'updated',
-              changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
-              changes: [
-                ...(editingItem.amount !== calculatedTotalAmount ? [{ field: 'Amount', from: String(editingItem.amount), to: String(calculatedTotalAmount) }] : [])
-              ]
-            }
-          ]
+          ...(debitNotes.find(d => d.id === debitNoteId)?.history || []),
+          {
+            timestamp: new Date().toISOString(),
+            action: 'updated',
+            changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
+            changes: [
+              ...(editingItem.amount !== calculatedTotalAmount ? [{ field: 'Amount', from: String(editingItem.amount), to: String(calculatedTotalAmount) }] : [])
+            ]
+          }
+        ]
         : [
-            {
-              timestamp: new Date().toISOString(),
-              action: 'created',
-              changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
-              details: 'Auto-generated from Purchase Return'
-            }
-          ]
+          {
+            timestamp: new Date().toISOString(),
+            action: 'created',
+            changedBy: getChangedByLabel(), changedByRole: getChangedByRole(),
+            details: 'Auto-generated from Purchase Return'
+          }
+        ]
     }
 
     // Save Purchase Return
@@ -671,13 +671,13 @@ export default function PurchaseReturnPage({
                           {formatCurrency(item.amount)}
                         </TableCell>
                         <TableCell className="text-right">
-                            <ThreeDotDropdown
-                              onEdit={() => handleOpenEdit(item)}
-                              onDelete={() => { setItemToDelete(item); setDeleteDialogOpen(true) }}
-                              history={item.history}
-                              entityType="Purchase Return"
-                              isLocked={isLocked}
-                            />
+                          <ThreeDotDropdown
+                            onEdit={() => handleOpenEdit(item)}
+                            onDelete={() => { setItemToDelete(item); setDeleteDialogOpen(true) }}
+                            history={item.history}
+                            entityType="Purchase Return"
+                            isLocked={isLocked}
+                          />
                         </TableCell>
                       </TableRow>
                     )
@@ -750,34 +750,34 @@ export default function PurchaseReturnPage({
                   <div className="erp-party-picker-field">
                     <input type="hidden" name="supplierId" value={selectedSupplierId} />
                     {!supplierPickerOpen && selectedSupplier ? (
-                        <div className="flex items-center justify-between p-3.5 bg-[#5B5FEF]/10 border-2 border-[#5B5FEF] rounded-2xl shadow-sm">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-10 h-10 rounded-xl bg-[#5B5FEF] text-white flex items-center justify-center font-extrabold text-sm shrink-0 shadow-sm">
-                              {(selectedSupplier?.name || 'SU').substring(0, 2).toUpperCase()}
+                      <div className="flex items-center justify-between p-3.5 bg-[#5B5FEF]/10 border-2 border-[#5B5FEF] rounded-2xl shadow-sm">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-[#5B5FEF] text-white flex items-center justify-center font-extrabold text-sm shrink-0 shadow-sm">
+                            {selectedSupplier.name.substring(0, 2).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-sm font-extrabold text-slate-900 truncate">
+                              {selectedSupplier.name}
                             </div>
-                            <div className="min-w-0">
-                              <div className="text-sm font-extrabold text-slate-900 truncate">
-                                {selectedSupplier.name}
-                              </div>
-                              <div className="text-xs font-bold text-[#5B5FEF]">
-                                Balance: {formatCurrency(selectedSupplier.openingBalance || 0)}
-                              </div>
+                            <div className="text-xs font-bold text-[#5B5FEF]">
+                              Balance: {formatCurrency(selectedSupplier.openingBalance || 0)}
                             </div>
                           </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setSupplierPickerOpen(true)
-                              setSupplierSearch('')
-                            }}
-                            className="h-8 px-3 text-xs font-bold text-[#5B5FEF] bg-white border-[#5B5FEF]/30 hover:bg-[#5B5FEF] hover:text-white rounded-xl shadow-2xs transition-all shrink-0 ml-2"
-                          >
-                            Change Party
-                          </Button>
                         </div>
-                      ) : !supplierPickerOpen && !selectedSupplier ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSupplierPickerOpen(true)
+                            setSupplierSearch('')
+                          }}
+                          className="h-8 px-3 text-xs font-bold text-[#5B5FEF] bg-white border-[#5B5FEF]/30 hover:bg-[#5B5FEF] hover:text-white rounded-xl shadow-2xs transition-all shrink-0 ml-2"
+                        >
+                          Change Party
+                        </Button>
+                      </div>
+                    ) : !supplierPickerOpen && !selectedSupplier ? (
                       <button
                         type="button"
                         className="erp-party-add-box"
@@ -850,20 +850,20 @@ export default function PurchaseReturnPage({
 
                   <div className="space-y-1.5">
                     <Label htmlFor="returnNo" className="text-xs font-medium">Return / Ref Number <span className="text-destructive">*</span></Label>
-                    <Input 
-                      id="returnNo" 
+                    <Input
+                      id="returnNo"
                       value={returnNo}
                       onChange={e => setReturnNo(e.target.value)}
                       placeholder="PR-001"
                       className="h-8 bg-background text-xs font-mono"
-                      required 
+                      required
                     />
                   </div>
 
                   <div className="space-y-1.5">
                     <Label htmlFor="returnDate" className="text-xs font-medium">Return Date <span className="text-destructive">*</span></Label>
-                    <Input 
-                      id="returnDate" 
+                    <Input
+                      id="returnDate"
                       type="date"
                       value={returnDate}
                       onChange={e => setReturnDate(e.target.value)}
@@ -1005,10 +1005,10 @@ export default function PurchaseReturnPage({
                       </div>
                     </div>
                     <div className="erp-footer-section-content">
-                      <Textarea 
-                        value={remarks} 
-                        onChange={(e) => setRemarks(e.target.value)} 
-                        placeholder="Enter return notes or reasons..." 
+                      <Textarea
+                        value={remarks}
+                        onChange={(e) => setRemarks(e.target.value)}
+                        placeholder="Enter return notes or reasons..."
                         rows={5}
                       />
                     </div>

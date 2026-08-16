@@ -57,13 +57,14 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   parseTallyPayments,
+  parseTallyAccountingVouchersExcel,
   exportPaymentsToTallyExcel,
   generateSampleTallyExcel,
   PaymentVoucher,
   TallyImportResult,
   TallyVoucherType
 } from '@/lib/tally-payment-excel'
-import { parseTallyXmlVouchers } from '@/lib/tally-xml-parser'
+import { parseTallyXmlVouchers, decodeXmlFileBuffer } from '@/lib/tally-xml-parser'
 import {
   TallyLedgerMapping,
   DEFAULT_TALLY_LEDGER_MAPPING,
@@ -260,7 +261,8 @@ export function TallyVoucherManager({
 
     try {
       if (isXml) {
-        const text = await file.text()
+        const buffer = await file.arrayBuffer()
+        const text = decodeXmlFileBuffer(buffer)
         const xmlResult = parseTallyXmlVouchers(text, { customers, suppliers, items, expenseTypes })
         
         const converted: PaymentVoucher[] = xmlResult.vouchers
@@ -295,18 +297,37 @@ export function TallyVoucherManager({
         }
       } else {
         const arrayBuffer = await file.arrayBuffer()
-        const result: TallyImportResult = parseTallyPayments(arrayBuffer)
+        const excelResult = parseTallyAccountingVouchersExcel(arrayBuffer, { customers, suppliers, items, expenseTypes })
 
-        setVouchers(result.data)
-        setErrors(result.errors)
-        setWarnings(result.warnings)
+        const converted: PaymentVoucher[] = excelResult.vouchers
+          .filter(v => v.normalizedType === 'payment' || v.normalizedType === 'receipt')
+          .map((v, idx) => ({
+            id: v.id || `vch-excel-${idx}`,
+            voucherNumber: v.voucherNumber,
+            voucherDate: v.voucherDate,
+            displayDate: v.displayDate,
+            rawVoucherType: v.rawVoucherType,
+            voucherType: v.rawVoucherType,
+            type: v.normalizedType === 'payment' ? 'PAYMENT' : 'RECEIPT',
+            partyLedger: v.partyName,
+            bankCashLedger: v.legs.find(l => l.ledgerName !== v.partyName)?.ledgerName || 'Bank Account',
+            amount: v.totalAmount,
+            status: v.isBalanced ? 'valid' : 'warning',
+            isValid: v.isBalanced,
+            imbalanceDifference: v.imbalanceDifference,
+            legs: v.legs
+          }))
 
-        if (result.success && result.data.length > 0) {
-          toast.success(`Imported ${result.data.length} Tally voucher(s) successfully`)
-        } else if (result.data.length > 0) {
-          toast.warning(`Imported ${result.data.length} voucher(s) with ${result.errors.length} validation issue(s)`)
+        setVouchers(converted)
+        setErrors(excelResult.errors)
+        setWarnings(excelResult.warnings)
+
+        if (excelResult.success && converted.length > 0) {
+          toast.success(`Imported ${converted.length} Tally voucher(s) successfully from Excel`)
+        } else if (converted.length > 0) {
+          toast.warning(`Imported ${converted.length} voucher(s) with validation notices`)
         } else {
-          toast.error(result.errors[0] || 'No valid Payment/Receipt vouchers found in file')
+          toast.error(excelResult.errors[0] || 'No valid Payment/Receipt vouchers found in file')
         }
       }
     } catch (err: any) {
