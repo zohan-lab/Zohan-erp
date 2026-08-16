@@ -9,6 +9,7 @@ import {
   ExportOptions
 } from './tally-payment-types'
 import { Customer, Supplier, Item, ExpenseType } from './types'
+import { Counter } from './cash-bank-types'
 import {
   TallyParsedXmlVoucher,
   TallyXmlImportResult,
@@ -23,7 +24,11 @@ import {
   isCashLedger,
   isGstTaxLedger,
   isRoundOffLedger,
-  isMainTradingLedger
+  isMainTradingLedger,
+  isNonPartyLedger,
+  isOwnerTransferLedger,
+  isCreditCardLedger,
+  isStatutoryTaxLedger
 } from './tally-xml-parser'
 
 // Re-export all types so callers can import everything from this single module
@@ -1004,6 +1009,7 @@ export function parseTallyAccountingVouchersExcel(
     suppliers?: Supplier[]
     items?: Item[]
     expenseTypes?: ExpenseType[]
+    counters?: Counter[]
     companyStateCode?: string
   }
 ): TallyXmlImportResult {
@@ -1014,8 +1020,12 @@ export function parseTallyAccountingVouchersExcel(
   const customers = context?.customers || []
   const suppliers = context?.suppliers || []
   const items = context?.items || []
+  const expenseTypes = context?.expenseTypes || []
+  const counters = context?.counters || []
   const custMap = new Map(customers.map(c => [c.name.trim().toLowerCase(), c]))
   const suppMap = new Map(suppliers.map(s => [s.name.trim().toLowerCase(), s]))
+  const expMap = new Map(expenseTypes.map(e => [e.name.trim().toLowerCase(), e]))
+  const counterMap = new Map(counters.map(cnt => [cnt.name.trim().toLowerCase(), cnt]))
   const itemMap = new Map(items.map(it => [it.name.trim().toLowerCase(), it]))
   // also map itemCode
   items.forEach(it => {
@@ -1355,7 +1365,72 @@ export function parseTallyAccountingVouchersExcel(
         })
       }
 
-      if (suppMap.has(normDr)) {
+      if (isCreditCardLedger(drParty)) {
+        // Credit Card Payment: Contra Transfer from Bank to Credit Card Account
+        const fromCounterName = crLeg ? crLeg.ledgerName : 'Bank Account'
+        const toCounterName = drParty
+        const fromCounterId = counterMap.get(fromCounterName.trim().toLowerCase())?.id
+        const toCounterId = counterMap.get(toCounterName.trim().toLowerCase())?.id
+
+        if (!toCounterId) {
+          candidateCounters.set(toCounterName.trim().toLowerCase(), {
+            name: toCounterName.trim(),
+            type: 'Bank'
+          })
+        }
+
+        normalizedType = 'contra'
+        partyName = `${fromCounterName} → ${toCounterName}`
+        contraDetails = {
+          fromCounterName,
+          toCounterName,
+          fromCounterId,
+          toCounterId,
+          amount: totalAmount
+        }
+        matchedEntityType = 'counter'
+        matchedEntityId = toCounterId
+      } else if (isOwnerTransferLedger(drParty)) {
+        // Drawings / Capital Account: Cash & Bank Outflow / Owner Transfer (NOT Customer Payment / Supplier)
+        normalizedType = 'expense'
+        partyName = drParty
+        matchedEntityType = 'expense'
+        matchedEntityId = expMap.get(normDr)?.id
+        expenseDetails = {
+          categoryId: matchedEntityId,
+          categoryName: drParty,
+          amount: totalAmount,
+          paymentAccountId: crLeg?.ledgerName,
+          paymentAccountName: crLeg?.ledgerName
+        }
+        if (!matchedEntityId) {
+          candidateExpenses.set(normDr, {
+            name: drParty,
+            linkType: 'netprofit'
+          })
+          skipReason = `Unmapped Master: ${drParty}`
+        }
+      } else if (isStatutoryTaxLedger(drParty)) {
+        // GST Payable, TDS, TCS, Income Tax: Statutory Tax Payment / Expense Entry (NOT Supplier)
+        normalizedType = 'expense'
+        partyName = drParty
+        matchedEntityType = 'expense'
+        matchedEntityId = expMap.get(normDr)?.id
+        expenseDetails = {
+          categoryId: matchedEntityId,
+          categoryName: drParty,
+          amount: totalAmount,
+          paymentAccountId: crLeg?.ledgerName,
+          paymentAccountName: crLeg?.ledgerName
+        }
+        if (!matchedEntityId) {
+          candidateExpenses.set(normDr, {
+            name: drParty,
+            linkType: 'netprofit'
+          })
+          skipReason = `Unmapped Master: ${drParty}`
+        }
+      } else if (suppMap.has(normDr)) {
         normalizedType = 'payment'
         matchedEntityType = 'supplier'
         matchedEntityId = suppMap.get(normDr)?.id
@@ -1378,7 +1453,7 @@ export function parseTallyAccountingVouchersExcel(
         matchedEntityType = 'customer'
         matchedEntityId = custMap.get(normDr)?.id
         partyName = drParty
-      } else if (isLikelyIndirectExpenseLedger(drParty)) {
+      } else if (isLikelyIndirectExpenseLedger(drParty) || isNonPartyLedger(drParty)) {
         normalizedType = 'expense'
         partyName = drParty
         expenseDetails = {
@@ -1418,7 +1493,51 @@ export function parseTallyAccountingVouchersExcel(
         })
       }
 
-      if (custMap.has(normCr)) {
+      if (isCreditCardLedger(crParty)) {
+        const fromCounterName = crParty
+        const toCounterName = drLeg ? drLeg.ledgerName : 'Bank Account'
+        const fromCounterId = counterMap.get(fromCounterName.trim().toLowerCase())?.id
+        const toCounterId = counterMap.get(toCounterName.trim().toLowerCase())?.id
+
+        if (!fromCounterId) {
+          candidateCounters.set(fromCounterName.trim().toLowerCase(), {
+            name: fromCounterName.trim(),
+            type: 'Bank'
+          })
+        }
+
+        normalizedType = 'contra'
+        partyName = `${fromCounterName} → ${toCounterName}`
+        contraDetails = {
+          fromCounterName,
+          toCounterName,
+          fromCounterId,
+          toCounterId,
+          amount: totalAmount
+        }
+        matchedEntityType = 'counter'
+        matchedEntityId = toCounterId
+      } else if (isOwnerTransferLedger(crParty) || isNonPartyLedger(crParty)) {
+        // Owner Capital Contribution or other non-party receipt
+        normalizedType = 'expense'
+        partyName = crParty
+        matchedEntityType = 'expense'
+        matchedEntityId = expMap.get(normCr)?.id
+        expenseDetails = {
+          categoryId: matchedEntityId,
+          categoryName: crParty,
+          amount: totalAmount,
+          paymentAccountId: drLeg?.ledgerName,
+          paymentAccountName: drLeg?.ledgerName
+        }
+        if (!matchedEntityId) {
+          candidateExpenses.set(normCr, {
+            name: crParty,
+            linkType: 'netprofit'
+          })
+          skipReason = `Unmapped Master: ${crParty}`
+        }
+      } else if (custMap.has(normCr)) {
         matchedEntityType = 'customer'
         matchedEntityId = custMap.get(normCr)?.id
         partyName = crParty
@@ -1467,7 +1586,7 @@ export function parseTallyAccountingVouchersExcel(
         matchedEntityType = 'supplier'
         matchedEntityId = suppMap.get(normParty)?.id
         partyName = pName
-      } else {
+      } else if (!isNonPartyLedger(pName)) {
         candidateCustomers.set(normParty, {
           name: pName,
           address: partyAddress,
@@ -1477,6 +1596,10 @@ export function parseTallyAccountingVouchersExcel(
         matchedEntityType = 'unmapped'
         partyName = pName
         skipReason = `Unmapped Master: ${pName}`
+      } else {
+        matchedEntityType = 'unmapped'
+        partyName = pName
+        skipReason = `Non-Party Ledger in Sales: ${pName}`
       }
     } else if (normalizedType === 'credit_note') {
       const crLeg = legs.find(l => l.drCr === 'Cr' && !l.ledgerName.toLowerCase().includes('round off'))
@@ -1490,7 +1613,7 @@ export function parseTallyAccountingVouchersExcel(
       } else if (suppMap.has(normParty)) {
         matchedEntityType = 'supplier'
         matchedEntityId = suppMap.get(normParty)?.id
-      } else {
+      } else if (!isNonPartyLedger(pName)) {
         candidateCustomers.set(normParty, {
           name: pName,
           address: partyAddress,
@@ -1499,6 +1622,9 @@ export function parseTallyAccountingVouchersExcel(
         })
         matchedEntityType = 'unmapped'
         skipReason = `Unmapped Master: ${pName}`
+      } else {
+        matchedEntityType = 'unmapped'
+        skipReason = `Non-Party Ledger in Credit Note: ${pName}`
       }
     } else if (normalizedType === 'purchase') {
       const crLeg = legs.find(l => l.drCr === 'Cr' && !l.ledgerName.toLowerCase().includes('round off'))
@@ -1512,7 +1638,7 @@ export function parseTallyAccountingVouchersExcel(
       } else if (custMap.has(normParty)) {
         matchedEntityType = 'customer'
         matchedEntityId = custMap.get(normParty)?.id
-      } else {
+      } else if (!isNonPartyLedger(pName)) {
         candidateSuppliers.set(normParty, {
           name: pName,
           address: partyAddress,
@@ -1521,6 +1647,9 @@ export function parseTallyAccountingVouchersExcel(
         })
         matchedEntityType = 'unmapped'
         skipReason = `Unmapped Master: ${pName}`
+      } else {
+        matchedEntityType = 'unmapped'
+        skipReason = `Non-Party Ledger in Purchase: ${pName}`
       }
     } else if (normalizedType === 'debit_note') {
       const drLeg = legs.find(l => l.drCr === 'Dr' && !l.ledgerName.toLowerCase().includes('round off'))
@@ -1534,7 +1663,7 @@ export function parseTallyAccountingVouchersExcel(
       } else if (custMap.has(normParty)) {
         matchedEntityType = 'customer'
         matchedEntityId = custMap.get(normParty)?.id
-      } else {
+      } else if (!isNonPartyLedger(pName)) {
         candidateSuppliers.set(normParty, {
           name: pName,
           address: partyAddress,
@@ -1543,6 +1672,9 @@ export function parseTallyAccountingVouchersExcel(
         })
         matchedEntityType = 'unmapped'
         skipReason = `Unmapped Master: ${pName}`
+      } else {
+        matchedEntityType = 'unmapped'
+        skipReason = `Non-Party Ledger in Debit Note: ${pName}`
       }
     } else if (normalizedType === 'skipped') {
       skipReason = `Non-billing voucher type (${rawVoucherType}) skipped per standard ERP audit policy`
@@ -1657,10 +1789,10 @@ export function parseTallyAccountingVouchersExcel(
     })
   })
 
-  // Assemble candidate masters
+  // Assemble candidate masters with strict non-party blacklist enforcement
   const newMasterCandidates: TallyNewMasterCandidates = {
-    customers: Array.from(candidateCustomers.values()),
-    suppliers: Array.from(candidateSuppliers.values()),
+    customers: Array.from(candidateCustomers.values()).filter(c => !isNonPartyLedger(c.name) || c.name.toLowerCase() === 'cash customer'),
+    suppliers: Array.from(candidateSuppliers.values()).filter(s => !isNonPartyLedger(s.name)),
     expenseCategories: Array.from(candidateExpenses.values()),
     counters: Array.from(candidateCounters.values()),
     items: Array.from(candidateItems.values())

@@ -246,6 +246,85 @@ export const COMMERCIAL_ENTITY_KEYWORDS = [
 ]
 
 /**
+ * Strict Blacklist of accounting & statutory ledgers that MUST NEVER be auto-created as Customers or Suppliers.
+ */
+export const NON_PARTY_EXACT_LEDGERS = new Set([
+  'sales', 'sales account', 'sales a/c', 'purchase', 'purchases', 'purchase account', 'purchase a/c',
+  'cash', 'cash account', 'cash a/c', 'petty cash', 'cash in hand', 'cash-in-hand',
+  'discount', 'discount allowed', 'discount received', 'discount account', 'discount a/c',
+  'round off', 'round-off', 'rounding', 'fractional',
+  'suspense', 'suspense a/c', 'suspense account', 'difference in opening balance'
+])
+
+export function isNonPartyLedger(ledgerName: string): boolean {
+  if (!ledgerName) return true
+  const lower = ledgerName.trim().toLowerCase()
+  if (NON_PARTY_EXACT_LEDGERS.has(lower)) return true
+
+  // Avoid matching commercial business names
+  if (isCreditCardLedger(lower) || isOwnerTransferLedger(lower)) return true
+
+  if (
+    lower.includes('gst payable') ||
+    lower.includes('tax payable') ||
+    lower.includes('income tax') ||
+    lower.includes('advance tax') ||
+    lower.includes('duties & taxes') ||
+    lower.includes('duties and taxes') ||
+    /\b(cgst|sgst|igst|utgst|tds|tcs|cess)\b/i.test(lower) ||
+    lower.includes('bank charge') ||
+    lower.includes('bank interest') ||
+    lower.includes('interest paid') ||
+    lower.includes('interest on') ||
+    lower.includes('interest a/c') ||
+    lower.includes('bad debts') ||
+    lower.includes('depreciation') ||
+    lower.includes('audit fee') ||
+    lower.includes('legal fee')
+  ) {
+    return true
+  }
+
+  return false
+}
+
+export function isOwnerTransferLedger(ledgerName: string): boolean {
+  if (!ledgerName) return false
+  const lower = ledgerName.trim().toLowerCase()
+  return (
+    lower.includes('drawings') ||
+    lower.includes('capital account') ||
+    lower.includes('capital a/c') ||
+    lower.includes('partner capital') ||
+    lower.includes('proprietor') ||
+    lower.includes('owner capital') ||
+    lower.includes('owner transfer') ||
+    lower.includes('owner drawings')
+  )
+}
+
+export function isCreditCardLedger(ledgerName: string): boolean {
+  if (!ledgerName) return false
+  const lower = ledgerName.trim().toLowerCase()
+  return lower.includes('credit card') || lower.includes('cc payment') || lower.includes('creditcard')
+}
+
+export function isStatutoryTaxLedger(ledgerName: string): boolean {
+  if (!ledgerName) return false
+  const lower = ledgerName.trim().toLowerCase()
+  return (
+    isGstTaxLedger(lower) ||
+    lower.includes('gst payable') ||
+    /\b(tds|tcs|cess)\b/i.test(lower) ||
+    lower.includes('income tax') ||
+    lower.includes('advance tax') ||
+    lower.includes('tax payable') ||
+    lower.includes('duties & taxes') ||
+    lower.includes('duties and taxes')
+  )
+}
+
+/**
  * Keywords indicating indirect overhead or administrative expense ledgers.
  */
 export const INDIRECT_EXPENSE_KEYWORDS = [
@@ -255,7 +334,7 @@ export const INDIRECT_EXPENSE_KEYWORDS = [
   'interest on', 'interest a/c', 'interest paid', 'repair', 'repairs', 'maintenance',
   'brokerage', 'commission', 'audit', 'auditor', 'legal', 'lawyer', 'advocate',
   'office expense', 'office exp', 'cleaning', 'courier', 'postage', 'telephone', 'phone',
-  'mobile', 'internet', 'broadband', 'drawings', 'insurance', 'tax', 'taxes', 'cess',
+  'mobile', 'internet', 'broadband', 'insurance', 'tax', 'taxes', 'cess',
   'professional fee', 'professional fees', 'travelling', 'travel', 'conveyance', 'hospitality',
   'advertisement', 'advertising', 'publicity', 'software', 'subscription', 'domain', 'hosting',
   'pest control', 'water charge', 'generator', 'security', 'guard', 'vehicle maintenance'
@@ -270,9 +349,8 @@ export function isLikelyCommercialEntity(ledgerName: string): boolean {
 export function isLikelyIndirectExpenseLedger(ledgerName: string): boolean {
   if (!ledgerName) return false
   const lower = ledgerName.toLowerCase()
-  // If it clearly contains commercial entity identifiers like 'pvt ltd' or 'steel', it is not an expense ledger
   if (isLikelyCommercialEntity(ledgerName)) return false
-  return INDIRECT_EXPENSE_KEYWORDS.some(k => lower.includes(k))
+  return INDIRECT_EXPENSE_KEYWORDS.some(k => lower.includes(k)) || isNonPartyLedger(ledgerName)
 }
 
 export function isCashLedger(ledgerName: string): boolean {
@@ -678,7 +756,7 @@ export function parseTallyXmlVouchers(
         matchedEntityType = 'counter'
       }
     } else if (normalizedType === 'payment') {
-      // Classify Payment into Supplier Payment vs Indirect Expense Entry
+      // Classify Payment into Supplier Payment vs Indirect Expense Entry vs Contra Transfer
       const drLeg = legs.find(l => l.drCr === 'Dr')
       const crLeg = legs.find(l => l.drCr === 'Cr')
       const drParty = (drLeg?.ledgerName || partyName || '').trim()
@@ -691,7 +769,72 @@ export function parseTallyXmlVouchers(
         })
       }
 
-      if (suppMap.has(normDr)) {
+      if (isCreditCardLedger(drParty)) {
+        // Credit Card Payment: Contra Transfer from Bank to Credit Card Account
+        const fromCounterName = crLeg ? crLeg.ledgerName : 'Bank Account'
+        const toCounterName = drParty
+        const fromCounterId = counterMap.get(fromCounterName.trim().toLowerCase())?.id
+        const toCounterId = counterMap.get(toCounterName.trim().toLowerCase())?.id
+
+        if (!toCounterId) {
+          candidateCounters.set(toCounterName.trim().toLowerCase(), {
+            name: toCounterName.trim(),
+            type: 'Bank'
+          })
+        }
+
+        normalizedType = 'contra'
+        partyName = `${fromCounterName} → ${toCounterName}`
+        contraDetails = {
+          fromCounterName,
+          toCounterName,
+          fromCounterId,
+          toCounterId,
+          amount: totalAmount
+        }
+        matchedEntityType = 'counter'
+        matchedEntityId = toCounterId
+      } else if (isOwnerTransferLedger(drParty)) {
+        // Drawings / Capital Account: Cash & Bank Outflow / Owner Transfer (NOT Customer Payment / Supplier)
+        normalizedType = 'expense'
+        partyName = drParty
+        matchedEntityType = 'expense'
+        matchedEntityId = expMap.get(normDr)?.id
+        expenseDetails = {
+          categoryId: matchedEntityId,
+          categoryName: drParty,
+          amount: totalAmount,
+          paymentAccountId: crLeg?.ledgerName,
+          paymentAccountName: crLeg?.ledgerName
+        }
+        if (!matchedEntityId) {
+          candidateExpenses.set(normDr, {
+            name: drParty,
+            linkType: 'netprofit'
+          })
+          skipReason = `Unmapped Master: ${drParty}`
+        }
+      } else if (isStatutoryTaxLedger(drParty)) {
+        // GST Payable, TDS, TCS, Income Tax: Statutory Tax Payment / Expense Entry (NOT Supplier)
+        normalizedType = 'expense'
+        partyName = drParty
+        matchedEntityType = 'expense'
+        matchedEntityId = expMap.get(normDr)?.id
+        expenseDetails = {
+          categoryId: matchedEntityId,
+          categoryName: drParty,
+          amount: totalAmount,
+          paymentAccountId: crLeg?.ledgerName,
+          paymentAccountName: crLeg?.ledgerName
+        }
+        if (!matchedEntityId) {
+          candidateExpenses.set(normDr, {
+            name: drParty,
+            linkType: 'netprofit'
+          })
+          skipReason = `Unmapped Master: ${drParty}`
+        }
+      } else if (suppMap.has(normDr)) {
         normalizedType = 'payment'
         matchedEntityType = 'supplier'
         matchedEntityId = suppMap.get(normDr)?.id
@@ -713,8 +856,8 @@ export function parseTallyXmlVouchers(
         matchedEntityType = 'customer'
         matchedEntityId = custMap.get(normDr)?.id
         partyName = drParty
-      } else if (isLikelyIndirectExpenseLedger(drParty)) {
-        // Unmapped Indirect Expense ledger (e.g. "Office Rent", "Tea Expenses", "Bank Charges")
+      } else if (isLikelyIndirectExpenseLedger(drParty) || isNonPartyLedger(drParty)) {
+        // Unmapped Indirect Expense / Bank Charge / Interest / Non-party ledger
         normalizedType = 'expense'
         partyName = drParty
         expenseDetails = {
@@ -754,7 +897,51 @@ export function parseTallyXmlVouchers(
         })
       }
 
-      if (custMap.has(normCr)) {
+      if (isCreditCardLedger(crParty)) {
+        const fromCounterName = crParty
+        const toCounterName = drLeg ? drLeg.ledgerName : 'Bank Account'
+        const fromCounterId = counterMap.get(fromCounterName.trim().toLowerCase())?.id
+        const toCounterId = counterMap.get(toCounterName.trim().toLowerCase())?.id
+
+        if (!fromCounterId) {
+          candidateCounters.set(fromCounterName.trim().toLowerCase(), {
+            name: fromCounterName.trim(),
+            type: 'Bank'
+          })
+        }
+
+        normalizedType = 'contra'
+        partyName = `${fromCounterName} → ${toCounterName}`
+        contraDetails = {
+          fromCounterName,
+          toCounterName,
+          fromCounterId,
+          toCounterId,
+          amount: totalAmount
+        }
+        matchedEntityType = 'counter'
+        matchedEntityId = toCounterId
+      } else if (isOwnerTransferLedger(crParty) || isNonPartyLedger(crParty)) {
+        // Owner Capital Contribution or other non-party receipt
+        normalizedType = 'expense'
+        partyName = crParty
+        matchedEntityType = 'expense'
+        matchedEntityId = expMap.get(normCr)?.id
+        expenseDetails = {
+          categoryId: matchedEntityId,
+          categoryName: crParty,
+          amount: totalAmount,
+          paymentAccountId: drLeg?.ledgerName,
+          paymentAccountName: drLeg?.ledgerName
+        }
+        if (!matchedEntityId) {
+          candidateExpenses.set(normCr, {
+            name: crParty,
+            linkType: 'netprofit'
+          })
+          skipReason = `Unmapped Master: ${crParty}`
+        }
+      } else if (custMap.has(normCr)) {
         matchedEntityType = 'customer'
         matchedEntityId = custMap.get(normCr)?.id
         partyName = crParty
@@ -803,7 +990,7 @@ export function parseTallyXmlVouchers(
         matchedEntityType = 'supplier'
         matchedEntityId = suppMap.get(normParty)?.id
         partyName = pName
-      } else {
+      } else if (!isNonPartyLedger(pName)) {
         candidateCustomers.set(normParty, {
           name: pName,
           gstin: raw.partyGstin,
@@ -812,6 +999,10 @@ export function parseTallyXmlVouchers(
         matchedEntityType = 'unmapped'
         partyName = pName
         skipReason = `Unmapped Master: ${pName}`
+      } else {
+        matchedEntityType = 'unmapped'
+        partyName = pName
+        skipReason = `Non-Party Ledger in Sales: ${pName}`
       }
     } else if (normalizedType === 'credit_note') {
       const crLeg = legs.find(l => l.drCr === 'Cr' && !l.ledgerName.toLowerCase().includes('round off'))
@@ -825,7 +1016,7 @@ export function parseTallyXmlVouchers(
       } else if (suppMap.has(normParty)) {
         matchedEntityType = 'supplier'
         matchedEntityId = suppMap.get(normParty)?.id
-      } else {
+      } else if (!isNonPartyLedger(pName)) {
         candidateCustomers.set(normParty, {
           name: pName,
           gstin: raw.partyGstin,
@@ -833,6 +1024,9 @@ export function parseTallyXmlVouchers(
         })
         matchedEntityType = 'unmapped'
         skipReason = `Unmapped Master: ${pName}`
+      } else {
+        matchedEntityType = 'unmapped'
+        skipReason = `Non-Party Ledger in Credit Note: ${pName}`
       }
     } else if (normalizedType === 'purchase') {
       const crLeg = legs.find(l => l.drCr === 'Cr' && !l.ledgerName.toLowerCase().includes('round off'))
@@ -846,7 +1040,7 @@ export function parseTallyXmlVouchers(
       } else if (custMap.has(normParty)) {
         matchedEntityType = 'customer'
         matchedEntityId = custMap.get(normParty)?.id
-      } else {
+      } else if (!isNonPartyLedger(pName)) {
         candidateSuppliers.set(normParty, {
           name: pName,
           gstin: raw.partyGstin,
@@ -854,6 +1048,9 @@ export function parseTallyXmlVouchers(
         })
         matchedEntityType = 'unmapped'
         skipReason = `Unmapped Master: ${pName}`
+      } else {
+        matchedEntityType = 'unmapped'
+        skipReason = `Non-Party Ledger in Purchase: ${pName}`
       }
     } else if (normalizedType === 'debit_note') {
       const drLeg = legs.find(l => l.drCr === 'Dr' && !l.ledgerName.toLowerCase().includes('round off'))
@@ -867,7 +1064,7 @@ export function parseTallyXmlVouchers(
       } else if (custMap.has(normParty)) {
         matchedEntityType = 'customer'
         matchedEntityId = custMap.get(normParty)?.id
-      } else {
+      } else if (!isNonPartyLedger(pName)) {
         candidateSuppliers.set(normParty, {
           name: pName,
           gstin: raw.partyGstin,
@@ -875,6 +1072,9 @@ export function parseTallyXmlVouchers(
         })
         matchedEntityType = 'unmapped'
         skipReason = `Unmapped Master: ${pName}`
+      } else {
+        matchedEntityType = 'unmapped'
+        skipReason = `Non-Party Ledger in Debit Note: ${pName}`
       }
     } else if (normalizedType === 'skipped') {
       skipReason = `Non-billing voucher type (${raw.rawVoucherType}) skipped per standard ERP audit policy`
@@ -990,10 +1190,10 @@ export function parseTallyXmlVouchers(
     })
   })
 
-  // Assemble candidate masters
+  // Assemble candidate masters with strict non-party blacklist enforcement
   const newMasterCandidates: TallyNewMasterCandidates = {
-    customers: Array.from(candidateCustomers.values()),
-    suppliers: Array.from(candidateSuppliers.values()),
+    customers: Array.from(candidateCustomers.values()).filter(c => !isNonPartyLedger(c.name) || c.name.toLowerCase() === 'cash customer'),
+    suppliers: Array.from(candidateSuppliers.values()).filter(s => !isNonPartyLedger(s.name)),
     expenseCategories: Array.from(candidateExpenses.values()),
     counters: Array.from(candidateCounters.values()),
     items: Array.from(candidateItems.values())

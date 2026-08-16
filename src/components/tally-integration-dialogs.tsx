@@ -721,6 +721,83 @@ export function TallyImportDialog({
   const [filterTab, setFilterTab] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState('')
 
+  // Module-wise Category Filter State
+  const [selectedModules, setSelectedModules] = useState<{
+    sales: boolean
+    purchase: boolean
+    receipt: boolean
+    payment: boolean
+    expense: boolean
+    contra: boolean
+    credit_note: boolean
+    debit_note: boolean
+  }>({
+    sales: true,
+    purchase: true,
+    receipt: true,
+    payment: true,
+    expense: true,
+    contra: true,
+    credit_note: true,
+    debit_note: true
+  })
+
+  const toggleModule = (mod: string, enabled: boolean) => {
+    setSelectedModules(prev => ({ ...prev, [mod]: enabled }))
+  }
+
+  const selectOnlyInvoices = () => {
+    setSelectedModules({
+      sales: true,
+      purchase: true,
+      receipt: false,
+      payment: false,
+      expense: false,
+      contra: false,
+      credit_note: true,
+      debit_note: true
+    })
+  }
+
+  const selectOnlyBanking = () => {
+    setSelectedModules({
+      sales: false,
+      purchase: false,
+      receipt: true,
+      payment: true,
+      expense: true,
+      contra: true,
+      credit_note: false,
+      debit_note: false
+    })
+  }
+
+  const selectAllModules = () => {
+    setSelectedModules({
+      sales: true,
+      purchase: true,
+      receipt: true,
+      payment: true,
+      expense: true,
+      contra: true,
+      credit_note: true,
+      debit_note: true
+    })
+  }
+
+  const deselectAllModules = () => {
+    setSelectedModules({
+      sales: false,
+      purchase: false,
+      receipt: false,
+      payment: false,
+      expense: false,
+      contra: false,
+      credit_note: false,
+      debit_note: false
+    })
+  }
+
   const supplierMap = useMemo(() => new Map(suppliers.map(s => [s.name.trim().toLowerCase(), s])), [suppliers])
   const customerMap = useMemo(() => new Map(customers.map(c => [c.name.trim().toLowerCase(), c])), [customers])
   const counterMap = useMemo(() => new Map(counters.map(c => [c.name.trim().toLowerCase(), c])), [counters])
@@ -765,18 +842,40 @@ export function TallyImportDialog({
           matchedEntityId = toId
         } else if (autoCreateMasters) {
           matchedEntityType = 'counter'
-          matchedEntityId = toId || 'auto-counter'
           isAutoCreated = true
         } else {
           matchedEntityType = 'unmapped'
         }
+      } else if (effectiveType === 'payment') {
+        if (matchedEntityType === 'supplier') {
+          matchedEntityId = matchedEntityId || supplierMap.get(normParty)?.id
+          if (!matchedEntityId && autoCreateMasters) {
+            isAutoCreated = true
+          }
+        } else if (matchedEntityType === 'customer') {
+          matchedEntityId = matchedEntityId || customerMap.get(normParty)?.id
+          if (!matchedEntityId && autoCreateMasters) {
+            isAutoCreated = true
+          }
+        } else if (matchedEntityType === 'expense') {
+          matchedEntityId = matchedEntityId || expenseTypeMap.get(normParty)?.id
+          if (!matchedEntityId && autoCreateMasters) {
+            isAutoCreated = true
+          }
+        } else if (matchedEntityType === 'unmapped') {
+          if (supplierMap.has(normParty)) {
+            matchedEntityType = 'supplier'
+            matchedEntityId = supplierMap.get(normParty)?.id
+          } else if (autoCreateMasters) {
+            matchedEntityType = 'supplier'
+            isAutoCreated = true
+          }
+        }
       } else if (effectiveType === 'expense') {
-        if (override?.categoryId) {
+        const catId = expenseDetails?.categoryId || matchedEntityId || expenseTypeMap.get(normParty)?.id
+        if (catId) {
           matchedEntityType = 'expense'
-          matchedEntityId = override.categoryId
-        } else if (expenseTypeMap.has(normParty)) {
-          matchedEntityType = 'expense'
-          matchedEntityId = expenseTypeMap.get(normParty)?.id
+          matchedEntityId = catId
         } else if (autoCreateMasters) {
           matchedEntityType = 'expense'
           isAutoCreated = true
@@ -790,82 +889,66 @@ export function TallyImportDialog({
           paymentAccountId: v.legs.find(l => l.drCr === 'Cr')?.ledgerName,
           paymentAccountName: v.legs.find(l => l.drCr === 'Cr')?.ledgerName
         }
+      } else if (effectiveType === 'receipt') {
+        if (matchedEntityType === 'customer') {
+          matchedEntityId = matchedEntityId || customerMap.get(normParty)?.id
+          if (!matchedEntityId && autoCreateMasters) {
+            isAutoCreated = true
+          }
+        } else if (matchedEntityType === 'supplier') {
+          matchedEntityId = matchedEntityId || supplierMap.get(normParty)?.id
+          if (!matchedEntityId && autoCreateMasters) {
+            isAutoCreated = true
+          }
+        } else if (matchedEntityType === 'unmapped') {
+          if (customerMap.has(normParty)) {
+            matchedEntityType = 'customer'
+            matchedEntityId = customerMap.get(normParty)?.id
+          } else if (autoCreateMasters) {
+            matchedEntityType = 'customer'
+            isAutoCreated = true
+          }
+        }
       } else if (effectiveType === 'sales' || effectiveType === 'credit_note') {
-        if (override?.matchedEntityId) {
-          matchedEntityType = 'customer'
-          matchedEntityId = override.matchedEntityId
-        } else if (customerMap.has(normParty)) {
-          matchedEntityType = 'customer'
-          matchedEntityId = customerMap.get(normParty)?.id
-        } else if (supplierMap.has(normParty)) {
-          matchedEntityType = 'supplier'
-          matchedEntityId = supplierMap.get(normParty)?.id
-        } else if (autoCreateMasters) {
-          matchedEntityType = 'customer'
-          isAutoCreated = true
-        } else {
-          matchedEntityType = 'unmapped'
+        if (matchedEntityType === 'customer') {
+          matchedEntityId = matchedEntityId || customerMap.get(normParty)?.id
+          if (!matchedEntityId && autoCreateMasters) {
+            isAutoCreated = true
+          }
+        } else if (matchedEntityType === 'unmapped') {
+          if (customerMap.has(normParty)) {
+            matchedEntityType = 'customer'
+            matchedEntityId = customerMap.get(normParty)?.id
+          } else if (autoCreateMasters) {
+            matchedEntityType = 'customer'
+            isAutoCreated = true
+          }
         }
       } else if (effectiveType === 'purchase' || effectiveType === 'debit_note') {
-        if (override?.matchedEntityId) {
-          matchedEntityType = 'supplier'
-          matchedEntityId = override.matchedEntityId
-        } else if (supplierMap.has(normParty)) {
-          matchedEntityType = 'supplier'
-          matchedEntityId = supplierMap.get(normParty)?.id
-        } else if (customerMap.has(normParty)) {
-          matchedEntityType = 'customer'
-          matchedEntityId = customerMap.get(normParty)?.id
-        } else if (autoCreateMasters) {
-          matchedEntityType = 'supplier'
-          isAutoCreated = true
-        } else {
-          matchedEntityType = 'unmapped'
-        }
-      } else if (effectiveType === 'payment') {
-        if (override?.matchedEntityId) {
-          matchedEntityType = 'supplier'
-          matchedEntityId = override.matchedEntityId
-        } else if (supplierMap.has(normParty)) {
-          matchedEntityType = 'supplier'
-          matchedEntityId = supplierMap.get(normParty)?.id
-        } else if (expenseTypeMap.has(normParty)) {
-          matchedEntityType = 'expense'
-          matchedEntityId = expenseTypeMap.get(normParty)?.id
-        } else if (autoCreateMasters) {
-          matchedEntityType = 'supplier'
-          isAutoCreated = true
-        } else {
-          matchedEntityType = 'unmapped'
-        }
-      } else if (effectiveType === 'receipt') {
-        if (override?.matchedEntityId) {
-          matchedEntityType = 'customer'
-          matchedEntityId = override.matchedEntityId
-        } else if (customerMap.has(normParty)) {
-          matchedEntityType = 'customer'
-          matchedEntityId = customerMap.get(normParty)?.id
-        } else if (supplierMap.has(normParty)) {
-          matchedEntityType = 'supplier'
-          matchedEntityId = supplierMap.get(normParty)?.id
-        } else if (autoCreateMasters) {
-          matchedEntityType = 'customer'
-          isAutoCreated = true
-        } else {
-          matchedEntityType = 'unmapped'
+        if (matchedEntityType === 'supplier') {
+          matchedEntityId = matchedEntityId || supplierMap.get(normParty)?.id
+          if (!matchedEntityId && autoCreateMasters) {
+            isAutoCreated = true
+          }
+        } else if (matchedEntityType === 'unmapped') {
+          if (supplierMap.has(normParty)) {
+            matchedEntityType = 'supplier'
+            matchedEntityId = supplierMap.get(normParty)?.id
+          } else if (autoCreateMasters) {
+            matchedEntityType = 'supplier'
+            isAutoCreated = true
+          }
         }
       }
 
-      // Check inventory item matching
+      // Check item mappings
       const unmappedItems = (v.inventory || []).filter(inv => !itemMap.has(inv.itemName.trim().toLowerCase()))
-      const hasUnmappedItem = !autoCreateMasters && unmappedItems.length > 0
-      let unmappedReason = v.skipReason
+      const hasUnmappedItem = unmappedItems.length > 0 && !autoCreateMasters
 
+      let unmappedReason = v.skipReason
       if (effectiveType !== 'skipped') {
-        if (effectiveType === 'contra' && matchedEntityType === 'unmapped') {
-          unmappedReason = `Unmapped Counter: ${!contraDetails?.fromCounterId ? contraDetails?.fromCounterName : contraDetails?.toCounterName}`
-        } else if (matchedEntityType === 'unmapped') {
-          unmappedReason = `Unmapped Master: ${partyName}`
+        if (matchedEntityType === 'unmapped') {
+          unmappedReason = `Unmapped Party / Account: ${partyName}`
         } else if (hasUnmappedItem) {
           unmappedReason = `Unmapped Item: ${unmappedItems.map(i => i.itemName).join(', ')}`
         } else {
@@ -890,9 +973,30 @@ export function TallyImportDialog({
         skipReason: unmappedReason
       }
     })
-  }, [parsedVouchers, overrides, supplierMap, customerMap, counterMap, expenseTypeMap, itemMap, counters.length, autoCreateMasters])
+  }, [parsedVouchers, overrides, supplierMap, customerMap, counterMap, expenseTypeMap, itemMap, autoCreateMasters])
 
-  // Count candidates for display
+  // Compute live counts per module
+  const moduleCounts = useMemo(() => {
+    const counts = {
+      sales: 0,
+      purchase: 0,
+      receipt: 0,
+      payment: 0,
+      expense: 0,
+      contra: 0,
+      credit_note: 0,
+      debit_note: 0
+    }
+    processedList.forEach(v => {
+      const t = v.effectiveType as keyof typeof counts
+      if (t in counts) {
+        counts[t]++
+      }
+    })
+    return counts
+  }, [processedList])
+
+  // Count candidates for display filtered by active selected modules
   const newMastersSummary = useMemo(() => {
     const custSet = new Set<string>()
     const suppSet = new Set<string>()
@@ -902,6 +1006,9 @@ export function TallyImportDialog({
 
     processedList.forEach(v => {
       if (v.effectiveType === 'skipped') return
+      const modKey = v.effectiveType as keyof typeof selectedModules
+      if (modKey in selectedModules && !selectedModules[modKey]) return
+
       const norm = v.partyName.trim().toLowerCase()
       if (v.isAutoCreated) {
         if (v.matchedEntityType === 'customer' && !customerMap.has(norm)) custSet.add(v.partyName.trim())
@@ -927,18 +1034,29 @@ export function TallyImportDialog({
       countersCount: cntrSet.size,
       itemsCount: itemSet.size
     }
-  }, [processedList, customerMap, supplierMap, expenseTypeMap, counterMap, itemMap])
+  }, [processedList, customerMap, supplierMap, expenseTypeMap, counterMap, itemMap, selectedModules])
 
   // Summary counts
   const totalCount = processedList.length
   const matchedCount = processedList.filter(v => v.effectiveType !== 'skipped' && v.matchedEntityType !== 'unmapped' && !v.hasUnmappedItem).length
   const unmappedCount = processedList.filter(v => v.effectiveType !== 'skipped' && (v.matchedEntityType === 'unmapped' || v.hasUnmappedItem)).length
   const skippedCount = processedList.filter(v => v.effectiveType === 'skipped').length
-  const selectedCount = processedList.filter(v => v.isIncluded && v.effectiveType !== 'skipped').length
+  const selectedCount = processedList.filter(v => {
+    if (!v.isIncluded || v.effectiveType === 'skipped') return false
+    const modKey = v.effectiveType as keyof typeof selectedModules
+    if (modKey in selectedModules && !selectedModules[modKey]) return false
+    return true
+  }).length
 
-  // Filtered list based on active tab and search query
+  // Filtered list based on active tab, search query, and module selection
   const filteredList = useMemo(() => {
     return processedList.filter(v => {
+      // 0. Module Filter
+      const modKey = v.effectiveType as keyof typeof selectedModules
+      if (modKey in selectedModules && !selectedModules[modKey]) {
+        return false
+      }
+
       // 1. Tab Filter
       if (filterTab === 'matched') {
         if (v.effectiveType === 'skipped' || v.matchedEntityType === 'unmapped' || v.hasUnmappedItem) return false
@@ -966,7 +1084,7 @@ export function TallyImportDialog({
 
       return true
     })
-  }, [processedList, filterTab, searchQuery])
+  }, [processedList, filterTab, searchQuery, selectedModules])
 
   // Bulk Actions
   const handleSelectAll = (select: boolean) => {
@@ -1154,11 +1272,17 @@ export function TallyImportDialog({
     const autoCntrMap = new Map<string, string>()
     const autoItemMap = new Map<string, string>()
 
+    const activeModuleVouchers = processedList.filter(v => {
+      const modKey = v.effectiveType as keyof typeof selectedModules
+      if (modKey in selectedModules && !selectedModules[modKey]) return false
+      return true
+    })
+
     if (autoCreateMasters) {
       const timestamp = Date.now()
       let custSeq = 0, suppSeq = 0, expSeq = 0, cntrSeq = 0, itemSeq = 0
 
-      processedList.forEach(v => {
+      activeModuleVouchers.forEach(v => {
         if (!v.isIncluded || v.effectiveType === 'skipped') return
         const norm = v.partyName.trim().toLowerCase()
 
@@ -1258,7 +1382,7 @@ export function TallyImportDialog({
 
     let skipped = 0
 
-    processedList.forEach((v, idx) => {
+    activeModuleVouchers.forEach((v, idx) => {
       if (!v.isIncluded || v.effectiveType === 'skipped' || v.matchedEntityType === 'unmapped' || v.hasUnmappedItem) {
         skipped++
         return
@@ -1555,71 +1679,190 @@ export function TallyImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[880px] max-h-[92vh] flex flex-col p-6 rounded-2xl overflow-hidden">
-        <DialogHeader className="space-y-1.5 shrink-0">
+      <DialogContent className="fixed inset-0 w-screen h-screen max-w-none max-h-none m-0 rounded-none z-50 bg-background flex flex-col p-0 overflow-hidden border-none shadow-none">
+        <DialogHeader className="px-6 py-3 border-b border-slate-200 bg-white/95 backdrop-blur shrink-0 space-y-0">
           <div className="flex items-center justify-between">
-            <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
-              <span className="p-2 rounded-xl bg-violet-50 text-violet-700 border border-violet-100">
+            <div className="flex items-center gap-3">
+              <span className="p-2 rounded-xl bg-violet-50 text-violet-700 border border-violet-100 shadow-2xs">
                 <FileArrowUp className="w-5 h-5" weight="duotone" />
               </span>
-              Import Tally Vouchers (XML / Excel)
-            </DialogTitle>
-            <Badge variant="outline" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold">
-              Skip-Journal Policy
-            </Badge>
+              <div>
+                <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  Tally Voucher Ingestion Workspace
+                  <Badge variant="outline" className="text-[10px] bg-violet-50 text-violet-700 border-violet-200 font-bold">
+                    XML & 14-Col Excel
+                  </Badge>
+                  {fileName && (
+                    <Badge variant="secondary" className="text-[10px] font-mono text-slate-700">
+                      {fileName}
+                    </Badge>
+                  )}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-slate-500">
+                  Full-screen workspace: Inspect, select modules, match accounts, auto-create missing masters, and commit to Zohan ERP.
+                </DialogDescription>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {processedList.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setParsedVouchers([])
+                    setFileName(null)
+                    setOverrides({})
+                  }}
+                  className="h-8 text-xs text-slate-600 hover:text-slate-900"
+                >
+                  Upload New File
+                </Button>
+              )}
+            </div>
           </div>
-          <DialogDescription className="text-xs text-slate-500">
-            Inspect, filter, override types, match accounts, and auto-create missing master ledgers during Tally ingestion.
-          </DialogDescription>
         </DialogHeader>
 
         {/* Upload Drop Area */}
         {processedList.length === 0 ? (
-          <div
-            onDragOver={e => {
-              e.preventDefault()
-              setIsDragging(true)
-            }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={handleDrop}
-            className={cn(
-              'border-2 border-dashed p-8 rounded-2xl text-center space-y-3 transition-all cursor-pointer my-auto',
-              isDragging ? 'border-violet-600 bg-violet-50/80 scale-[0.99]' : 'border-slate-200 hover:border-violet-400 bg-slate-50/60'
-            )}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept=".xml, .xlsx, .xls, .csv, text/xml, application/xml"
-              className="hidden"
-            />
-            <div className="mx-auto w-12 h-12 rounded-2xl bg-violet-100 text-violet-700 flex items-center justify-center">
-              <FileArrowUp className="w-6 h-6" weight="bold" />
-            </div>
-            <div>
-              <Button
-                size="sm"
-                type="button"
-                onClick={e => {
-                  e.stopPropagation()
-                  fileInputRef.current?.click()
-                }}
-                disabled={isParsing}
-                className="h-9 text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white rounded-xl shadow-xs"
-              >
-                {isParsing ? 'Parsing Vouchers...' : 'Select Tally XML / Excel File'}
-              </Button>
-              <p className="text-xs text-slate-400 mt-2">
-                Drag & Drop or click to upload native Tally XML (<span className="font-mono">.xml</span>) or 14-Column Excel (<span className="font-mono">.xlsx, .xls, .csv</span>)
-              </p>
+          <div className="flex-1 flex items-center justify-center p-8 bg-slate-50/50">
+            <div
+              onDragOver={e => {
+                e.preventDefault()
+                setIsDragging(true)
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+              className={cn(
+                'max-w-xl w-full border-2 border-dashed p-10 rounded-3xl text-center space-y-4 transition-all cursor-pointer bg-white shadow-xs',
+                isDragging ? 'border-violet-600 bg-violet-50/80 scale-[0.99]' : 'border-slate-300 hover:border-violet-400'
+              )}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                accept=".xml, .xlsx, .xls, .csv, text/xml, application/xml"
+                className="hidden"
+              />
+              <div className="mx-auto w-14 h-14 rounded-2xl bg-violet-100 text-violet-700 flex items-center justify-center shadow-inner">
+                <FileArrowUp className="w-8 h-8" weight="bold" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-base font-bold text-slate-900">Upload Tally Prime Vouchers</h3>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                  Drag & drop native Tally XML export (<span className="font-mono text-violet-700">.xml</span>) or 14-Column Excel Sheet (<span className="font-mono text-violet-700">.xlsx, .xls, .csv</span>)
+                </p>
+              </div>
+              <div>
+                <Button
+                  size="sm"
+                  type="button"
+                  onClick={e => {
+                    e.stopPropagation()
+                    fileInputRef.current?.click()
+                  }}
+                  disabled={isParsing}
+                  className="h-10 px-5 text-xs font-bold bg-violet-600 hover:bg-violet-700 text-white rounded-xl shadow-xs"
+                >
+                  {isParsing ? 'Parsing Vouchers...' : 'Browse File'}
+                </Button>
+              </div>
             </div>
           </div>
         ) : (
-          <div className="flex flex-col flex-1 overflow-hidden space-y-3 min-h-0 pt-1">
-            {/* Auto-Creation Toggle & Candidate Summary Bar */}
-            <div className="flex items-center justify-between bg-violet-50/60 border border-violet-100 p-2.5 rounded-xl gap-2 flex-wrap shrink-0">
+          <div className="flex flex-col flex-1 overflow-hidden min-h-0 bg-slate-50/50">
+            {/* 1. Module-Wise Multi-Select Filter Bar */}
+            <div className="px-6 py-2.5 bg-white border-b border-slate-200 flex items-center justify-between gap-3 flex-wrap shrink-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold text-slate-700 mr-1 flex items-center gap-1.5">
+                  <Funnel size={14} weight="bold" className="text-violet-600" /> Modules to Import:
+                </span>
+
+                {moduleCounts.sales > 0 && (
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 cursor-pointer bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs hover:bg-slate-100 transition-colors">
+                    <Checkbox checked={selectedModules.sales} onCheckedChange={(chk) => toggleModule('sales', !!chk)} />
+                    <span>Sales Invoices</span>
+                    <Badge className="ml-0.5 h-4 px-1.5 text-[10px] bg-blue-100 text-blue-800 border-0 font-bold">{moduleCounts.sales}</Badge>
+                  </label>
+                )}
+
+                {moduleCounts.purchase > 0 && (
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 cursor-pointer bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs hover:bg-slate-100 transition-colors">
+                    <Checkbox checked={selectedModules.purchase} onCheckedChange={(chk) => toggleModule('purchase', !!chk)} />
+                    <span>Purchase Invoices</span>
+                    <Badge className="ml-0.5 h-4 px-1.5 text-[10px] bg-emerald-100 text-emerald-800 border-0 font-bold">{moduleCounts.purchase}</Badge>
+                  </label>
+                )}
+
+                {moduleCounts.receipt > 0 && (
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 cursor-pointer bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs hover:bg-slate-100 transition-colors">
+                    <Checkbox checked={selectedModules.receipt} onCheckedChange={(chk) => toggleModule('receipt', !!chk)} />
+                    <span>Customer Payments</span>
+                    <Badge className="ml-0.5 h-4 px-1.5 text-[10px] bg-violet-100 text-violet-800 border-0 font-bold">{moduleCounts.receipt}</Badge>
+                  </label>
+                )}
+
+                {moduleCounts.payment > 0 && (
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 cursor-pointer bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs hover:bg-slate-100 transition-colors">
+                    <Checkbox checked={selectedModules.payment} onCheckedChange={(chk) => toggleModule('payment', !!chk)} />
+                    <span>Supplier Payments</span>
+                    <Badge className="ml-0.5 h-4 px-1.5 text-[10px] bg-orange-100 text-orange-800 border-0 font-bold">{moduleCounts.payment}</Badge>
+                  </label>
+                )}
+
+                {moduleCounts.expense > 0 && (
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 cursor-pointer bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs hover:bg-slate-100 transition-colors">
+                    <Checkbox checked={selectedModules.expense} onCheckedChange={(chk) => toggleModule('expense', !!chk)} />
+                    <span>Expenses</span>
+                    <Badge className="ml-0.5 h-4 px-1.5 text-[10px] bg-amber-100 text-amber-800 border-0 font-bold">{moduleCounts.expense}</Badge>
+                  </label>
+                )}
+
+                {moduleCounts.contra > 0 && (
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 cursor-pointer bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs hover:bg-slate-100 transition-colors">
+                    <Checkbox checked={selectedModules.contra} onCheckedChange={(chk) => toggleModule('contra', !!chk)} />
+                    <span>Contra Transfers</span>
+                    <Badge className="ml-0.5 h-4 px-1.5 text-[10px] bg-cyan-100 text-cyan-800 border-0 font-bold">{moduleCounts.contra}</Badge>
+                  </label>
+                )}
+
+                {(moduleCounts.credit_note > 0 || moduleCounts.debit_note > 0) && (
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-800 cursor-pointer bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs hover:bg-slate-100 transition-colors">
+                    <Checkbox
+                      checked={selectedModules.credit_note && selectedModules.debit_note}
+                      onCheckedChange={(chk) => {
+                        toggleModule('credit_note', !!chk)
+                        toggleModule('debit_note', !!chk)
+                      }}
+                    />
+                    <span>Credit/Debit Notes</span>
+                    <Badge className="ml-0.5 h-4 px-1.5 text-[10px] bg-rose-100 text-rose-800 border-0 font-bold">
+                      {moduleCounts.credit_note + moduleCounts.debit_note}
+                    </Badge>
+                  </label>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5 ml-auto">
+                <Button size="sm" variant="outline" className="h-7 text-[11px] font-semibold px-2.5 bg-white hover:bg-slate-50 rounded-lg" onClick={selectOnlyInvoices}>
+                  Select Only Invoices
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 text-[11px] font-semibold px-2.5 bg-white hover:bg-slate-50 rounded-lg" onClick={selectOnlyBanking}>
+                  Select Only Banking
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 text-[11px] font-semibold px-2.5 bg-white hover:bg-slate-50 rounded-lg" onClick={selectAllModules}>
+                  Select All
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 text-[11px] font-semibold px-2 text-slate-500 hover:text-slate-800 rounded-lg" onClick={deselectAllModules}>
+                  Clear
+                </Button>
+              </div>
+            </div>
+
+            {/* 2. Auto-Creation Toggle & Candidate Summary Bar */}
+            <div className="px-6 py-2 bg-violet-50/70 border-b border-violet-100 flex items-center justify-between gap-3 flex-wrap shrink-0">
               <div className="flex items-center space-x-2">
                 <Switch
                   id="auto-create-masters-toggle"
@@ -1659,9 +1902,9 @@ export function TallyImportDialog({
               </div>
             </div>
 
-            {/* Interactive Filter Pills & Search Bar */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 shrink-0">
-              <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+            {/* 3. Interactive Filter Pills, Search Bar & Bulk Actions */}
+            <div className="px-6 py-2.5 bg-white border-b border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
                 <Button
                   size="sm"
                   variant={filterTab === 'all' ? 'default' : 'outline'}
@@ -1671,7 +1914,7 @@ export function TallyImportDialog({
                     filterTab === 'all' ? 'bg-slate-900 text-white' : 'text-slate-600 bg-white'
                   )}
                 >
-                  All ({totalCount})
+                  All ({filteredList.length})
                 </Button>
                 <Button
                   size="sm"
@@ -1697,39 +1940,6 @@ export function TallyImportDialog({
                 </Button>
                 <Button
                   size="sm"
-                  variant={filterTab === 'payment' ? 'default' : 'outline'}
-                  onClick={() => setFilterTab('payment')}
-                  className={cn(
-                    'h-7 px-2 text-xs font-semibold rounded-lg',
-                    filterTab === 'payment' ? 'bg-orange-600 text-white' : 'text-orange-800 bg-orange-50 border-orange-200'
-                  )}
-                >
-                  Payments
-                </Button>
-                <Button
-                  size="sm"
-                  variant={filterTab === 'expense' ? 'default' : 'outline'}
-                  onClick={() => setFilterTab('expense')}
-                  className={cn(
-                    'h-7 px-2 text-xs font-semibold rounded-lg',
-                    filterTab === 'expense' ? 'bg-amber-600 text-white' : 'text-amber-800 bg-amber-50 border-amber-200'
-                  )}
-                >
-                  Expenses
-                </Button>
-                <Button
-                  size="sm"
-                  variant={filterTab === 'contra' ? 'default' : 'outline'}
-                  onClick={() => setFilterTab('contra')}
-                  className={cn(
-                    'h-7 px-2 text-xs font-semibold rounded-lg',
-                    filterTab === 'contra' ? 'bg-cyan-700 text-white' : 'text-cyan-800 bg-cyan-50 border-cyan-200'
-                  )}
-                >
-                  Contra
-                </Button>
-                <Button
-                  size="sm"
                   variant={filterTab === 'skipped' ? 'default' : 'outline'}
                   onClick={() => setFilterTab('skipped')}
                   className={cn(
@@ -1741,62 +1951,48 @@ export function TallyImportDialog({
                 </Button>
               </div>
 
-              {/* Search Bar */}
-              <div className="relative min-w-[200px]">
-                <MagnifyingGlass className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <Input
-                  placeholder="Search party, voucher #, ₹..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="h-7 pl-8 pr-7 text-xs bg-slate-50/80 rounded-lg border-slate-200"
-                />
-                {searchQuery && (
-                  <button
-                    onClick={() => setSearchQuery('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Bulk Action Controls */}
-            <div className="flex items-center justify-between text-xs py-1 px-1.5 bg-slate-50 rounded-lg border border-slate-200 shrink-0">
+              {/* Search Bar & Bulk Actions */}
               <div className="flex items-center gap-2">
-                <Checkbox
-                  checked={filteredList.length > 0 && filteredList.every(v => v.isIncluded)}
-                  onCheckedChange={checked => handleSelectAll(Boolean(checked))}
-                  id="select-all-filtered"
-                />
-                <label htmlFor="select-all-filtered" className="font-semibold text-slate-700 cursor-pointer text-[11px]">
-                  Showing {filteredList.length} of {totalCount} ({selectedCount} Selected)
-                </label>
-              </div>
-              <div className="flex items-center gap-1.5">
+                <div className="relative min-w-[220px]">
+                  <MagnifyingGlass className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    placeholder="Search party, voucher #, ₹..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="h-7 pl-8 text-xs bg-slate-50 border-slate-200 rounded-lg w-full"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-[11px] font-semibold px-2 bg-white"
+                  onClick={() => handleSelectAll(true)}
+                >
+                  Select All
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-[11px] font-semibold px-2 bg-white text-slate-600"
+                  onClick={() => handleSelectAll(false)}
+                >
+                  Deselect All
+                </Button>
                 <Button
                   size="sm"
                   variant="ghost"
                   onClick={handleSelectMatchedOnly}
-                  className="h-6 px-2 text-[11px] text-emerald-700 hover:bg-emerald-100/60"
+                  className="h-7 px-2 text-[11px] text-emerald-700 hover:bg-emerald-100/60"
                 >
                   Select Matched
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={handleExcludeUnmapped}
-                  className="h-6 px-2 text-[11px] text-amber-700 hover:bg-amber-100/60"
-                >
-                  Exclude Unmapped
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => handleSelectAll(false)}
-                  className="h-6 px-2 text-[11px] text-slate-500 hover:bg-slate-200/60"
-                >
-                  Deselect All
                 </Button>
               </div>
             </div>
@@ -2066,7 +2262,7 @@ export function TallyImportDialog({
           </div>
         )}
 
-        <DialogFooter className="flex items-center justify-between pt-3 border-t border-slate-100 shrink-0">
+        <DialogFooter className="px-6 py-3 border-t border-slate-200 bg-white flex items-center justify-between gap-4 shrink-0 sm:justify-between">
           <Button
             variant="ghost"
             size="sm"
@@ -2074,18 +2270,32 @@ export function TallyImportDialog({
               generateSampleTallyExcel()
               toast.success('Downloaded Sample Tally Excel Template')
             }}
-            className="text-xs h-8 text-slate-600"
+            className="text-xs h-8 text-slate-600 hover:text-slate-900"
           >
             <DownloadSimple className="w-3.5 h-3.5 mr-1" />
             Download Sample Excel
           </Button>
+
+          {processedList.length > 0 && (
+            <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 font-medium">
+              <span>Selected for Ingestion:</span>
+              <Badge variant="outline" className="bg-emerald-50 text-emerald-800 border-emerald-200 font-bold">
+                {selectedCount} Vouchers
+              </Badge>
+              {autoCreateMasters && (
+                <span className="text-[11px] text-slate-400">
+                  (Auto-creating {newMastersSummary.customersCount} Cust, {newMastersSummary.suppliersCount} Supp, {newMastersSummary.expensesCount} Exp, {newMastersSummary.itemsCount} Items)
+                </span>
+              )}
+            </div>
+          )}
 
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="sm"
               onClick={() => onOpenChange(false)}
-              className="text-xs h-8"
+              className="text-xs h-9 px-4"
             >
               Cancel
             </Button>
@@ -2093,9 +2303,9 @@ export function TallyImportDialog({
               size="sm"
               onClick={handleCommit}
               disabled={selectedCount === 0}
-              className="text-xs h-8 bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+              className="text-xs h-9 px-5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-xs"
             >
-              Import {selectedCount} Selected Vouchers
+              Import {selectedCount} Vouchers
             </Button>
           </div>
         </DialogFooter>

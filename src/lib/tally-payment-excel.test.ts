@@ -608,4 +608,97 @@ describe('Official 14-Column Tally Prime AccountingVouchers.xlsx Schema & Strict
     expect(result.newMasterCandidates).toBeDefined()
     expect(result.newMasterCandidates.counters.length).toBeGreaterThanOrEqual(2)
   })
+
+  it('enforces non-party ledger blacklist in 14-column Excel parser for Drawings, GST Payable, and Credit Card Payment', () => {
+    const rawRows = [
+      // 1. Drawings payment
+      {
+        'Voucher Date': '10-04-2026',
+        'Voucher Type Name': 'Payment',
+        'Voucher Number': 'PAY-DRAW-EXCEL',
+        'Ledger Name': 'Drawings Account',
+        'Ledger Amount': 40000.00,
+        'Ledger Amount Dr/Cr': 'Dr'
+      },
+      {
+        'Voucher Date': '10-04-2026',
+        'Voucher Type Name': 'Payment',
+        'Voucher Number': 'PAY-DRAW-EXCEL',
+        'Ledger Name': 'Bank of Baroda',
+        'Ledger Amount': 40000.00,
+        'Ledger Amount Dr/Cr': 'Cr'
+      },
+      // 2. GST Payable statutory tax payment
+      {
+        'Voucher Date': '12-04-2026',
+        'Voucher Type Name': 'Payment',
+        'Voucher Number': 'PAY-GST-EXCEL',
+        'Ledger Name': 'GST Payable',
+        'Ledger Amount': 60000.00,
+        'Ledger Amount Dr/Cr': 'Dr'
+      },
+      {
+        'Voucher Date': '12-04-2026',
+        'Voucher Type Name': 'Payment',
+        'Voucher Number': 'PAY-GST-EXCEL',
+        'Ledger Name': 'Bank of Baroda',
+        'Ledger Amount': 60000.00,
+        'Ledger Amount Dr/Cr': 'Cr'
+      },
+      // 3. Credit Card Payment contra transfer
+      {
+        'Voucher Date': '15-04-2026',
+        'Voucher Type Name': 'Payment',
+        'Voucher Number': 'PAY-CC-EXCEL',
+        'Ledger Name': 'ICICI Credit Card Payment',
+        'Ledger Amount': 15000.00,
+        'Ledger Amount Dr/Cr': 'Dr'
+      },
+      {
+        'Voucher Date': '15-04-2026',
+        'Voucher Type Name': 'Payment',
+        'Voucher Number': 'PAY-CC-EXCEL',
+        'Ledger Name': 'Bank of Baroda',
+        'Ledger Amount': 15000.00,
+        'Ledger Amount Dr/Cr': 'Cr'
+      }
+    ]
+
+    const ws = XLSX.utils.json_to_sheet(rawRows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Accounting Voucher')
+    const buffer = new Uint8Array(XLSX.write(wb, { bookType: 'xlsx', type: 'array' }))
+
+    const result = parseTallyAccountingVouchersExcel(buffer, {
+      customers: [],
+      suppliers: []
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.vouchers).toHaveLength(3)
+
+    // Voucher 1: Drawings -> Routed to expense
+    const vchDraw = result.vouchers.find(v => v.voucherNumber === 'PAY-DRAW-EXCEL')
+    expect(vchDraw?.normalizedType).toBe('expense')
+
+    // Voucher 2: GST Payable -> Routed to expense
+    const vchGst = result.vouchers.find(v => v.voucherNumber === 'PAY-GST-EXCEL')
+    expect(vchGst?.normalizedType).toBe('expense')
+
+    // Voucher 3: Credit Card -> Routed to contra
+    const vchCC = result.vouchers.find(v => v.voucherNumber === 'PAY-CC-EXCEL')
+    expect(vchCC?.normalizedType).toBe('contra')
+
+    // Verify candidate party masters DO NOT contain Drawings, GST Payable, or Credit Card
+    const candidateCustNames = result.newMasterCandidates.customers.map(c => c.name)
+    const candidateSuppNames = result.newMasterCandidates.suppliers.map(s => s.name)
+
+    expect(candidateCustNames).not.toContain('Drawings Account')
+    expect(candidateCustNames).not.toContain('GST Payable')
+    expect(candidateCustNames).not.toContain('ICICI Credit Card Payment')
+
+    expect(candidateSuppNames).not.toContain('Drawings Account')
+    expect(candidateSuppNames).not.toContain('GST Payable')
+    expect(candidateSuppNames).not.toContain('ICICI Credit Card Payment')
+  })
 })

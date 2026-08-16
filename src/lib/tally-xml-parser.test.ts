@@ -487,8 +487,8 @@ describe('Native Tally XML Ingestion Engine', () => {
       expect(result.summary.totalParsed).toBe(1042)
       expect(result.summary.salesCount).toBe(448)
       expect(result.summary.purchaseCount).toBe(103)
-      expect(result.summary.receiptCount).toBe(216)
-      expect(result.summary.contraCount).toBe(26)
+      expect(result.summary.receiptCount).toBe(147)
+      expect(result.summary.contraCount).toBe(27)
       expect(result.summary.skippedCount).toBe(36) // Only the 36 Journal vouchers skipped
 
       // Check Contra Voucher #53
@@ -884,5 +884,121 @@ describe('Native Tally XML Ingestion Engine', () => {
     expect(vch.sgstAmount).toBe(63354.81)
     expect(vch.roundOff).toBe(0.01)
     expect(vch.taxableAmount).toBe(703942.37)
+  })
+
+  it('enforces strict blacklist: routes Drawings & GST Payable to Expense, Credit Card to Contra, and NEVER creates Customers/Suppliers', () => {
+    const xml = `<?xml version="1.0" encoding="utf-8"?>
+<ENVELOPE>
+  <BODY>
+    <IMPORTDATA>
+      <REQUESTDATA>
+        <!-- 1. Drawings payment voucher -->
+        <TALLYMESSAGE xmlns:UDF="TallyUDF">
+          <VOUCHER VCHTYPE="Payment" ACTION="Create">
+            <DATE>20260415</DATE>
+            <VOUCHERTYPENAME>Payment</VOUCHERTYPENAME>
+            <VOUCHERNUMBER>PAY-DRAW-01</VOUCHERNUMBER>
+            <PARTYLEDGERNAME>Drawings Account</PARTYLEDGERNAME>
+            <NARRATION>Personal drawings by owner</NARRATION>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>Drawings Account</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+              <AMOUNT>-50000.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>HDFC Bank Current A/c</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+              <AMOUNT>50000.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+          </VOUCHER>
+        </TALLYMESSAGE>
+
+        <!-- 2. GST Payable statutory tax payment -->
+        <TALLYMESSAGE xmlns:UDF="TallyUDF">
+          <VOUCHER VCHTYPE="Payment" ACTION="Create">
+            <DATE>20260420</DATE>
+            <VOUCHERTYPENAME>Payment</VOUCHERTYPENAME>
+            <VOUCHERNUMBER>PAY-TAX-02</VOUCHERNUMBER>
+            <PARTYLEDGERNAME>GST Payable</PARTYLEDGERNAME>
+            <NARRATION>Monthly GST 3B tax payment</NARRATION>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>GST Payable</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+              <AMOUNT>-75000.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>HDFC Bank Current A/c</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+              <AMOUNT>75000.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+          </VOUCHER>
+        </TALLYMESSAGE>
+
+        <!-- 3. Credit Card Payment contra transfer -->
+        <TALLYMESSAGE xmlns:UDF="TallyUDF">
+          <VOUCHER VCHTYPE="Payment" ACTION="Create">
+            <DATE>20260425</DATE>
+            <VOUCHERTYPENAME>Payment</VOUCHERTYPENAME>
+            <VOUCHERNUMBER>PAY-CC-03</VOUCHERNUMBER>
+            <PARTYLEDGERNAME>HDFC Credit Card Payment</PARTYLEDGERNAME>
+            <NARRATION>Credit card bill settlement</NARRATION>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>HDFC Credit Card Payment</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+              <AMOUNT>-25000.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLLEDGERENTRIES.LIST>
+              <LEDGERNAME>HDFC Bank Current A/c</LEDGERNAME>
+              <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+              <AMOUNT>25000.00</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+          </VOUCHER>
+        </TALLYMESSAGE>
+      </REQUESTDATA>
+    </IMPORTDATA>
+  </BODY>
+</ENVELOPE>`
+
+    const result = parseTallyXmlVouchers(xml, {
+      customers: [],
+      suppliers: [],
+      items: [],
+      expenseTypes: [],
+      counters: []
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.vouchers).toHaveLength(3)
+
+    // Voucher 1: Drawings -> Routed to expense (Owner Transfer)
+    const vchDrawings = result.vouchers[0]
+    expect(vchDrawings.normalizedType).toBe('expense')
+    expect(vchDrawings.matchedEntityType).toBe('expense')
+    expect(vchDrawings.expenseDetails?.categoryName).toBe('Drawings Account')
+
+    // Voucher 2: GST Payable -> Routed to expense (Tax Payment)
+    const vchTax = result.vouchers[1]
+    expect(vchTax.normalizedType).toBe('expense')
+    expect(vchTax.matchedEntityType).toBe('expense')
+    expect(vchTax.expenseDetails?.categoryName).toBe('GST Payable')
+
+    // Voucher 3: Credit Card -> Routed to contra
+    const vchCC = result.vouchers[2]
+    expect(vchCC.normalizedType).toBe('contra')
+    expect(vchCC.matchedEntityType).toBe('counter')
+    expect(vchCC.contraDetails?.toCounterName).toBe('HDFC Credit Card Payment')
+    expect(vchCC.contraDetails?.fromCounterName).toBe('HDFC Bank Current A/c')
+
+    // Verify candidate party masters DO NOT contain Drawings, GST Payable, or Credit Card
+    const candidateCustNames = result.newMasterCandidates.customers.map(c => c.name)
+    const candidateSuppNames = result.newMasterCandidates.suppliers.map(s => s.name)
+
+    expect(candidateCustNames).not.toContain('Drawings Account')
+    expect(candidateCustNames).not.toContain('GST Payable')
+    expect(candidateCustNames).not.toContain('HDFC Credit Card Payment')
+
+    expect(candidateSuppNames).not.toContain('Drawings Account')
+    expect(candidateSuppNames).not.toContain('GST Payable')
+    expect(candidateSuppNames).not.toContain('HDFC Credit Card Payment')
   })
 })
