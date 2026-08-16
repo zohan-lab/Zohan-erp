@@ -407,18 +407,47 @@ export interface ExpenseType {
 
 export interface ExpenseEntry {
   id: string
-  supplierId?: string
-  expenseTypeId: string
+  date?: string
   expenseDate: string
+  categoryId?: string
+  categoryName?: string
+  expenseTypeId: string
   amount: number
+  paymentAccountId?: string
+  paymentAccountName?: string
+  counterId?: string
+  counterName?: string
+  supplierId?: string
   linkedInvoiceId?: string
   originalInvoiceNumber?: string
   paymentMode?: string
-  counterId?: string
-  counterName?: string
-  expenseWithGst?: boolean
   notes?: string
   fy: string
+  
+  // GST & ITC Metadata
+  hasGst?: boolean
+  expenseWithGst?: boolean
+  supplierName?: string
+  supplierGstin?: string
+  supplierStateCode?: string
+  invoiceRefNo?: string
+  invoiceRefDate?: string
+  hsnSacCode?: string
+  isTaxInclusive?: boolean
+  gstRate?: number
+  taxableAmount?: number
+  cgstAmount?: number
+  sgstAmount?: number
+  igstAmount?: number
+  totalExpenseAmount?: number
+  isInterState?: boolean
+  
+  // GSTR-3B Table 4 Compliance
+  isItcEligible?: boolean
+  itcType?: 'Inputs' | 'Capital Goods' | 'Input Services' | 'Ineligible'
+  
+  createdAt?: string | number
+  updatedAt?: string
   history?: EditHistoryLog[]
 }
 

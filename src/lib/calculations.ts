@@ -2014,32 +2014,164 @@ export interface ExpenseTotals {
   totalExpenses: number
   invoiceLinkedExpenses: number
   netProfitExpenses: number
+  totalTaxable: number
+  totalInputCgst: number
+  totalInputSgst: number
+  totalInputIgst: number
+  totalItcEligible: number
+}
+
+export interface ExpenseTaxBreakdownParams {
+  amount: number
+  hasGst?: boolean
+  isTaxInclusive?: boolean
+  gstRate?: number
+  supplierStateCode?: string
+  companyStateCode?: string
+}
+
+export interface ExpenseTaxBreakdownResult {
+  taxableAmount: number
+  isInterState: boolean
+  gstRate: number
+  cgstRate: number
+  cgstAmount: number
+  sgstRate: number
+  sgstAmount: number
+  igstRate: number
+  igstAmount: number
+  totalTaxAmount: number
+  totalExpenseAmount: number
+}
+
+export function calculateExpenseTaxBreakdown(params: ExpenseTaxBreakdownParams): ExpenseTaxBreakdownResult {
+  const {
+    amount = 0,
+    hasGst = false,
+    isTaxInclusive = true,
+    gstRate = 18,
+    supplierStateCode,
+    companyStateCode = '19'
+  } = params
+
+  const isInterState = isInterStateTransaction(supplierStateCode, companyStateCode)
+  const rate = hasGst ? Math.max(0, gstRate) : 0
+
+  if (!hasGst || rate === 0 || amount <= 0) {
+    return {
+      taxableAmount: roundCurrency(amount),
+      isInterState,
+      gstRate: 0,
+      cgstRate: 0,
+      cgstAmount: 0,
+      sgstRate: 0,
+      sgstAmount: 0,
+      igstRate: 0,
+      igstAmount: 0,
+      totalTaxAmount: 0,
+      totalExpenseAmount: roundCurrency(amount)
+    }
+  }
+
+  let taxableAmount = 0
+  let totalTaxAmount = 0
+  let totalExpenseAmount = 0
+
+  if (isTaxInclusive) {
+    taxableAmount = roundCurrency(amount / (1 + rate / 100))
+    totalTaxAmount = roundCurrency(amount - taxableAmount)
+    totalExpenseAmount = roundCurrency(amount)
+  } else {
+    taxableAmount = roundCurrency(amount)
+    totalTaxAmount = roundCurrency(amount * (rate / 100))
+    totalExpenseAmount = roundCurrency(taxableAmount + totalTaxAmount)
+  }
+
+  let cgstRate = 0
+  let cgstAmount = 0
+  let sgstRate = 0
+  let sgstAmount = 0
+  let igstRate = 0
+  let igstAmount = 0
+
+  if (isInterState) {
+    igstRate = rate
+    igstAmount = totalTaxAmount
+  } else {
+    cgstRate = rate / 2
+    sgstRate = rate / 2
+    cgstAmount = roundCurrency(totalTaxAmount / 2)
+    sgstAmount = roundCurrency(totalTaxAmount - cgstAmount)
+  }
+
+  return {
+    taxableAmount,
+    isInterState,
+    gstRate: rate,
+    cgstRate,
+    cgstAmount,
+    sgstRate,
+    sgstAmount,
+    igstRate,
+    igstAmount,
+    totalTaxAmount,
+    totalExpenseAmount
+  }
 }
 
 export function calculateExpenseTotals(expenses: ExpenseEntry[], expenseTypes: ExpenseType[] = []): ExpenseTotals {
   let totalExpenses = 0
   let invoiceLinkedExpenses = 0
   let netProfitExpenses = 0
+  let totalTaxable = 0
+  let totalInputCgst = 0
+  let totalInputSgst = 0
+  let totalInputIgst = 0
+  let totalItcEligible = 0
 
   const typeMap = new Map<string, ExpenseType>()
   expenseTypes.forEach(t => typeMap.set(t.id, t))
 
   expenses.forEach(e => {
-    const amt = e.amount || 0
-    totalExpenses += amt
+    const gross = e.totalExpenseAmount || e.amount || 0
+    totalExpenses += gross
 
     const type = typeMap.get(e.expenseTypeId)
     const isInvoiceLinked = type?.linkType === 'invoice' || Boolean(e.linkedInvoiceId)
     const isNetProfit = type?.linkType === 'netprofit' && !e.linkedInvoiceId
 
     if (isInvoiceLinked) {
-      invoiceLinkedExpenses += amt
+      invoiceLinkedExpenses += gross
     } else if (isNetProfit) {
-      netProfitExpenses += amt
+      netProfitExpenses += gross
+    }
+
+    const taxable = e.taxableAmount ?? (e.hasGst || e.expenseWithGst ? (e.amount || 0) : (e.amount || 0))
+    totalTaxable += taxable
+
+    const cgst = e.cgstAmount || 0
+    const sgst = e.sgstAmount || 0
+    const igst = e.igstAmount || 0
+
+    totalInputCgst += cgst
+    totalInputSgst += sgst
+    totalInputIgst += igst
+
+    if (e.isItcEligible !== false && (e.hasGst || e.expenseWithGst) && (cgst + sgst + igst > 0) && e.itcType !== 'Ineligible') {
+      totalItcEligible += (cgst + sgst + igst)
     }
   })
 
-  return { totalExpenses, invoiceLinkedExpenses, netProfitExpenses }
+  return {
+    totalExpenses: roundCurrency(totalExpenses),
+    invoiceLinkedExpenses: roundCurrency(invoiceLinkedExpenses),
+    netProfitExpenses: roundCurrency(netProfitExpenses),
+    totalTaxable: roundCurrency(totalTaxable),
+    totalInputCgst: roundCurrency(totalInputCgst),
+    totalInputSgst: roundCurrency(totalInputSgst),
+    totalInputIgst: roundCurrency(totalInputIgst),
+    totalItcEligible: roundCurrency(totalItcEligible)
+  }
 }
 
 export function applyCounterBalanceDelta(

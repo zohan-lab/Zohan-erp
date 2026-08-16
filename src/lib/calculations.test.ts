@@ -8,6 +8,8 @@ import {
   getBookingNormalizedMT,
   formatCurrency,
   calculateInvoiceTaxBreakdown,
+  calculateExpenseTaxBreakdown,
+  calculateExpenseTotals,
   isInterStateTransaction
 } from './calculations'
 import { convertItemQuantity, getInvoiceQtyForUnit, isUnitCompatible } from './unit-conversion-service'
@@ -694,5 +696,68 @@ describe('calculateInvoiceTaxBreakdown & isInterStateTransaction', () => {
     expect(result.lineBreakdowns[0].gstRate).toBe(0)
     expect(result.lineBreakdowns[0].cgstAmount).toBe(0)
     expect(result.lineBreakdowns[0].sgstAmount).toBe(0)
+  })
+})
+
+describe('calculateExpenseTaxBreakdown', () => {
+  it('correctly calculates intra-state tax inclusive expense (CGST + SGST)', () => {
+    // ₹11,800 inclusive of 18% GST -> Taxable ₹10,000, CGST ₹900 (9%), SGST ₹900 (9%)
+    const result = calculateExpenseTaxBreakdown({
+      amount: 11800,
+      hasGst: true,
+      isTaxInclusive: true,
+      gstRate: 18,
+      supplierStateCode: '19', // Intra-state WB
+      companyStateCode: '19'
+    })
+
+    expect(result.isInterState).toBe(false)
+    expect(result.taxableAmount).toBe(10000)
+    expect(result.cgstRate).toBe(9)
+    expect(result.cgstAmount).toBe(900)
+    expect(result.sgstRate).toBe(9)
+    expect(result.sgstAmount).toBe(900)
+    expect(result.igstAmount).toBe(0)
+    expect(result.totalTaxAmount).toBe(1800)
+    expect(result.totalExpenseAmount).toBe(11800)
+  })
+
+  it('correctly calculates inter-state tax exclusive expense (IGST 18%)', () => {
+    // ₹50,000 exclusive of 18% GST -> Taxable ₹50,000, IGST ₹9,000, Gross ₹59,000
+    const result = calculateExpenseTaxBreakdown({
+      amount: 50000,
+      hasGst: true,
+      isTaxInclusive: false,
+      gstRate: 18,
+      supplierStateCode: '27', // Maharashtra (Inter-state)
+      companyStateCode: '19'
+    })
+
+    expect(result.isInterState).toBe(true)
+    expect(result.taxableAmount).toBe(50000)
+    expect(result.igstRate).toBe(18)
+    expect(result.igstAmount).toBe(9000)
+    expect(result.cgstAmount).toBe(0)
+    expect(result.sgstAmount).toBe(0)
+    expect(result.totalTaxAmount).toBe(9000)
+    expect(result.totalExpenseAmount).toBe(59000)
+  })
+
+  it('returns flat amount with 0 tax when hasGst is false', () => {
+    const result = calculateExpenseTaxBreakdown({
+      amount: 4500,
+      hasGst: false,
+      isTaxInclusive: true,
+      gstRate: 18,
+      supplierStateCode: '19',
+      companyStateCode: '19'
+    })
+
+    expect(result.taxableAmount).toBe(4500)
+    expect(result.totalTaxAmount).toBe(0)
+    expect(result.cgstAmount).toBe(0)
+    expect(result.sgstAmount).toBe(0)
+    expect(result.igstAmount).toBe(0)
+    expect(result.totalExpenseAmount).toBe(4500)
   })
 })
