@@ -39,7 +39,8 @@ import {
   Check,
   X,
   SlidersHorizontal,
-  ArrowRight
+  ArrowRight,
+  Package
 } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
@@ -721,6 +722,30 @@ export function TallyImportDialog({
   const [filterTab, setFilterTab] = useState<string>('all')
   const [searchQuery, setSearchQuery] = useState('')
 
+  // Inventory Item Selector & Master Mapping State
+  const [itemMappings, setItemMappings] = useState<Record<string, string>>({})
+  const [itemOverrides, setItemOverrides] = useState<Record<string, Record<number, string>>>({})
+  const [showItemMappingDrawer, setShowItemMappingDrawer] = useState(false)
+  const [itemSearchQuery, setItemSearchQuery] = useState('')
+
+  const handleGlobalItemMapping = (tallyItemName: string, targetItemId: string) => {
+    const norm = tallyItemName.trim().toLowerCase()
+    setItemMappings(prev => ({
+      ...prev,
+      [norm]: targetItemId
+    }))
+  }
+
+  const handleVoucherItemOverride = (voucherId: string, itemIndex: number, targetItemId: string) => {
+    setItemOverrides(prev => ({
+      ...prev,
+      [voucherId]: {
+        ...(prev[voucherId] || {}),
+        [itemIndex]: targetItemId
+      }
+    }))
+  }
+
   // Module-wise Category Filter State
   const [selectedModules, setSelectedModules] = useState<{
     sales: boolean
@@ -941,9 +966,30 @@ export function TallyImportDialog({
         }
       }
 
-      // Check item mappings
-      const unmappedItems = (v.inventory || []).filter(inv => !itemMap.has(inv.itemName.trim().toLowerCase()))
-      const hasUnmappedItem = unmappedItems.length > 0 && !autoCreateMasters
+      // Check and resolve inventory items
+      const resolvedInventory = (v.inventory || []).map((inv, iIdx) => {
+        const normItem = inv.itemName.trim().toLowerCase()
+        const customMappedId = itemOverrides[v.id]?.[iIdx] || itemMappings[normItem]
+        const matchedItem = (customMappedId && customMappedId !== 'auto-create')
+          ? items.find(it => it.id === customMappedId) || itemMap.get(normItem)
+          : itemMap.get(normItem)
+
+        const isAutoCreatedItem = !matchedItem && (customMappedId === 'auto-create' || autoCreateMasters)
+        const isUnmapped = !matchedItem && !isAutoCreatedItem
+
+        return {
+          ...inv,
+          customMappedId,
+          matchedItemId: matchedItem?.id,
+          matchedItemName: matchedItem?.name,
+          matchedItemUnit: matchedItem?.unit || inv.unit || 'PCS',
+          isAutoCreatedItem,
+          isUnmapped
+        }
+      })
+
+      const unmappedItems = resolvedInventory.filter(inv => inv.isUnmapped)
+      const hasUnmappedItem = unmappedItems.length > 0
 
       let unmappedReason = v.skipReason
       if (effectiveType !== 'skipped') {
@@ -960,6 +1006,7 @@ export function TallyImportDialog({
 
       return {
         ...v,
+        inventory: resolvedInventory,
         effectiveType,
         partyName,
         matchedEntityType,
@@ -973,7 +1020,63 @@ export function TallyImportDialog({
         skipReason: unmappedReason
       }
     })
-  }, [parsedVouchers, overrides, supplierMap, customerMap, counterMap, expenseTypeMap, itemMap, autoCreateMasters])
+  }, [parsedVouchers, overrides, itemMappings, itemOverrides, supplierMap, customerMap, counterMap, expenseTypeMap, itemMap, items, autoCreateMasters])
+
+  // Distinct Tally Items across all vouchers for master item selector
+  const distinctTallyItems = useMemo(() => {
+    const map = new Map<string, {
+      rawName: string
+      normName: string
+      totalQty: number
+      unit: string
+      sampleRate: number
+      voucherCount: number
+      matchedItem: Item | null
+      isAutoCreate: boolean
+    }>()
+
+    processedList.forEach(v => {
+      const modKey = v.effectiveType as keyof typeof selectedModules
+      if (modKey in selectedModules && !selectedModules[modKey]) return
+      if (v.effectiveType === 'skipped') return
+
+      (v.inventory || []).forEach(inv => {
+        const raw = inv.itemName.trim()
+        const norm = raw.toLowerCase()
+        if (!map.has(norm)) {
+          const mappedId = itemMappings[norm]
+          const existingItem = mappedId && mappedId !== 'auto-create'
+            ? items.find(it => it.id === mappedId)
+            : itemMap.get(norm) || null
+
+          map.set(norm, {
+            rawName: raw,
+            normName: norm,
+            totalQty: 0,
+            unit: inv.unit || 'PCS',
+            sampleRate: inv.rate,
+            voucherCount: 0,
+            matchedItem: existingItem || null,
+            isAutoCreate: mappedId === 'auto-create' || (!existingItem && autoCreateMasters)
+          })
+        }
+
+        const entry = map.get(norm)!
+        entry.totalQty += inv.quantity || 0
+        entry.voucherCount += 1
+        if (inv.rate > 0) entry.sampleRate = inv.rate
+      })
+    })
+
+    return Array.from(map.values())
+  }, [processedList, selectedModules, itemMappings, itemMap, items, autoCreateMasters])
+
+  // Filtered distinct items for search
+  const filteredDistinctItems = useMemo(() => {
+    if (!itemSearchQuery.trim()) return distinctTallyItems
+    const q = itemSearchQuery.toLowerCase().trim()
+    return distinctTallyItems.filter(it => it.rawName.toLowerCase().includes(q) || (it.matchedItem && it.matchedItem.name.toLowerCase().includes(q)))
+  }, [distinctTallyItems, itemSearchQuery])
 
   // Compute live counts per module
   const moduleCounts = useMemo(() => {
@@ -1016,8 +1119,7 @@ export function TallyImportDialog({
         if (v.matchedEntityType === 'expense' && !expenseTypeMap.has(norm)) expSet.add(v.partyName.trim())
       }
       (v.inventory || []).forEach(inv => {
-        const normItem = inv.itemName.trim().toLowerCase()
-        if (!itemMap.has(normItem)) itemSet.add(inv.itemName.trim())
+        if (inv.isAutoCreatedItem) itemSet.add(inv.itemName.trim())
       })
       if (v.effectiveType === 'contra') {
         const fromName = (v.contraDetails?.fromCounterName || '').trim()
@@ -1034,7 +1136,7 @@ export function TallyImportDialog({
       countersCount: cntrSet.size,
       itemsCount: itemSet.size
     }
-  }, [processedList, customerMap, supplierMap, expenseTypeMap, counterMap, itemMap, selectedModules])
+  }, [processedList, customerMap, supplierMap, expenseTypeMap, counterMap, selectedModules])
 
   // Summary counts
   const totalCount = processedList.length
@@ -1326,17 +1428,21 @@ export function TallyImportDialog({
           }
         }
 
-        // Auto-Create Missing Inventory Items
-        (v.inventory || []).forEach(inv => {
+        // Auto-Create Missing Inventory Items (Only those NOT mapped to an existing ERP item)
+        (v.inventory || []).forEach((inv, iIdx) => {
           const normItem = inv.itemName.trim().toLowerCase()
-          if (!itemMap.has(normItem) && !autoItemMap.has(normItem)) {
+          const customMappingId = itemOverrides[v.id]?.[iIdx] || itemMappings[normItem]
+          const isMappedToExisting = customMappingId && customMappingId !== 'auto-create' && items.some(it => it.id === customMappingId)
+          const isExactMatch = itemMap.has(normItem)
+
+          if (!isMappedToExisting && !isExactMatch && !autoItemMap.has(normItem)) {
             itemSeq++
             const newId = `item-auto-${timestamp}-${itemSeq}`
             autoItemMap.set(normItem, newId)
             generatedItems.push({
               id: newId,
               name: inv.itemName.trim(),
-              unit: inv.unit || 'KG',
+              unit: inv.unit || 'PCS',
               purchasePrice: inv.rate || 0,
               salesPrice: inv.rate || 0,
               gstRate: 18,
@@ -1466,35 +1572,44 @@ export function TallyImportDialog({
         const addCostBasic = charges.reduce((s, c) => s + c.basicRate, 0)
         const addCostRemarks = charges.map(c => c.remarks || c.ledgerName).filter(Boolean).join(', ')
 
-        const sanitizedItems: InvoiceItem[] = v.inventory.map(inv => {
+        const sanitizedItems: InvoiceItem[] = (v.inventory || []).map((inv, iIdx) => {
           const norm = inv.itemName.trim().toLowerCase()
-          const itemId = itemMap.get(norm)?.id || autoItemMap.get(norm) || 'item-gen'
+          const customMappedId = itemOverrides[v.id]?.[iIdx] || itemMappings[norm]
+          const resolvedItem = (customMappedId && customMappedId !== 'auto-create')
+            ? items.find(it => it.id === customMappedId) || itemMap.get(norm)
+            : itemMap.get(norm)
+
+          const itemId = resolvedItem?.id || autoItemMap.get(norm) || 'item-gen'
+          const itemName = resolvedItem?.name || inv.itemName
+          const itemUnit = resolvedItem?.unit || inv.unit || 'PCS'
+          const gstRate = resolvedItem?.gstRate ?? 18
+          const halfGst = gstRate / 2
           const lineTaxable = inv.amount
-          const lineCgst = Math.round(lineTaxable * 0.09 * 100) / 100
-          const lineSgst = Math.round(lineTaxable * 0.09 * 100) / 100
+          const lineCgst = Math.round(lineTaxable * (halfGst / 100) * 100) / 100
+          const lineSgst = Math.round(lineTaxable * (halfGst / 100) * 100) / 100
           const grossAmount = Math.round((lineTaxable + lineCgst + lineSgst) * 100) / 100
-          const inclusiveRate = Math.round(inv.rate * 1.18 * 100) / 100
+          const inclusiveRate = Math.round(inv.rate * (1 + gstRate / 100) * 100) / 100
 
           return {
             itemId,
             baseQuantity: inv.quantity,
             enteredQuantity: inv.quantity,
-            enteredUnit: inv.unit || 'KG',
+            enteredUnit: itemUnit,
             basicRate: inv.rate,
             baseRate: inclusiveRate,
             enteredRate: inclusiveRate,
             rate: inclusiveRate,
             amount: grossAmount,
             taxableAmount: lineTaxable,
-            gstRate: 18,
-            cgstRate: 9,
+            gstRate,
+            cgstRate: halfGst,
             cgstAmount: lineCgst,
-            sgstRate: 9,
+            sgstRate: halfGst,
             sgstAmount: lineSgst,
             igstRate: 0,
             igstAmount: 0,
-            itemNameSnapshot: inv.itemName,
-            itemUnitSnapshot: inv.unit || 'KG'
+            itemNameSnapshot: itemName,
+            itemUnitSnapshot: itemUnit
           }
         })
 
@@ -1527,35 +1642,44 @@ export function TallyImportDialog({
           const addCostBasic = charges.reduce((s, c) => s + c.basicRate, 0)
           const addCostRemarks = charges.map(c => c.remarks || c.ledgerName).filter(Boolean).join(', ')
 
-          const sanitizedItems: InvoiceItem[] = v.inventory.map(inv => {
+          const sanitizedItems: InvoiceItem[] = (v.inventory || []).map((inv, iIdx) => {
             const norm = inv.itemName.trim().toLowerCase()
-            const itemId = itemMap.get(norm)?.id || autoItemMap.get(norm) || 'item-gen'
+            const customMappedId = itemOverrides[v.id]?.[iIdx] || itemMappings[norm]
+            const resolvedItem = (customMappedId && customMappedId !== 'auto-create')
+              ? items.find(it => it.id === customMappedId) || itemMap.get(norm)
+              : itemMap.get(norm)
+
+            const itemId = resolvedItem?.id || autoItemMap.get(norm) || 'item-gen'
+            const itemName = resolvedItem?.name || inv.itemName
+            const itemUnit = resolvedItem?.unit || inv.unit || 'PCS'
+            const gstRate = resolvedItem?.gstRate ?? 18
+            const halfGst = gstRate / 2
             const lineTaxable = inv.amount
-            const lineCgst = Math.round(lineTaxable * 0.09 * 100) / 100
-            const lineSgst = Math.round(lineTaxable * 0.09 * 100) / 100
+            const lineCgst = Math.round(lineTaxable * (halfGst / 100) * 100) / 100
+            const lineSgst = Math.round(lineTaxable * (halfGst / 100) * 100) / 100
             const grossAmount = Math.round((lineTaxable + lineCgst + lineSgst) * 100) / 100
-            const inclusiveRate = Math.round(inv.rate * 1.18 * 100) / 100
+            const inclusiveRate = Math.round(inv.rate * (1 + gstRate / 100) * 100) / 100
 
             return {
               itemId,
               baseQuantity: inv.quantity,
               enteredQuantity: inv.quantity,
-              enteredUnit: inv.unit || 'KG',
+              enteredUnit: itemUnit,
               basicRate: inv.rate,
               baseRate: inclusiveRate,
               enteredRate: inclusiveRate,
               rate: inclusiveRate,
               amount: grossAmount,
               taxableAmount: lineTaxable,
-              gstRate: 18,
-              cgstRate: 9,
+              gstRate,
+              cgstRate: halfGst,
               cgstAmount: lineCgst,
-              sgstRate: 9,
+              sgstRate: halfGst,
               sgstAmount: lineSgst,
               igstRate: 0,
               igstAmount: 0,
-              itemNameSnapshot: inv.itemName,
-              itemUnitSnapshot: inv.unit || 'KG'
+              itemNameSnapshot: itemName,
+              itemUnitSnapshot: itemUnit
             }
           })
 
@@ -1878,10 +2002,27 @@ export function TallyImportDialog({
                   onCheckedChange={setAutoCreateMasters}
                 />
                 <Label htmlFor="auto-create-masters-toggle" className="text-xs font-bold text-slate-800 cursor-pointer">
-                  Auto-Create Missing Masters & Ledgers
+                  Auto-Create Missing Masters &amp; Ledgers
                 </Label>
               </div>
               <div className="flex items-center gap-1.5 flex-wrap">
+                {distinctTallyItems.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowItemMappingDrawer(prev => !prev)}
+                    className={cn(
+                      "h-7 text-[11px] font-bold px-2.5 rounded-lg border shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer",
+                      showItemMappingDrawer
+                        ? "bg-indigo-600 text-white border-indigo-700 hover:bg-indigo-700"
+                        : "bg-indigo-50 text-indigo-800 border-indigo-200 hover:bg-indigo-100"
+                    )}
+                  >
+                    <Package size={14} weight="bold" />
+                    <span>Map Inventory Items ({distinctTallyItems.length})</span>
+                    <CaretDown size={12} className={cn("transition-transform duration-200", showItemMappingDrawer && "rotate-180")} />
+                  </Button>
+                )}
                 {autoCreateMasters && newMastersSummary.customersCount > 0 && (
                   <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[10px]">
                     +{newMastersSummary.customersCount} Customers
@@ -1904,11 +2045,134 @@ export function TallyImportDialog({
                 )}
                 {autoCreateMasters && newMastersSummary.itemsCount > 0 && (
                   <Badge className="bg-indigo-100 text-indigo-800 border-indigo-200 text-[10px]">
-                    +{newMastersSummary.itemsCount} Items
+                    +{newMastersSummary.itemsCount} New Items
                   </Badge>
                 )}
               </div>
             </div>
+
+            {/* Expandable Inventory Item Mapping Panel */}
+            {showItemMappingDrawer && distinctTallyItems.length > 0 && (
+              <div className="bg-slate-900 text-white p-4 border-b border-slate-800 shadow-inner shrink-0 max-h-72 overflow-y-auto space-y-3">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                      <Package size={16} weight="duotone" />
+                    </span>
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-100 flex items-center gap-2">
+                        Inventory Items Mapping &amp; Master Selector
+                        <Badge className="bg-indigo-500/30 text-indigo-200 text-[10px] font-mono border-indigo-400/40">
+                          {distinctTallyItems.length} Stock Item{distinctTallyItems.length > 1 ? 's' : ''} in Vouchers
+                        </Badge>
+                      </h4>
+                      <p className="text-[11px] text-slate-400">
+                        Map each Tally stock item to an existing ERP inventory item or auto-create it as a new item master.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="relative">
+                      <MagnifyingGlass size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <Input
+                        value={itemSearchQuery}
+                        onChange={(e) => setItemSearchQuery(e.target.value)}
+                        placeholder="Search items..."
+                        className="h-7 text-xs pl-8 w-44 bg-slate-800 border-slate-700 text-slate-100 placeholder:text-slate-500 rounded-lg"
+                      />
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        distinctTallyItems.forEach(it => {
+                          handleGlobalItemMapping(it.rawName, 'auto-create')
+                        })
+                      }}
+                      className="h-7 text-[10px] font-semibold bg-slate-800 hover:bg-slate-700 text-indigo-300 border-slate-700"
+                    >
+                      ✨ Auto-Create All
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setShowItemMappingDrawer(false)}
+                      className="h-7 w-7 p-0 text-slate-400 hover:text-white"
+                    >
+                      <X size={14} />
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Items Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+                  {filteredDistinctItems.map((tItem, idx) => {
+                    const currentMappedId = itemMappings[tItem.normName]
+                    const resolvedTarget = currentMappedId && currentMappedId !== 'auto-create'
+                      ? items.find(it => it.id === currentMappedId)
+                      : tItem.matchedItem
+
+                    const isAutoCreate = currentMappedId === 'auto-create' || (!resolvedTarget && autoCreateMasters)
+
+                    return (
+                      <div key={idx} className="bg-slate-800/90 rounded-xl p-2.5 border border-slate-700/80 space-y-2 flex flex-col justify-between shadow-2xs">
+                        <div>
+                          <div className="flex items-start justify-between gap-1.5">
+                            <span className="text-xs font-bold text-slate-100 truncate" title={tItem.rawName}>
+                              {tItem.rawName}
+                            </span>
+                            {currentMappedId && currentMappedId !== 'auto-create' ? (
+                              <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 text-[9px] shrink-0">
+                                🔗 Mapped
+                              </Badge>
+                            ) : resolvedTarget ? (
+                              <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30 text-[9px] shrink-0">
+                                ✓ Matched
+                              </Badge>
+                            ) : isAutoCreate ? (
+                              <Badge className="bg-purple-500/20 text-purple-300 border-purple-500/30 text-[9px] shrink-0">
+                                ✨ New Item
+                              </Badge>
+                            ) : (
+                              <Badge className="bg-rose-500/20 text-rose-300 border-rose-500/30 text-[9px] shrink-0">
+                                ⚠️ Unmapped
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                            Total Qty: {tItem.totalQty.toLocaleString('en-IN')} {tItem.unit} • {tItem.voucherCount} voucher{tItem.voucherCount > 1 ? 's' : ''}
+                          </div>
+                        </div>
+
+                        {/* Item Selector Dropdown */}
+                        <div className="space-y-1 pt-1">
+                          <label className="text-[10px] text-slate-400 font-semibold block">Map to ERP Inventory Item:</label>
+                          <Select
+                            value={currentMappedId || (resolvedTarget?.id) || (isAutoCreate ? 'auto-create' : '')}
+                            onValueChange={(val) => handleGlobalItemMapping(tItem.rawName, val)}
+                          >
+                            <SelectTrigger className="h-7 text-xs bg-slate-900 border-slate-700 text-slate-200">
+                              <SelectValue placeholder="Select ERP item" />
+                            </SelectTrigger>
+                            <SelectContent className="max-h-72">
+                              <SelectItem value="auto-create" className="font-semibold text-purple-600">
+                                ✨ Auto-Create New Master &quot;{tItem.rawName}&quot;
+                              </SelectItem>
+                              {items.map(it => (
+                                <SelectItem key={it.id} value={it.id}>
+                                  {it.name} ({it.category || 'General'}) • {it.unit || 'PCS'}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* 3. Interactive Filter Pills, Search Bar & Bulk Actions */}
             <div className="px-6 py-2.5 bg-white border-b border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
@@ -1941,7 +2205,7 @@ export function TallyImportDialog({
                   onClick={() => setFilterTab('unmapped')}
                   className={cn(
                     'h-7 px-2.5 text-xs font-semibold rounded-lg',
-                    filterTab === 'unmapped' ? 'bg-amber-600 text-white' : 'text-amber-800 bg-amber-50 border-amber-200'
+                    filterTab === 'unmapped' ? 'bg-rose-700 text-white' : 'text-rose-700 bg-rose-50 border-rose-200'
                   )}
                 >
                   Unmapped ({unmappedCount})
@@ -1952,101 +2216,150 @@ export function TallyImportDialog({
                   onClick={() => setFilterTab('skipped')}
                   className={cn(
                     'h-7 px-2.5 text-xs font-semibold rounded-lg',
-                    filterTab === 'skipped' ? 'bg-slate-700 text-white' : 'text-slate-500 bg-slate-50 border-slate-200'
+                    filterTab === 'skipped' ? 'bg-slate-700 text-white' : 'text-slate-600 bg-slate-100 border-slate-200'
                   )}
                 >
                   Skipped ({skippedCount})
                 </Button>
+                <Button
+                  size="sm"
+                  variant={filterTab === 'sales' ? 'default' : 'outline'}
+                  onClick={() => setFilterTab('sales')}
+                  className={cn(
+                    'h-7 px-2.5 text-xs font-semibold rounded-lg',
+                    filterTab === 'sales' ? 'bg-blue-600 text-white' : 'text-blue-700 bg-blue-50 border-blue-200'
+                  )}
+                >
+                  Sales ({moduleCounts.sales})
+                </Button>
+                <Button
+                  size="sm"
+                  variant={filterTab === 'purchase' ? 'default' : 'outline'}
+                  onClick={() => setFilterTab('purchase')}
+                  className={cn(
+                    'h-7 px-2.5 text-xs font-semibold rounded-lg',
+                    filterTab === 'purchase' ? 'bg-emerald-700 text-white' : 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                  )}
+                >
+                  Purchase ({moduleCounts.purchase})
+                </Button>
+                <Button
+                  size="sm"
+                  variant={filterTab === 'receipt' ? 'default' : 'outline'}
+                  onClick={() => setFilterTab('receipt')}
+                  className={cn(
+                    'h-7 px-2.5 text-xs font-semibold rounded-lg',
+                    filterTab === 'receipt' ? 'bg-violet-700 text-white' : 'text-violet-700 bg-violet-50 border-violet-200'
+                  )}
+                >
+                  Receipts ({moduleCounts.receipt})
+                </Button>
+                <Button
+                  size="sm"
+                  variant={filterTab === 'payment' ? 'default' : 'outline'}
+                  onClick={() => setFilterTab('payment')}
+                  className={cn(
+                    'h-7 px-2.5 text-xs font-semibold rounded-lg',
+                    filterTab === 'payment' ? 'bg-orange-600 text-white' : 'text-orange-700 bg-orange-50 border-orange-200'
+                  )}
+                >
+                  Payments ({moduleCounts.payment})
+                </Button>
+                <Button
+                  size="sm"
+                  variant={filterTab === 'expense' ? 'default' : 'outline'}
+                  onClick={() => setFilterTab('expense')}
+                  className={cn(
+                    'h-7 px-2.5 text-xs font-semibold rounded-lg',
+                    filterTab === 'expense' ? 'bg-amber-600 text-white' : 'text-amber-700 bg-amber-50 border-amber-200'
+                  )}
+                >
+                  Expenses ({moduleCounts.expense})
+                </Button>
+                <Button
+                  size="sm"
+                  variant={filterTab === 'contra' ? 'default' : 'outline'}
+                  onClick={() => setFilterTab('contra')}
+                  className={cn(
+                    'h-7 px-2.5 text-xs font-semibold rounded-lg',
+                    filterTab === 'contra' ? 'bg-cyan-600 text-white' : 'text-cyan-700 bg-cyan-50 border-cyan-200'
+                  )}
+                >
+                  Contra ({moduleCounts.contra})
+                </Button>
               </div>
 
-              {/* Search Bar & Bulk Actions */}
               <div className="flex items-center gap-2">
-                <div className="relative min-w-[220px]">
-                  <MagnifyingGlass className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <div className="relative flex-1 sm:w-64">
+                  <MagnifyingGlass size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                   <Input
-                    placeholder="Search party, voucher #, ₹..."
                     value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    className="h-7 pl-8 text-xs bg-slate-50 border-slate-200 rounded-lg w-full"
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search party, voucher #, ₹..."
+                    className="h-8 text-xs pl-8 pr-3 bg-slate-50 border-slate-200 rounded-lg"
                   />
-                  {searchQuery && (
-                    <button
-                      onClick={() => setSearchQuery('')}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  )}
                 </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-[11px] font-semibold px-2 bg-white"
-                  onClick={() => handleSelectAll(true)}
-                >
+                <Button size="sm" variant="outline" className="h-8 text-xs font-semibold px-2.5 rounded-lg" onClick={() => handleSelectAll(true)}>
                   Select All
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-[11px] font-semibold px-2 bg-white text-slate-600"
-                  onClick={() => handleSelectAll(false)}
-                >
+                <Button size="sm" variant="outline" className="h-8 text-xs font-semibold px-2.5 rounded-lg" onClick={() => handleSelectAll(false)}>
                   Deselect All
                 </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={handleSelectMatchedOnly}
-                  className="h-7 px-2 text-[11px] text-emerald-700 hover:bg-emerald-100/60"
-                >
+                <Button size="sm" variant="outline" className="h-8 text-xs font-semibold px-2.5 rounded-lg text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-emerald-100" onClick={handleSelectMatchedOnly}>
                   Select Matched
                 </Button>
               </div>
             </div>
 
-            {/* Main Interactive Preview Table */}
-            <div className="flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-white min-h-0">
+            {/* 4. Full-Height Preview Grid */}
+            <div className="flex-1 overflow-y-auto min-h-0 bg-white">
               <Table>
-                <TableHeader className="bg-slate-50 sticky top-0 z-10 shadow-xs">
-                  <TableRow>
-                    <TableHead className="w-8 text-center"></TableHead>
+                <TableHeader className="sticky top-0 bg-slate-100 z-10 shadow-2xs border-b border-slate-200">
+                  <TableRow className="hover:bg-slate-100">
+                    <TableHead className="w-10 text-center">
+                      <Checkbox
+                        checked={selectedCount > 0 && selectedCount === filteredList.filter(v => v.effectiveType !== 'skipped').length}
+                        onCheckedChange={(checked) => handleSelectAll(Boolean(checked))}
+                      />
+                    </TableHead>
                     <TableHead className="w-8"></TableHead>
-                    <TableHead className="text-[11px] font-bold text-slate-600">Type</TableHead>
-                    <TableHead className="text-[11px] font-bold text-slate-600">Voucher No</TableHead>
-                    <TableHead className="text-[11px] font-bold text-slate-600">Date</TableHead>
-                    <TableHead className="text-[11px] font-bold text-slate-600">Party Ledger</TableHead>
-                    <TableHead className="text-[11px] font-bold text-slate-600 text-right">Amount (₹)</TableHead>
-                    <TableHead className="text-[11px] font-bold text-slate-600 text-center">Status / Match</TableHead>
+                    <TableHead className="text-xs font-bold text-slate-700">Type</TableHead>
+                    <TableHead className="text-xs font-bold text-slate-700">Voucher #</TableHead>
+                    <TableHead className="text-xs font-bold text-slate-700">Date</TableHead>
+                    <TableHead className="text-xs font-bold text-slate-700">Party / Account</TableHead>
+                    <TableHead className="text-xs font-bold text-slate-700 text-right">Amount (₹)</TableHead>
+                    <TableHead className="text-xs font-bold text-slate-700 text-center">Status / Mapping</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredList.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-slate-400 text-xs">
-                        No vouchers match the selected filter or search criteria.
+                      <TableCell colSpan={8} className="h-48 text-center text-slate-400 text-xs">
+                        No vouchers match your current filters.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredList.map((v, idx) => {
+                    filteredList.map((v) => {
                       const isExpanded = expandedVoucherId === v.id
+
                       return (
-                        <React.Fragment key={v.id || idx}>
-                          <TableRow
-                            className={cn(
-                              'text-xs transition-colors cursor-pointer',
-                              !v.isIncluded ? 'opacity-50 bg-slate-50/50' : isExpanded ? 'bg-violet-50/40' : 'hover:bg-slate-50/80'
-                            )}
-                            onClick={() => setExpandedVoucherId(isExpanded ? null : v.id)}
-                          >
-                            <TableCell className="text-center p-2" onClick={e => e.stopPropagation()}>
+                        <React.Fragment key={v.id}>
+                          <TableRow className={cn(
+                            'transition-colors text-xs cursor-pointer',
+                            !v.isIncluded ? 'opacity-40 bg-slate-50/50' : 'hover:bg-slate-50/80',
+                            isExpanded && 'bg-slate-100/70 border-l-4 border-l-violet-600'
+                          )}>
+                            <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
                               <Checkbox
                                 checked={v.isIncluded}
-                                onCheckedChange={checked => handleIncludeToggle(v.id, Boolean(checked))}
+                                disabled={v.effectiveType === 'skipped'}
+                                onCheckedChange={(chk) => handleIncludeToggle(v.id, Boolean(chk))}
                               />
                             </TableCell>
-                            <TableCell className="p-2 text-slate-400">
-                              {isExpanded ? <CaretDown className="w-3.5 h-3.5" /> : <CaretRight className="w-3.5 h-3.5" />}
+                            <TableCell onClick={() => setExpandedVoucherId(isExpanded ? null : v.id)}>
+                              <Button variant="ghost" size="icon" className="h-6 w-6 p-0 text-slate-400 hover:text-slate-700">
+                                {isExpanded ? <CaretDown size={14} /> : <CaretRight size={14} />}
+                              </Button>
                             </TableCell>
                             <TableCell>{getVoucherBadge(v.effectiveType, v.rawVoucherType)}</TableCell>
                             <TableCell className="font-mono text-slate-900 font-semibold">{v.voucherNumber}</TableCell>
@@ -2131,15 +2444,54 @@ export function TallyImportDialog({
                                     )}
 
                                     {v.inventory && v.inventory.length > 0 && (
-                                      <div className="mt-2 space-y-1">
-                                        <div className="text-[11px] font-bold text-slate-700">Inventory Items ({v.inventory.length})</div>
-                                        <div className="max-h-24 overflow-y-auto space-y-1">
-                                          {v.inventory.map((inv, iIdx) => (
-                                            <div key={iIdx} className="flex items-center justify-between text-[10px] bg-slate-50 p-1.5 rounded border border-slate-100 font-mono">
-                                              <span className="font-semibold text-slate-800 truncate max-w-[180px]">{inv.itemName}</span>
-                                              <span>{inv.quantity} {inv.unit} @ ₹{inv.rate} = {formatCurrency(inv.amount)}</span>
-                                            </div>
-                                          ))}
+                                      <div className="mt-2 space-y-1.5">
+                                        <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                                          <span>Inventory Items ({v.inventory.length})</span>
+                                          <span className="text-[10px] text-slate-400 font-normal">Per-line item selector</span>
+                                        </div>
+                                        <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                                          {v.inventory.map((inv, iIdx) => {
+                                            const norm = inv.itemName.trim().toLowerCase()
+                                            const lineMappedId = itemOverrides[v.id]?.[iIdx] || itemMappings[norm]
+                                            const resolvedItem = lineMappedId && lineMappedId !== 'auto-create'
+                                              ? items.find(it => it.id === lineMappedId)
+                                              : (inv.matchedItemId ? items.find(it => it.id === inv.matchedItemId) : null)
+
+                                            return (
+                                              <div key={iIdx} className="p-2 rounded-lg bg-slate-50 border border-slate-200/80 space-y-1.5 text-[11px]">
+                                                <div className="flex items-center justify-between">
+                                                  <div className="font-semibold text-slate-800 truncate max-w-[200px]" title={inv.itemName}>
+                                                    {inv.itemName}
+                                                  </div>
+                                                  <span className="font-mono text-slate-600 text-[10px]">
+                                                    {inv.quantity} {inv.unit} @ ₹{inv.rate} = {formatCurrency(inv.amount)}
+                                                  </span>
+                                                </div>
+
+                                                <div className="flex items-center gap-2">
+                                                  <span className="text-[10px] text-slate-500 font-semibold shrink-0">Map Line to:</span>
+                                                  <Select
+                                                    value={lineMappedId || (resolvedItem?.id) || (inv.isAutoCreatedItem ? 'auto-create' : '')}
+                                                    onValueChange={(val) => handleVoucherItemOverride(v.id, iIdx, val)}
+                                                  >
+                                                    <SelectTrigger className="h-6 text-[10px] bg-white border-slate-200 flex-1">
+                                                      <SelectValue placeholder="Select item" />
+                                                    </SelectTrigger>
+                                                    <SelectContent className="max-h-60">
+                                                      <SelectItem value="auto-create" className="text-purple-600 font-semibold text-xs">
+                                                        ✨ Auto-Create &quot;{inv.itemName}&quot;
+                                                      </SelectItem>
+                                                      {items.map(it => (
+                                                        <SelectItem key={it.id} value={it.id} className="text-xs">
+                                                          {it.name} ({it.category || 'General'}) • {it.unit || 'PCS'}
+                                                        </SelectItem>
+                                                      ))}
+                                                    </SelectContent>
+                                                  </Select>
+                                                </div>
+                                              </div>
+                                            )
+                                          })}
                                         </div>
                                       </div>
                                     )}

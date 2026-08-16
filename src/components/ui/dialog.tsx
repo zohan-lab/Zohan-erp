@@ -55,16 +55,37 @@ function DialogContent({
 
   return (
     <DialogPortal data-slot="dialog-portal">
-      <DialogOverlay />
+      {!isFullScreen && <DialogOverlay />}
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        data-fullscreen={isFullScreen ? "true" : undefined}
         className={cn(
-          "bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 z-50 duration-200",
+          "bg-background z-50 duration-200",
           isFullScreen
-            ? "fixed inset-0 top-0 left-0 right-0 bottom-0 w-screen h-screen max-w-none max-h-none m-0 p-0 rounded-none border-none shadow-none flex flex-col overflow-hidden translate-x-0 translate-y-0 transform-none"
-            : "fixed top-[50%] left-[50%] grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-responsive-md rounded-lg border modal-spacing-responsive shadow-lg sm:max-w-lg modal-content",
+            ? "!fixed !inset-0 !top-0 !left-0 !right-0 !bottom-0 !w-screen !h-screen !max-w-none !max-h-none !m-0 !p-0 !rounded-none !border-0 !shadow-none !flex !flex-col !overflow-hidden !translate-x-0 !translate-y-0 !transform-none !z-[99999]"
+            : "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-responsive-md rounded-lg border modal-spacing-responsive shadow-lg sm:max-w-lg modal-content",
           className
         )}
+        style={isFullScreen ? {
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: '100vw',
+          height: '100vh',
+          maxWidth: '100vw',
+          maxHeight: '100vh',
+          margin: 0,
+          padding: 0,
+          borderRadius: 0,
+          border: 'none',
+          transform: 'none',
+          zIndex: 99999,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden'
+        } : undefined}
         {...props}
       >
         {children}
