@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ExpenseCategory, ExpenseType, ExpenseEntry } from '@/lib/types'
 import { Plus, Trash, Receipt, LinkSimple, TrendDown, Warning, PencilSimple, SlidersHorizontal } from '@phosphor-icons/react'
 import { toast } from 'sonner'
-import { COMMON_HSN_SAC_CODES } from '@/components/expense-entries-page'
+import { QUICK_SAC_CODES } from '@/components/manage-expense-categories-dialog'
 
 interface ExpenseTypesPageProps {
   expenseTypes: ExpenseType[]
@@ -244,7 +244,7 @@ export default function ExpenseTypesPage({ expenseTypes, setExpenseTypes, expens
                               <SelectValue placeholder="SAC" />
                             </SelectTrigger>
                             <SelectContent>
-                              {COMMON_HSN_SAC_CODES.map(s => (
+                              {QUICK_SAC_CODES.map(s => (
                                 <SelectItem key={s.code} value={s.code} className="text-xs">{s.label}</SelectItem>
                               ))}
                             </SelectContent>
