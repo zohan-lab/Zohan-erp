@@ -2119,6 +2119,108 @@ export function calculateExpenseTaxBreakdown(params: ExpenseTaxBreakdownParams):
   }
 }
 
+export interface NoteTaxBreakdownParams {
+  amount: number
+  isTaxInclusive?: boolean
+  gstRate?: number
+  partyStateCode?: string
+  companyStateCode?: string
+}
+
+export interface NoteTaxBreakdownResult {
+  taxableAmount: number
+  isInterState: boolean
+  gstRate: number
+  cgstRate: number
+  cgstAmount: number
+  sgstRate: number
+  sgstAmount: number
+  igstRate: number
+  igstAmount: number
+  totalTaxAmount: number
+  roundOff: number
+  totalAmount: number
+}
+
+export function calculateNoteTaxBreakdown(params: NoteTaxBreakdownParams): NoteTaxBreakdownResult {
+  const {
+    amount = 0,
+    isTaxInclusive = true,
+    gstRate = 18,
+    partyStateCode,
+    companyStateCode = '19'
+  } = params
+
+  const isInterState = isInterStateTransaction(partyStateCode, companyStateCode)
+  const rate = Math.max(0, gstRate)
+
+  if (amount <= 0 || rate === 0) {
+    return {
+      taxableAmount: roundCurrency(amount),
+      isInterState,
+      gstRate: 0,
+      cgstRate: 0,
+      cgstAmount: 0,
+      sgstRate: 0,
+      sgstAmount: 0,
+      igstRate: 0,
+      igstAmount: 0,
+      totalTaxAmount: 0,
+      roundOff: 0,
+      totalAmount: roundCurrency(amount)
+    }
+  }
+
+  let taxableAmount = 0
+  let totalTaxAmount = 0
+  let unroundedTotal = 0
+
+  if (isTaxInclusive) {
+    taxableAmount = roundCurrency(amount / (1 + rate / 100))
+    totalTaxAmount = roundCurrency(amount - taxableAmount)
+    unroundedTotal = amount
+  } else {
+    taxableAmount = roundCurrency(amount)
+    totalTaxAmount = roundCurrency(amount * (rate / 100))
+    unroundedTotal = taxableAmount + totalTaxAmount
+  }
+
+  let cgstRate = 0
+  let cgstAmount = 0
+  let sgstRate = 0
+  let sgstAmount = 0
+  let igstRate = 0
+  let igstAmount = 0
+
+  if (isInterState) {
+    igstRate = rate
+    igstAmount = totalTaxAmount
+  } else {
+    cgstRate = rate / 2
+    sgstRate = rate / 2
+    cgstAmount = roundCurrency(totalTaxAmount / 2)
+    sgstAmount = roundCurrency(totalTaxAmount - cgstAmount)
+  }
+
+  const roundedTotal = Math.round(unroundedTotal)
+  const roundOff = roundCurrency(roundedTotal - unroundedTotal)
+
+  return {
+    taxableAmount,
+    isInterState,
+    gstRate: rate,
+    cgstRate,
+    cgstAmount,
+    sgstRate,
+    sgstAmount,
+    igstRate,
+    igstAmount,
+    totalTaxAmount,
+    roundOff,
+    totalAmount: isTaxInclusive ? roundCurrency(amount) : roundedTotal
+  }
+}
+
 export function calculateExpenseTotals(expenses: ExpenseEntry[], expenseTypes: ExpenseType[] = []): ExpenseTotals {
   let totalExpenses = 0
   let invoiceLinkedExpenses = 0

@@ -2339,13 +2339,13 @@ function App() {
             />
           )
         case 'customer-credit-notes':
-          return <CustomerCreditNotePage creditNotes={safeCreditNotes} setCreditNotes={syncSetCreditNotes} customers={safeCustomers} currentFY={safeCurrentFY} isLocked={isViewReadOnly('customer-credit-notes')} activeCompanyId={metadata.activeCompanyId} />
+          return <CustomerCreditNotePage creditNotes={safeCreditNotes} setCreditNotes={syncSetCreditNotes} customers={safeCustomers} salesInvoices={safeSalesInvoices} currentFY={safeCurrentFY} isLocked={isViewReadOnly('customer-credit-notes')} activeCompanyId={metadata.activeCompanyId} />
         case 'customer-debit-notes':
-          return <CustomerDebitNotePage customerDebitNotes={safeCustomerDebitNotes} setCustomerDebitNotes={syncSetCustomerDebitNotes} customers={safeCustomers} currentFY={safeCurrentFY} isLocked={isViewReadOnly('customer-debit-notes')} activeCompanyId={metadata.activeCompanyId} />
+          return <CustomerDebitNotePage customerDebitNotes={safeCustomerDebitNotes} setCustomerDebitNotes={syncSetCustomerDebitNotes} customers={safeCustomers} salesInvoices={safeSalesInvoices} currentFY={safeCurrentFY} isLocked={isViewReadOnly('customer-debit-notes')} activeCompanyId={metadata.activeCompanyId} />
         case 'supplier-debit-notes':
-          return <SupplierDebitNotePage debitNotes={safeDebitNotes} setDebitNotes={syncSetDebitNotes} suppliers={safeSuppliers} currentFY={safeCurrentFY} isLocked={isViewReadOnly('supplier-debit-notes')} activeCompanyId={metadata.activeCompanyId} />
+          return <SupplierDebitNotePage debitNotes={safeDebitNotes} setDebitNotes={syncSetDebitNotes} suppliers={safeSuppliers} invoices={safeInvoices} currentFY={safeCurrentFY} isLocked={isViewReadOnly('supplier-debit-notes')} activeCompanyId={metadata.activeCompanyId} />
         case 'supplier-credit-notes':
-          return <SupplierCreditNotePage supplierCreditNotes={safeSupplierCreditNotes} setSupplierCreditNotes={syncSetSupplierCreditNotes} suppliers={safeSuppliers} currentFY={safeCurrentFY} isLocked={isViewReadOnly('supplier-credit-notes')} activeCompanyId={metadata.activeCompanyId} />
+          return <SupplierCreditNotePage supplierCreditNotes={safeSupplierCreditNotes} setSupplierCreditNotes={syncSetSupplierCreditNotes} suppliers={safeSuppliers} invoices={safeInvoices} currentFY={safeCurrentFY} isLocked={isViewReadOnly('supplier-credit-notes')} activeCompanyId={metadata.activeCompanyId} />
         case 'sales-returns':
           return (
             <SalesReturnPage

@@ -9,6 +9,7 @@ import {
   formatCurrency,
   calculateInvoiceTaxBreakdown,
   calculateExpenseTaxBreakdown,
+  calculateNoteTaxBreakdown,
   calculateExpenseTotals,
   isInterStateTransaction
 } from './calculations'
@@ -759,5 +760,65 @@ describe('calculateExpenseTaxBreakdown', () => {
     expect(result.sgstAmount).toBe(0)
     expect(result.igstAmount).toBe(0)
     expect(result.totalExpenseAmount).toBe(4500)
+  })
+})
+
+describe('calculateNoteTaxBreakdown', () => {
+  it('correctly calculates intra-state inclusive Credit Note tax split (CGST 9% + SGST 9%)', () => {
+    // ₹11,800 inclusive -> Taxable ₹10,000, CGST ₹900, SGST ₹900, Total ₹11,800
+    const result = calculateNoteTaxBreakdown({
+      amount: 11800,
+      isTaxInclusive: true,
+      gstRate: 18,
+      partyStateCode: '19', // Intra-state WB
+      companyStateCode: '19'
+    })
+
+    expect(result.isInterState).toBe(false)
+    expect(result.taxableAmount).toBe(10000)
+    expect(result.cgstRate).toBe(9)
+    expect(result.cgstAmount).toBe(900)
+    expect(result.sgstRate).toBe(9)
+    expect(result.sgstAmount).toBe(900)
+    expect(result.igstAmount).toBe(0)
+    expect(result.totalTaxAmount).toBe(1800)
+    expect(result.totalAmount).toBe(11800)
+  })
+
+  it('correctly calculates inter-state exclusive Debit Note tax split (IGST 18%)', () => {
+    // ₹20,000 exclusive + 18% IGST -> Taxable ₹20,000, IGST ₹3,600, Total ₹23,600
+    const result = calculateNoteTaxBreakdown({
+      amount: 20000,
+      isTaxInclusive: false,
+      gstRate: 18,
+      partyStateCode: '07', // Delhi (Inter-state)
+      companyStateCode: '19'
+    })
+
+    expect(result.isInterState).toBe(true)
+    expect(result.taxableAmount).toBe(20000)
+    expect(result.igstRate).toBe(18)
+    expect(result.igstAmount).toBe(3600)
+    expect(result.cgstAmount).toBe(0)
+    expect(result.sgstAmount).toBe(0)
+    expect(result.totalTaxAmount).toBe(3600)
+    expect(result.totalAmount).toBe(23600)
+  })
+
+  it('correctly handles 0% Exempt Credit/Debit Note', () => {
+    const result = calculateNoteTaxBreakdown({
+      amount: 5000,
+      isTaxInclusive: true,
+      gstRate: 0,
+      partyStateCode: '19',
+      companyStateCode: '19'
+    })
+
+    expect(result.taxableAmount).toBe(5000)
+    expect(result.totalTaxAmount).toBe(0)
+    expect(result.cgstAmount).toBe(0)
+    expect(result.sgstAmount).toBe(0)
+    expect(result.igstAmount).toBe(0)
+    expect(result.totalAmount).toBe(5000)
   })
 })

@@ -40,6 +40,7 @@ import {
   calculateExpenseTaxBreakdown 
 } from '@/lib/calculations'
 import { getStateName, getStateCode } from '@/lib/constants/indian-states'
+import { StateSelector } from '@/components/state-selector'
 import { getInvoiceQtyForUnit } from '@/lib/unit-conversion-service'
 import { saveEntityRemote, deleteEntityRemote } from '@/lib/firebase-storage'
 import { ThreeDotDropdown } from '@/components/ui/three-dot-dropdown'
@@ -96,6 +97,7 @@ export default function ExpenseEntriesPage({
 
   // GST & ITC Form State
   const [hasGst, setHasGst] = useState(false)
+  const [isRcm, setIsRcm] = useState(false)
   const [supplierName, setSupplierName] = useState('')
   const [supplierGstin, setSupplierGstin] = useState('')
   const [supplierStateCode, setSupplierStateCode] = useState('19')
@@ -161,6 +163,7 @@ export default function ExpenseEntriesPage({
     setLinkedInvoiceId('')
     setNotes('')
     setHasGst(false)
+    setIsRcm(false)
     setSupplierName('')
     setSupplierGstin('')
     setSupplierStateCode('19')
@@ -185,6 +188,7 @@ export default function ExpenseEntriesPage({
     setNotes(entry.notes || '')
     const gstActive = Boolean(entry.hasGst ?? entry.expenseWithGst)
     setHasGst(gstActive)
+    setIsRcm(Boolean(entry.isRcm))
     setSupplierName(entry.supplierName || '')
     setSupplierGstin(entry.supplierGstin || '')
     setSupplierStateCode(entry.supplierStateCode || (entry.supplierGstin ? entry.supplierGstin.slice(0, 2) : '19'))
@@ -257,7 +261,7 @@ export default function ExpenseEntriesPage({
       return
     }
 
-    if (hasGst && supplierGstin.trim() && supplierGstin.trim().length !== 15) {
+    if (hasGst && !isRcm && supplierGstin.trim() && supplierGstin.trim().length !== 15) {
       toast.error('Invalid GSTIN', { description: 'Indian GSTIN must be exactly 15 alphanumeric characters' })
       return
     }
@@ -310,6 +314,7 @@ export default function ExpenseEntriesPage({
         // GST & ITC Fields
         hasGst,
         expenseWithGst: hasGst,
+        isRcm: hasGst ? isRcm : false,
         supplierName: supplierName.trim() || undefined,
         supplierGstin: supplierGstin.trim() || undefined,
         supplierStateCode: hasGst ? supplierStateCode : undefined,
@@ -387,6 +392,7 @@ export default function ExpenseEntriesPage({
         // GST & ITC Fields
         hasGst,
         expenseWithGst: hasGst,
+        isRcm: hasGst ? isRcm : false,
         supplierName: supplierName.trim() || undefined,
         supplierGstin: supplierGstin.trim() || undefined,
         supplierStateCode: hasGst ? supplierStateCode : undefined,
@@ -729,30 +735,60 @@ export default function ExpenseEntriesPage({
 
           {/* GST & Input Tax Credit (ITC) Section */}
           <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-200/80 pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 pb-3">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="h-5 w-5 text-emerald-600" weight="duotone" />
                 <div>
                   <h3 className="text-sm font-bold text-slate-900">GST Compliance & Input Tax Credit (ITC)</h3>
-                  <p className="text-[11px] text-slate-500">Record vendor tax details and claim eligible GST input credit</p>
+                  <p className="text-[11px] text-slate-500">Record vendor tax details, RCM applicability, and claim eligible GST input credit</p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <Switch
-                  checked={hasGst}
-                  onCheckedChange={setHasGst}
-                  id="gst-toggle-switch"
-                />
-                <Label htmlFor="gst-toggle-switch" className="text-xs font-bold text-slate-800 cursor-pointer">
-                  {hasGst ? 'GST Registered Expense' : 'Non-GST / Unregistered'}
-                </Label>
+              <div className="flex items-center gap-4">
+                {hasGst && (
+                  <div className="flex items-center gap-2 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
+                    <Switch
+                      checked={isRcm}
+                      onCheckedChange={(checked) => {
+                        setIsRcm(checked)
+                        if (checked) {
+                          setGstRate(5)
+                          if (!hsnSacCode) setHsnSacCode('9965')
+                        }
+                      }}
+                      id="rcm-toggle-switch"
+                    />
+                    <Label htmlFor="rcm-toggle-switch" className="text-xs font-bold text-amber-900 cursor-pointer">
+                      Applicable for RCM (Reverse Charge)
+                    </Label>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={hasGst}
+                    onCheckedChange={setHasGst}
+                    id="gst-toggle-switch"
+                  />
+                  <Label htmlFor="gst-toggle-switch" className="text-xs font-bold text-slate-800 cursor-pointer">
+                    {hasGst ? 'GST Registered Expense' : 'Non-GST / Unregistered'}
+                  </Label>
+                </div>
               </div>
             </div>
 
             {hasGst && (
               <div className="space-y-4 pt-1 animate-in fade-in-50 duration-200">
                 
+                {isRcm && (
+                  <div className="p-3 bg-amber-50/90 rounded-xl border border-amber-300/80 text-xs text-amber-900 flex items-start gap-2">
+                    <ShieldCheck className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" weight="bold" />
+                    <div>
+                      <span className="font-bold">Reverse Charge Mechanism (RCM) Active:</span> Tax liability is payable via Cash Ledger under Section 9(3) and eligible for simultaneous ITC claim in GSTR-3B Table 4(A)(3). Supplier GSTIN is optional.
+                    </div>
+                  </div>
+                )}
+
                 {/* Vendor GSTIN & State Auto-Detection */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   
@@ -768,10 +804,12 @@ export default function ExpenseEntriesPage({
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-bold text-slate-700">Supplier GSTIN (15 Digits)</Label>
+                    <Label className="text-xs font-bold text-slate-700">
+                      Supplier GSTIN {isRcm ? '(Optional for RCM)' : '(15 Digits)'}
+                    </Label>
                     <Input
                       type="text"
-                      placeholder="19AAAAA0000A1Z5"
+                      placeholder={isRcm ? "Optional (Unregistered Vendor)" : "19AAAAA0000A1Z5"}
                       maxLength={15}
                       value={supplierGstin}
                       onChange={(e) => handleGstinChange(e.target.value)}
@@ -781,12 +819,10 @@ export default function ExpenseEntriesPage({
 
                   <div className="space-y-1.5">
                     <Label className="text-xs font-bold text-slate-700">Supplier State / POS</Label>
-                    <div className="h-9 px-3 rounded-lg border border-slate-200 bg-white flex items-center justify-between text-xs font-semibold text-slate-700">
-                      <span>{getStateName(supplierStateCode)}</span>
-                      <Badge variant="outline" className="text-[10px] font-mono font-bold bg-slate-100 text-slate-800 border-slate-300">
-                        Code: {supplierStateCode}
-                      </Badge>
-                    </div>
+                    <StateSelector
+                      value={supplierStateCode}
+                      onChange={(code) => setSupplierStateCode(code)}
+                    />
                   </div>
 
                 </div>
