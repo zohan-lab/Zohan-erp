@@ -68,7 +68,7 @@ export const keyBindings: KeyBinding[] = [
   { key: 'c', ctrlKey: true, shiftKey: true, action: 'cd-risk', description: 'CD at Risk', category: 'Reports' },
   { key: 'w', ctrlKey: true, shiftKey: true, action: 'wallet', description: 'Discount Wallet', category: 'Reports' },
   
-  { key: 'y', ctrlKey: true, action: 'annual', description: 'Annual Discount', category: 'Discount Configuration' },
+  { key: 'y', ctrlKey: true, action: 'annual', description: 'Annual Discount', category: 'Masters' },
   
   { key: '1', altKey: true, action: 'suppliers', description: 'Suppliers Master', category: 'Masters' },
   { key: '2', altKey: true, action: 'customers', description: 'Customers Master', category: 'Masters' },

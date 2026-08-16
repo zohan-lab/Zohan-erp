@@ -38,6 +38,7 @@ import {
   Trash,
   CreditCard,
   ArrowsLeftRight,
+  PencilSimple as Pencil,
 } from '@phosphor-icons/react'
 import { toast } from 'sonner'
 import { Counter, CounterType, CashBankTransaction, isBankType } from '@/lib/cash-bank-types'

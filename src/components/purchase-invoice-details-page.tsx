@@ -26,10 +26,10 @@ import {
   ExpenseType,
   MTBooking
 } from '@/lib/types'
-import { formatCurrency, formatMT, calculatePaymentAllocations, calculateExpectedDiscounts, getFYMonths, getFYFromDate, calculateDetailedPurchaseInvoiceBreakdown } from '@/lib/calculations'
+import { formatCurrency, formatMT, calculatePaymentAllocations, calculateExpectedDiscounts, getFYMonths, getFYFromDate, calculateDetailedPurchaseInvoiceBreakdown, calculateInvoiceTaxBreakdown } from '@/lib/calculations'
 import { getItemActiveUnitAndQty } from '@/lib/fifo-engine'
 import { toBaseQuantity, getInvoiceQtyForUnit } from '@/lib/unit-conversion-service'
-import { FileText, Calendar, Package, CurrencyDollar, CreditCard, TrendDown, Calculator, CaretDown, Check } from '@phosphor-icons/react'
+import { FileText, Calendar, Package, CurrencyDollar, CreditCard, TrendDown, Calculator, CaretDown, Check, Receipt } from '@phosphor-icons/react'
 import { format } from 'date-fns'
 import { cn } from '@/lib/utils'
 
@@ -564,6 +564,62 @@ export default function PurchaseInvoiceDetailsPage({
                       </Table>
                     </div>
                   )}
+
+                  {(() => {
+                    const taxSummary = calculateInvoiceTaxBreakdown({
+                      items: detail.invoice.items,
+                      itemsMaster: items,
+                      additionalCostBasicRate: detail.invoice.additionalCostBasicRate,
+                      additionalCostFinal: detail.invoice.additionalCost,
+                      partyState: detail.supplier.state,
+                      customRoundOff: detail.invoice.roundOff ?? detail.invoice.roundOffAdjustment
+                    })
+                    const taxable = detail.invoice.taxableAmount ?? taxSummary.taxableAmount
+                    const isInterState = detail.invoice.isInterState ?? taxSummary.isInterState
+                    const cgstRate = detail.invoice.cgstRate ?? taxSummary.cgstRate
+                    const cgstAmount = detail.invoice.cgstAmount ?? taxSummary.cgstAmount
+                    const sgstRate = detail.invoice.sgstRate ?? taxSummary.sgstRate
+                    const sgstAmount = detail.invoice.sgstAmount ?? taxSummary.sgstAmount
+                    const igstRate = detail.invoice.igstRate ?? taxSummary.igstRate
+                    const igstAmount = detail.invoice.igstAmount ?? taxSummary.igstAmount
+                    const roundOff = detail.invoice.roundOff ?? detail.invoice.roundOffAdjustment ?? taxSummary.roundOff
+
+                    return (
+                      <div className="rounded-2xl border border-border/70 bg-muted/20 p-3 space-y-2">
+                        <h4 className="font-semibold text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                          <Receipt size={14} className="text-primary" />
+                          GST & Tax Breakdown
+                        </h4>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                          <div className="rounded-lg bg-background p-2.5 border">
+                            <div className="text-[11px] text-muted-foreground font-semibold">Taxable Value</div>
+                            <div className="font-bold text-foreground mt-0.5">{formatCurrency(taxable)}</div>
+                          </div>
+                          {!isInterState ? (
+                            <>
+                              <div className="rounded-lg bg-background p-2.5 border">
+                                <div className="text-[11px] text-muted-foreground font-semibold">CGST @ {cgstRate}%</div>
+                                <div className="font-bold text-foreground mt-0.5">{formatCurrency(cgstAmount)}</div>
+                              </div>
+                              <div className="rounded-lg bg-background p-2.5 border">
+                                <div className="text-[11px] text-muted-foreground font-semibold">SGST @ {sgstRate}%</div>
+                                <div className="font-bold text-foreground mt-0.5">{formatCurrency(sgstAmount)}</div>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="rounded-lg bg-background p-2.5 border col-span-2">
+                              <div className="text-[11px] text-muted-foreground font-semibold">IGST @ {igstRate}%</div>
+                              <div className="font-bold text-foreground mt-0.5">{formatCurrency(igstAmount)}</div>
+                            </div>
+                          )}
+                          <div className="rounded-lg bg-background p-2.5 border">
+                            <div className="text-[11px] text-muted-foreground font-semibold">Round Off</div>
+                            <div className="font-bold text-foreground mt-0.5">{roundOff >= 0 ? '+' : ''}{formatCurrency(roundOff)}</div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })()}
 
                   <div className="max-w-md">
                     <div>

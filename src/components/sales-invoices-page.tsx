@@ -17,7 +17,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ArrowLeft, CaretLeft, Plus, Receipt, Trash, X, Info, PencilSimple, FunnelSimple, Warning, DownloadSimple, MagnifyingGlass, Barcode, Package, UserPlus, GearSix, Keyboard, UploadSimple, FileText, Wallet, TrendUp, SlidersHorizontal } from '@phosphor-icons/react'
-import { formatCurrency, formatMT, getFYMonths, getFYFromDate, calculatePaymentAllocations, calculateRateWithGst, calculateBasicRateFromInclusive, calculateRoundOffAdjustment, calculateInvoiceFinalAmount, calculateInvoiceItemsTotals, calculateAdditionalChargesTotals } from '@/lib/calculations'
+import { formatCurrency, formatMT, getFYMonths, getFYFromDate, calculatePaymentAllocations, calculateRateWithGst, calculateBasicRateFromInclusive, calculateRoundOffAdjustment, calculateInvoiceFinalAmount, calculateInvoiceItemsTotals, calculateAdditionalChargesTotals, calculateInvoiceTaxBreakdown, isInterStateTransaction } from '@/lib/calculations'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { startOfMonth, endOfMonth, isWithinInterval, parseISO, format } from 'date-fns'
@@ -500,6 +500,17 @@ export default function SalesInvoicesPage({
       }
     })
 
+    const customer = customers.find(c => c.id === customerId)
+    const taxSummary = calculateInvoiceTaxBreakdown({
+      items: sanitizedItems,
+      itemsMaster: items,
+      additionalCostBasicRate: additionalCostBasicRate || 0,
+      additionalCostFinal: additionalCost || 0,
+      partyState: customer?.state,
+      customRoundOff: roundOffAdjustment,
+      defaultGstRate: gstPercentage
+    })
+
     if (editingInvoice) {
       const updatedInvoice: SalesInvoice = {
         ...editingInvoice,
@@ -512,6 +523,16 @@ export default function SalesInvoicesPage({
         additionalCostBasicRate: additionalCostBasicRate || undefined,
         additionalCostRemarks: additionalCostRemarks || undefined,
         roundOffAdjustment: roundOffAdjustment || undefined,
+        taxableAmount: taxSummary.taxableAmount,
+        cgstRate: taxSummary.cgstRate,
+        cgstAmount: taxSummary.cgstAmount,
+        sgstRate: taxSummary.sgstRate,
+        sgstAmount: taxSummary.sgstAmount,
+        igstRate: taxSummary.igstRate,
+        igstAmount: taxSummary.igstAmount,
+        roundOff: taxSummary.roundOff,
+        totalAmount: finalInvoiceAmount,
+        isInterState: taxSummary.isInterState,
         history: [
           ...(editingInvoice.history || []),
           {
@@ -544,6 +565,16 @@ export default function SalesInvoicesPage({
         additionalCostBasicRate: additionalCostBasicRate || undefined,
         additionalCostRemarks: additionalCostRemarks || undefined,
         roundOffAdjustment: roundOffAdjustment || undefined,
+        taxableAmount: taxSummary.taxableAmount,
+        cgstRate: taxSummary.cgstRate,
+        cgstAmount: taxSummary.cgstAmount,
+        sgstRate: taxSummary.sgstRate,
+        sgstAmount: taxSummary.sgstAmount,
+        igstRate: taxSummary.igstRate,
+        igstAmount: taxSummary.igstAmount,
+        roundOff: taxSummary.roundOff,
+        totalAmount: finalInvoiceAmount,
+        isInterState: taxSummary.isInterState,
         fy: getFYFromDate(invoiceDate),
         history: [
           {
@@ -739,6 +770,20 @@ export default function SalesInvoicesPage({
 
 
   const { totalQty: totalInvoiceQty, totalAmount: totalInvoiceAmount } = calculateInvoiceItemsTotals(invoiceItems)
+  const currentCustomer = customers.find(c => c.id === selectedCustomerId)
+  const taxSummary = useMemo(() => {
+    const { basicRateTotal: addCostBasicRate } = calculateAdditionalChargesTotals(additionalCharges)
+    return calculateInvoiceTaxBreakdown({
+      items: invoiceItems,
+      itemsMaster: items,
+      additionalCostBasicRate: addCostBasicRate,
+      additionalCostFinal,
+      partyState: currentCustomer?.state,
+      customRoundOff: roundOffAdjustment,
+      defaultGstRate: gstPercentage
+    })
+  }, [invoiceItems, items, additionalCharges, additionalCostFinal, currentCustomer?.state, roundOffAdjustment, gstPercentage])
+
   const finalInvoiceAmountPreview = calculateInvoiceFinalAmount(totalInvoiceAmount, additionalCostFinal, roundOffAdjustment)
   const receivedAmountPreview = Math.min(
     Math.max(parseFloat(amountReceived) || 0, 0),
@@ -1375,25 +1420,42 @@ export default function SalesInvoicesPage({
                                     <span>Total Quantity</span>
                                     <span className="value">{formatMT(totalInvoiceQty)}</span>
                                   </div>
-                                  <div className="erp-summary-divider"></div>
                                   <div className="erp-summary-item">
-                                    <span>Items Subtotal</span>
-                                    <span className="value">₹{totalInvoiceAmount.toFixed(2)}</span>
+                                    <span>Taxable Value</span>
+                                    <span className="value">₹{taxSummary.taxableAmount.toFixed(2)}</span>
                                   </div>
                                   <div className="erp-summary-divider"></div>
-                                  <div className="erp-summary-item">
-                                    <span>Additional Charges</span>
-                                    <span className="value">₹{additionalCostFinal.toFixed(2)}</span>
-                                  </div>
-                                  <div className="erp-summary-divider"></div>
-                                  <div className="erp-summary-item">
-                                    <span>Tax Amount</span>
-                                    <span className="value">₹0.00</span>
-                                  </div>
+                                  {!taxSummary.isInterState ? (
+                                    <>
+                                      <div className="erp-summary-item">
+                                        <span>CGST @ {taxSummary.cgstRate}%</span>
+                                        <span className="value">₹{taxSummary.cgstAmount.toFixed(2)}</span>
+                                      </div>
+                                      <div className="erp-summary-divider"></div>
+                                      <div className="erp-summary-item">
+                                        <span>SGST @ {taxSummary.sgstRate}%</span>
+                                        <span className="value">₹{taxSummary.sgstAmount.toFixed(2)}</span>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div className="erp-summary-item">
+                                      <span>IGST @ {taxSummary.igstRate}%</span>
+                                      <span className="value">₹{taxSummary.igstAmount.toFixed(2)}</span>
+                                    </div>
+                                  )}
+                                  {additionalCostFinal > 0 && (
+                                    <>
+                                      <div className="erp-summary-divider"></div>
+                                      <div className="erp-summary-item">
+                                        <span>Additional Charges</span>
+                                        <span className="value">₹{additionalCostFinal.toFixed(2)}</span>
+                                      </div>
+                                    </>
+                                  )}
                                   <div className="erp-summary-divider"></div>
                                   <div className="erp-summary-item discount">
-                                    <span>Discount / Adjustment</span>
-                                    <span className="value">- ₹{Math.abs(roundOffAdjustment).toFixed(2)}</span>
+                                    <span>Round Off</span>
+                                    <span className="value">{roundOffAdjustment >= 0 ? '+' : ''}₹{roundOffAdjustment.toFixed(2)}</span>
                                   </div>
                                   {receivedAmountPreview > 0 && (
                                     <>

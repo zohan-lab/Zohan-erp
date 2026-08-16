@@ -11,7 +11,7 @@ import {
   Item,
   InvoiceItem
 } from './types'
-import { formatCurrency, formatMT } from './calculations'
+import { formatCurrency, formatMT, calculateInvoiceTaxBreakdown } from './calculations'
 import { getInvoiceQtyForUnit } from './unit-conversion-service'
 import { amountToWords } from './number-to-words'
 
@@ -933,13 +933,15 @@ export function exportSupplierLedgerPDF(
   doc.save(fileName)
 }
 
-interface StyledInvoiceOptions {
+export interface StyledInvoiceOptions {
   invoiceNo: string
   invoiceDate: string
   partyLabel: string
   partyName: string
   partyAddress?: string
   partyPhone?: string
+  partyState?: string
+  partyGstin?: string
   businessName: string
   state?: string
   phone?: string
@@ -947,6 +949,14 @@ interface StyledInvoiceOptions {
   itemMap: Map<string, Item>
   totalQuantity?: number
   invoiceAmount: number
+  taxableAmount?: number
+  cgstRate?: number
+  cgstAmount?: number
+  sgstRate?: number
+  sgstAmount?: number
+  igstRate?: number
+  igstAmount?: number
+  roundOff?: number
   additionalCost?: number
   additionalCostRemarks?: string
   roundOffAdjustment: number
@@ -983,7 +993,7 @@ function exportStyledInvoicePDF(options: StyledInvoiceOptions) {
   const doc = new jsPDF('portrait', 'mm', 'a4');
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 10; // Tally usually has smaller margins
+  const margin = 10;
   const contentWidth = pageWidth - margin * 2;
   const invoiceDate = options.invoiceDate
     ? new Date(options.invoiceDate).toLocaleDateString('en-IN')
@@ -994,129 +1004,116 @@ function exportStyledInvoicePDF(options: StyledInvoiceOptions) {
   doc.setFontSize(14);
   doc.text('INVOICE', pageWidth / 2, margin + 5, { align: 'center' });
 
-  // Outer Border
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.3);
   const startY = margin + 10;
-  // Let's draw the top block
-  // Top left: Company
   doc.rect(margin, startY, contentWidth / 2, 35);
-  // Top right: Invoice Info
   doc.rect(margin + contentWidth / 2, startY, contentWidth / 2, 35);
 
-  // Buyer Info (Left)
   doc.rect(margin, startY + 35, contentWidth / 2, 30);
-  // Dispatch Info (Right)
   doc.rect(margin + contentWidth / 2, startY + 35, contentWidth / 2, 30);
 
-  // Fill Company Info
-  doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
   doc.text(options.businessName.toUpperCase(), margin + 2, startY + 5);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  doc.text(options.state || '', margin + 2, startY + 9);
-  if (options.phone) doc.text(`Phone: ${options.phone}`, margin + 2, startY + 13);
-  doc.text('GSTIN/UIN: -', margin + 2, startY + 17);
-  doc.text('State Name: -, Code: -', margin + 2, startY + 21);
-  doc.text('E-Mail: -', margin + 2, startY + 25);
+  doc.text(options.state || 'West Bengal', margin + 2, startY + 10);
+  doc.text(`Mobile: ${options.phone || '9083876218'}`, margin + 2, startY + 14);
+  doc.text(`GSTIN/UIN: 19AABCS1429B1Z`, margin + 2, startY + 18);
+  doc.text(`State Name: ${options.state || 'West Bengal'}, Code : 19`, margin + 2, startY + 22);
 
-  // Fill Invoice Info (Right side)
-  doc.setFont('helvetica', 'normal');
-  const rightX = margin + contentWidth / 2 + 2;
-  const col2X = margin + contentWidth * 0.75 + 2;
+  drawInvoiceTextBlock(doc, 'Invoice No.', options.invoiceNo, margin + contentWidth / 2 + 2, startY + 4, 30);
+  drawInvoiceTextBlock(doc, 'Dated', invoiceDate, margin + contentWidth / 2 + 35, startY + 4, 30);
   
-  doc.text('Invoice No.', rightX, startY + 5);
+  drawInvoiceTextBlock(doc, 'Delivery Note', '-', margin + contentWidth / 2 + 2, startY + 14, 30);
+  drawInvoiceTextBlock(doc, 'Mode/Terms of Payment', '-', margin + contentWidth / 2 + 35, startY + 14, 30);
+
+  drawInvoiceTextBlock(doc, "Buyer's Order No.", '-', margin + contentWidth / 2 + 2, startY + 24, 30);
+  drawInvoiceTextBlock(doc, 'Dated', '-', margin + contentWidth / 2 + 35, startY + 24, 30);
+
   doc.setFont('helvetica', 'bold');
-  doc.text(options.invoiceNo, rightX, startY + 9);
-  
-  doc.setFont('helvetica', 'normal');
-  doc.text('Dated', col2X, startY + 5);
-  doc.setFont('helvetica', 'bold');
-  doc.text(invoiceDate, col2X, startY + 9);
-
-  // Grid lines inside Top Right
-  doc.line(margin + contentWidth / 2, startY + 12, pageWidth - margin, startY + 12);
-  doc.line(margin + contentWidth * 0.75, startY, margin + contentWidth * 0.75, startY + 35);
-
-  doc.setFont('helvetica', 'normal');
-  doc.text('Delivery Note', rightX, startY + 16);
-  doc.text('Mode/Terms of Payment', col2X, startY + 16);
-  
-  doc.line(margin + contentWidth / 2, startY + 23, pageWidth - margin, startY + 23);
-  doc.text('Reference No. & Date.', rightX, startY + 27);
-  doc.text('Other References', col2X, startY + 27);
-
-  // Buyer Info
   doc.setFontSize(8);
-  doc.text('Buyer (Bill to)', margin + 2, startY + 35 + 4);
+  doc.text(options.partyLabel.toUpperCase(), margin + 2, startY + 39);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
-  doc.text(options.partyName.toUpperCase(), margin + 2, startY + 35 + 9);
+  doc.text(options.partyName, margin + 2, startY + 44);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   if (options.partyAddress) {
-    const splitAddr = doc.splitTextToSize(options.partyAddress, (contentWidth / 2) - 4);
-    doc.text(splitAddr, margin + 2, startY + 35 + 13);
+    doc.text(options.partyAddress, margin + 2, startY + 49, { maxWidth: contentWidth / 2 - 4 });
   }
-  if (options.partyPhone) doc.text(`Phone: ${options.partyPhone}`, margin + 2, startY + 35 + 23);
-  doc.text('GSTIN/UIN: -', margin + 2, startY + 35 + 27);
+  if (options.partyGstin) {
+    doc.text(`GSTIN/UIN: ${options.partyGstin}`, margin + 2, startY + 57);
+  } else {
+    doc.text(`State Name: ${options.partyState || options.state || 'West Bengal'}`, margin + 2, startY + 57);
+  }
 
-  // Dispatch Info (Right)
-  doc.line(margin + contentWidth / 2, startY + 35 + 10, pageWidth - margin, startY + 35 + 10);
-  doc.line(margin + contentWidth / 2, startY + 35 + 20, pageWidth - margin, startY + 35 + 20);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.text('DISPATCHED THROUGH', margin + contentWidth / 2 + 2, startY + 39);
+  doc.setFont('helvetica', 'normal');
+  doc.text('By Road', margin + contentWidth / 2 + 2, startY + 44);
+  doc.setFont('helvetica', 'bold');
+  doc.text('DESTINATION', margin + contentWidth / 2 + 35, startY + 39);
+  doc.setFont('helvetica', 'normal');
+  doc.text(options.partyAddress || '-', margin + contentWidth / 2 + 35, startY + 44, { maxWidth: 30 });
 
-  doc.text('Dispatch Doc No.', rightX, startY + 35 + 4);
-  doc.text('Delivery Note Date', col2X, startY + 35 + 4);
-  
-  doc.text('Dispatched through', rightX, startY + 35 + 14);
-  doc.text('Destination', col2X, startY + 35 + 14);
-
-  doc.text('Terms of Delivery', rightX, startY + 35 + 24);
-
-  const tableStartY = startY + 65;
-  const items = options.items || [];
-  const rows = items.map((line, index) => {
-    const item = options.itemMap.get(line.itemId);
-    const unit = line.enteredUnit || item?.unit || 'KG';
-    const qty = line.enteredQuantity || line.baseQuantity || 0;
-    const rate = line.rate || (qty > 0 ? line.amount / qty : 0);
+  const tableData = (options.items || []).map((item, index) => {
+    const itemData = options.itemMap.get(item.itemId);
+    const desc = item.itemNameSnapshot || itemData?.name || 'Item';
+    const hsn = (itemData as any)?.hsnCode || '7214';
+    const unit = item.enteredUnit || itemData?.unit || 'KG';
+    const qty = item.enteredQuantity || item.baseQuantity || 0;
+    const rate = item.rate || (qty > 0 ? item.amount / qty : 0);
+    
     return [
       (index + 1).toString(),
-      line.itemNameSnapshot || item?.name || 'Unknown item',
-      '-', // HSN/SAC
-      qty.toLocaleString('en-IN', { maximumFractionDigits: 3 }),
-      rate.toFixed(2), // Rate
+      desc,
+      hsn,
+      `${qty.toLocaleString('en-IN', { maximumFractionDigits: 3 })} ${unit}`,
+      rate.toFixed(2),
       unit,
-      line.amount.toFixed(2)
+      item.amount.toFixed(2)
     ];
   });
-  
-  // Empty rows to stretch table to bottom
-  while(rows.length < 10) {
-    rows.push(['', '', '', '', '', '', '']);
-  }
+
+  const taxSummary = calculateInvoiceTaxBreakdown({
+    items: options.items,
+    itemsMaster: Array.from(options.itemMap.values()),
+    additionalCostFinal: options.additionalCost,
+    partyState: options.partyState,
+    companyState: options.state || 'West Bengal',
+    customRoundOff: options.roundOff ?? options.roundOffAdjustment
+  })
+
+  const taxable = options.taxableAmount ?? taxSummary.taxableAmount
+  const isInterState = taxSummary.isInterState
+  const cgstRate = options.cgstRate ?? taxSummary.cgstRate
+  const cgstAmount = options.cgstAmount ?? taxSummary.cgstAmount
+  const sgstRate = options.sgstRate ?? taxSummary.sgstRate
+  const sgstAmount = options.sgstAmount ?? taxSummary.sgstAmount
+  const igstRate = options.igstRate ?? taxSummary.igstRate
+  const igstAmount = options.igstAmount ?? taxSummary.igstAmount
+  const roundOff = options.roundOff ?? options.roundOffAdjustment ?? taxSummary.roundOff
 
   autoTable(doc, {
-    startY: tableStartY,
-    head: [['Sl\\nNo.', 'Description of Goods', 'HSN/SAC', 'Quantity', 'Rate', 'per', 'Amount']],
-    body: rows,
-    theme: 'grid',
-    headStyles: {
-      fillColor: [255, 255, 255],
-      textColor: [0, 0, 0],
-      lineColor: [0, 0, 0],
+    startY: startY + 65,
+    head: [['Sl\nNo.', 'Description of Goods', 'HSN/SAC', 'Quantity', 'Rate', 'per', 'Amount']],
+    body: tableData,
+    theme: 'plain',
+    styles: {
+      fontSize: 8,
+      cellPadding: 2,
+      lineColor: 0,
       lineWidth: 0.3,
+      textColor: 0
+    },
+    headStyles: {
+      fillColor: [245, 245, 245],
       fontStyle: 'bold',
       halign: 'center',
-      fontSize: 8
-    },
-    bodyStyles: {
-      textColor: [0, 0, 0],
-      lineColor: [0, 0, 0],
-      lineWidth: 0.3,
-      fontSize: 8,
-      minCellHeight: 8
+      valign: 'middle'
     },
     columnStyles: {
       0: { cellWidth: 10, halign: 'center' },
@@ -1132,35 +1129,73 @@ function exportStyledInvoicePDF(options: StyledInvoiceOptions) {
 
   const finalY = (doc as any).lastAutoTable.finalY;
 
-  // Add additional rows for Subtotal, Discount, Additional Cost, Round Off
   let currentY = finalY;
-  const rightColX = pageWidth - margin - 35; // Matches amount column
-  
-  if (options.additionalCost && options.additionalCost > 0) {
-    doc.setDrawColor(0, 0, 0);
-    doc.setLineWidth(0.3);
-    doc.rect(margin, currentY, contentWidth, 8);
-    doc.line(pageWidth - margin - 35, currentY, pageWidth - margin - 35, currentY + 8);
-    
-    doc.setFont('helvetica', 'bold');
-    const costLabel = options.additionalCostRemarks 
-      ? `Additional Cost (${options.additionalCostRemarks})` 
-      : 'Additional Cost';
-    doc.text(costLabel, pageWidth - margin - 40, currentY + 5, { align: 'right' });
-    doc.text(options.additionalCost.toFixed(2), pageWidth - margin - 2, currentY + 5, { align: 'right' });
-    
-    currentY += 8;
-  }
 
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.3);
+  doc.rect(margin, currentY, contentWidth, 7);
+  doc.line(pageWidth - margin - 35, currentY, pageWidth - margin - 35, currentY + 7);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.text('Taxable Value', pageWidth - margin - 40, currentY + 4.5, { align: 'right' });
+  doc.text(taxable.toFixed(2), pageWidth - margin - 2, currentY + 4.5, { align: 'right' });
+  currentY += 7;
+
+  if (!isInterState) {
+    doc.rect(margin, currentY, contentWidth, 7);
+    doc.line(pageWidth - margin - 35, currentY, pageWidth - margin - 35, currentY + 7);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(`CGST @ ${cgstRate}%`, pageWidth - margin - 40, currentY + 4.5, { align: 'right' });
+    doc.text(cgstAmount.toFixed(2), pageWidth - margin - 2, currentY + 4.5, { align: 'right' });
+    currentY += 7;
+
+    doc.rect(margin, currentY, contentWidth, 7);
+    doc.line(pageWidth - margin - 35, currentY, pageWidth - margin - 35, currentY + 7);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(`SGST @ ${sgstRate}%`, pageWidth - margin - 40, currentY + 4.5, { align: 'right' });
+    doc.text(sgstAmount.toFixed(2), pageWidth - margin - 2, currentY + 4.5, { align: 'right' });
+    currentY += 7;
+  } else {
+    doc.rect(margin, currentY, contentWidth, 7);
+    doc.line(pageWidth - margin - 35, currentY, pageWidth - margin - 35, currentY + 7);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text(`IGST @ ${igstRate}%`, pageWidth - margin - 40, currentY + 4.5, { align: 'right' });
+    doc.text(igstAmount.toFixed(2), pageWidth - margin - 2, currentY + 4.5, { align: 'right' });
+    currentY += 7;
+  }
+
+  if (options.additionalCost && options.additionalCost > 0) {
+    doc.rect(margin, currentY, contentWidth, 7);
+    doc.line(pageWidth - margin - 35, currentY, pageWidth - margin - 35, currentY + 7);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    const costLabel = options.additionalCostRemarks 
+      ? `Additional Cost (${options.additionalCostRemarks})` 
+      : 'Additional Cost';
+    doc.text(costLabel, pageWidth - margin - 40, currentY + 4.5, { align: 'right' });
+    doc.text(options.additionalCost.toFixed(2), pageWidth - margin - 2, currentY + 4.5, { align: 'right' });
+    currentY += 7;
+  }
+
+  if (Math.abs(roundOff) >= 0.01) {
+    doc.rect(margin, currentY, contentWidth, 7);
+    doc.line(pageWidth - margin - 35, currentY, pageWidth - margin - 35, currentY + 7);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(8);
+    doc.text('Round Off', pageWidth - margin - 40, currentY + 4.5, { align: 'right' });
+    doc.text(`${roundOff >= 0 ? '+' : ''}${roundOff.toFixed(2)}`, pageWidth - margin - 2, currentY + 4.5, { align: 'right' });
+    currentY += 7;
+  }
+
   doc.rect(margin, currentY, contentWidth, 8);
   doc.line(pageWidth - margin - 35, currentY, pageWidth - margin - 35, currentY + 8);
-  
   doc.setFont('helvetica', 'bold');
-  doc.text('Total', pageWidth - margin - 40, currentY + 5, { align: 'right' });
-  doc.text(options.invoiceAmount.toFixed(2), pageWidth - margin - 2, currentY + 5, { align: 'right' });
-  
+  doc.setFontSize(8.5);
+  doc.text('Total', pageWidth - margin - 40, currentY + 5.5, { align: 'right' });
+  doc.text(options.invoiceAmount.toFixed(2), pageWidth - margin - 2, currentY + 5.5, { align: 'right' });
   currentY += 8;
 
   if (options.paidAmount) {
@@ -1168,6 +1203,7 @@ function exportStyledInvoicePDF(options: StyledInvoiceOptions) {
     doc.line(pageWidth - margin - 35, currentY, pageWidth - margin - 35, currentY + 8);
     
     doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
     const label = options.paymentCounterName 
       ? `Cash In (${options.paymentCounterName})` 
       : 'Amount Received / Paid';
@@ -1188,6 +1224,7 @@ function exportStyledInvoicePDF(options: StyledInvoiceOptions) {
     doc.line(pageWidth - margin - 35, currentY, pageWidth - margin - 35, currentY + 8);
     
     doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
     doc.text('Advance Applied', pageWidth - margin - 40, currentY + 5, { align: 'right' });
     doc.text(options.advancePayment.allocatedAmount.toFixed(2), pageWidth - margin - 2, currentY + 5, { align: 'right' });
     
@@ -1202,18 +1239,15 @@ function exportStyledInvoicePDF(options: StyledInvoiceOptions) {
     currentY += 8;
   }
 
-  // Amount in words
   doc.rect(margin, currentY, contentWidth, 15);
   doc.setFont('helvetica', 'normal');
   doc.text('Amount Chargeable (in words)', margin + 2, currentY + 4);
   doc.setFont('helvetica', 'bold');
   
-  // Use amountToWords
   doc.text(amountToWords(options.invoiceAmount), margin + 2, currentY + 10);
   
   currentY += 15;
 
-  // Footer / Declaration
   const footerHeight = 35;
   doc.rect(margin, currentY, contentWidth, footerHeight);
   doc.line(margin + contentWidth / 2, currentY, margin + contentWidth / 2, currentY + footerHeight);
@@ -1234,6 +1268,7 @@ function exportStyledInvoicePDF(options: StyledInvoiceOptions) {
   const safeInvoiceNo = options.invoiceNo.replace(/[^a-z0-9_-]+/gi, '_');
   doc.save(`${options.filePrefix}_${safeInvoiceNo}.pdf`);
 }
+
 export function exportPurchaseInvoicePDF(
   invoice: PurchaseInvoice,
   supplier: Supplier | undefined,
@@ -1261,6 +1296,8 @@ export function exportPurchaseInvoicePDF(
     partyName: supplier?.name || 'Unknown Supplier',
     partyAddress: supplier?.address,
     partyPhone: supplier?.phone,
+    partyState: supplier?.state,
+    partyGstin: supplier?.gstin,
     businessName: options.businessName || 'SK TRADERS',
     state: options.state,
     phone: options.phone,
@@ -1268,6 +1305,14 @@ export function exportPurchaseInvoicePDF(
     itemMap,
     totalQuantity: getInvoiceQtyForUnit(invoice, 'MT', itemMap),
     invoiceAmount: invoice.invoiceAmount,
+    taxableAmount: invoice.taxableAmount,
+    cgstRate: invoice.cgstRate,
+    cgstAmount: invoice.cgstAmount,
+    sgstRate: invoice.sgstRate,
+    sgstAmount: invoice.sgstAmount,
+    igstRate: invoice.igstRate,
+    igstAmount: invoice.igstAmount,
+    roundOff: invoice.roundOff,
     additionalCost: invoice.additionalCost,
     additionalCostRemarks: invoice.additionalCostRemarks,
     roundOffAdjustment: invoice.roundOffAdjustment || 0,
@@ -1297,6 +1342,8 @@ export function exportSalesInvoicePDF(
     partyName: customer?.name || 'Unknown Customer',
     partyAddress: customer?.address,
     partyPhone: customer?.phone,
+    partyState: customer?.state,
+    partyGstin: customer?.gstin,
     businessName: options.businessName || 'SK TRADERS',
     state: options.state,
     phone: options.phone,
@@ -1304,6 +1351,14 @@ export function exportSalesInvoicePDF(
     itemMap,
     totalQuantity: getInvoiceQtyForUnit(invoice, 'MT', itemMap),
     invoiceAmount: invoice.invoiceAmount,
+    taxableAmount: invoice.taxableAmount,
+    cgstRate: invoice.cgstRate,
+    cgstAmount: invoice.cgstAmount,
+    sgstRate: invoice.sgstRate,
+    sgstAmount: invoice.sgstAmount,
+    igstRate: invoice.igstRate,
+    igstAmount: invoice.igstAmount,
+    roundOff: invoice.roundOff,
     additionalCost: invoice.additionalCost,
     additionalCostRemarks: invoice.additionalCostRemarks,
     roundOffAdjustment: invoice.roundOffAdjustment || 0,
@@ -1959,7 +2014,7 @@ export function exportDrawingPowerPDF(options: DrawingPowerExportOptions) {
       }
     },
     margin: { left: 18, right: 18 }
-  })
+  } as any)
 
   let currentY = (doc as any).lastAutoTable.finalY + 10
 

@@ -6,7 +6,9 @@ import {
   calculateBookingConsumedMT,
   calculateBookingConsumption,
   getBookingNormalizedMT,
-  formatCurrency
+  formatCurrency,
+  calculateInvoiceTaxBreakdown,
+  isInterStateTransaction
 } from './calculations'
 import { convertItemQuantity, getInvoiceQtyForUnit, isUnitCompatible } from './unit-conversion-service'
 import { Payment, PurchaseInvoice, Supplier } from './types'
@@ -527,5 +529,100 @@ describe('unit conversion and scheme discount calculation', () => {
 
     const activeSchemeDiscount = discounts.find(d => d.schemeId === 'scheme-active-1')
     expect(activeSchemeDiscount).toBeUndefined()
+  })
+})
+
+describe('calculateInvoiceTaxBreakdown & isInterStateTransaction', () => {
+  it('correctly classifies intra-state and inter-state transactions', () => {
+    // Intra-state (West Bengal / WB / empty)
+    expect(isInterStateTransaction('West Bengal', 'West Bengal')).toBe(false)
+    expect(isInterStateTransaction('WB', 'West Bengal')).toBe(false)
+    expect(isInterStateTransaction('19', 'West Bengal')).toBe(false)
+    expect(isInterStateTransaction(undefined, 'West Bengal')).toBe(false)
+    expect(isInterStateTransaction('', 'West Bengal')).toBe(false)
+
+    // Inter-state (other states)
+    expect(isInterStateTransaction('Maharashtra', 'West Bengal')).toBe(true)
+    expect(isInterStateTransaction('Odisha', 'West Bengal')).toBe(true)
+    expect(isInterStateTransaction('Jharkhand', 'West Bengal')).toBe(true)
+    expect(isInterStateTransaction('Delhi', 'West Bengal')).toBe(true)
+  })
+
+  it('calculates intra-state tax split as CGST (9%) + SGST (9%), IGST = 0', () => {
+    // 10 MT @ ₹50,000 basic = ₹500,000 taxable
+    const result = calculateInvoiceTaxBreakdown({
+      items: [
+        {
+          itemId: 'item-1',
+          enteredQuantity: 10,
+          basicRate: 50000,
+          amount: 590000
+        }
+      ],
+      partyState: 'West Bengal',
+      companyState: 'West Bengal'
+    })
+
+    expect(result.isInterState).toBe(false)
+    expect(result.taxableAmount).toBe(500000)
+    expect(result.cgstRate).toBe(9)
+    expect(result.cgstAmount).toBe(45000) // 500,000 * 9%
+    expect(result.sgstRate).toBe(9)
+    expect(result.sgstAmount).toBe(45000) // 500,000 * 9%
+    expect(result.igstRate).toBe(0)
+    expect(result.igstAmount).toBe(0)
+    expect(result.totalTaxAmount).toBe(90000)
+    expect(result.totalAmount).toBe(590000)
+  })
+
+  it('calculates inter-state tax split as IGST (18%), CGST = 0, SGST = 0', () => {
+    // 10 MT @ ₹50,000 basic = ₹500,000 taxable
+    const result = calculateInvoiceTaxBreakdown({
+      items: [
+        {
+          itemId: 'item-1',
+          enteredQuantity: 10,
+          basicRate: 50000,
+          amount: 590000
+        }
+      ],
+      partyState: 'Odisha',
+      companyState: 'West Bengal'
+    })
+
+    expect(result.isInterState).toBe(true)
+    expect(result.taxableAmount).toBe(500000)
+    expect(result.cgstRate).toBe(0)
+    expect(result.cgstAmount).toBe(0)
+    expect(result.sgstRate).toBe(0)
+    expect(result.sgstAmount).toBe(0)
+    expect(result.igstRate).toBe(18)
+    expect(result.igstAmount).toBe(90000) // 500,000 * 18%
+    expect(result.totalTaxAmount).toBe(90000)
+    expect(result.totalAmount).toBe(590000)
+  })
+
+  it('deducts discounts and accounts for additional cost basic rate with proper rounding', () => {
+    // Taxable = (10 * 10,000) - 5,000 discount + 2,500 additional cost basic = ₹97,500
+    const result = calculateInvoiceTaxBreakdown({
+      items: [
+        {
+          itemId: 'item-1',
+          enteredQuantity: 10,
+          basicRate: 10000
+        }
+      ],
+      discountsAmount: 5000,
+      additionalCostBasicRate: 2500,
+      partyState: 'WB'
+    })
+
+    expect(result.taxableAmount).toBe(97500)
+    expect(result.cgstRate).toBe(9)
+    expect(result.cgstAmount).toBe(8775) // 97,500 * 9%
+    expect(result.sgstRate).toBe(9)
+    expect(result.sgstAmount).toBe(8775)
+    expect(result.totalTaxAmount).toBe(17550)
+    expect(result.totalAmount).toBe(115050) // 97,500 + 17,550
   })
 })

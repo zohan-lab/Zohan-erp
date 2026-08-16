@@ -166,6 +166,20 @@ export interface Customer {
   balanceType?: 'Credit' | 'Debit'
 }
 
+export interface InvoiceTaxSummary {
+  taxableAmount: number
+  isInterState: boolean
+  cgstRate: number
+  cgstAmount: number
+  sgstRate: number
+  sgstAmount: number
+  igstRate: number
+  igstAmount: number
+  totalTaxAmount: number
+  roundOff: number
+  totalAmount: number
+}
+
 export interface InvoiceItem {
   itemId: string
   enteredQuantity: number
@@ -179,6 +193,15 @@ export interface InvoiceItem {
   enteredRate?: number
   itemNameSnapshot?: string
   itemUnitSnapshot?: string
+  taxableAmount?: number
+  gstRate?: number
+  cgstRate?: number
+  cgstAmount?: number
+  sgstRate?: number
+  sgstAmount?: number
+  igstRate?: number
+  igstAmount?: number
+  discountAmount?: number
 }
 
 export interface PurchaseInvoice {
@@ -193,6 +216,18 @@ export interface PurchaseInvoice {
   additionalCostBasicRate?: number
   additionalCostRemarks?: string
   roundOffAdjustment?: number
+
+  // Structured GST tax breakdown
+  taxableAmount?: number
+  cgstRate?: number
+  cgstAmount?: number
+  sgstRate?: number
+  sgstAmount?: number
+  igstRate?: number
+  igstAmount?: number
+  roundOff?: number
+  totalAmount?: number
+  isInterState?: boolean
 
   fy: string
   createdAt?: number
@@ -314,6 +349,18 @@ export interface SalesInvoice {
   additionalCostBasicRate?: number
   additionalCostRemarks?: string
   roundOffAdjustment?: number
+
+  // Structured GST tax breakdown
+  taxableAmount?: number
+  cgstRate?: number
+  cgstAmount?: number
+  sgstRate?: number
+  sgstAmount?: number
+  igstRate?: number
+  igstAmount?: number
+  roundOff?: number
+  totalAmount?: number
+  isInterState?: boolean
 
   fy: string
   history?: EditHistoryLog[]

@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { formatCurrency } from '@/lib/calculations'
+import { formatCurrency, calculateInvoiceTaxBreakdown } from '@/lib/calculations'
 import { Item, InvoiceItem } from '@/lib/types'
 
 interface InvoicePreviewDialogProps {
@@ -12,9 +12,18 @@ interface InvoicePreviewDialogProps {
   partyName: string
   partyAddress?: string
   partyPhone?: string
+  partyState?: string
   items: InvoiceItem[]
   itemMap: Map<string, Item>
   totalAmount: number
+  taxableAmount?: number
+  cgstRate?: number
+  cgstAmount?: number
+  sgstRate?: number
+  sgstAmount?: number
+  igstRate?: number
+  igstAmount?: number
+  roundOff?: number
   additionalCost?: number
   additionalCostRemarks?: string
   paidAmount?: number
@@ -39,16 +48,41 @@ export function InvoicePreviewDialog({
   partyName,
   partyAddress,
   partyPhone,
+  partyState,
   items,
   itemMap,
   totalAmount,
+  taxableAmount: propTaxable,
+  cgstRate: propCgstRate,
+  cgstAmount: propCgstAmount,
+  sgstRate: propSgstRate,
+  sgstAmount: propSgstAmount,
+  igstRate: propIgstRate,
+  igstAmount: propIgstAmount,
+  roundOff: propRoundOff,
   additionalCost,
   additionalCostRemarks,
   paidAmount
 }: InvoicePreviewDialogProps) {
   const businessName = getActiveBusinessName()
   const title = 'INVOICE'
-  const subtotal = additionalCost && additionalCost > 0 ? totalAmount - additionalCost : totalAmount
+
+  const taxSummary = calculateInvoiceTaxBreakdown({
+    items,
+    itemsMaster: Array.from(itemMap.values()),
+    additionalCostFinal: additionalCost,
+    partyState: partyState
+  })
+
+  const taxable = propTaxable !== undefined ? propTaxable : taxSummary.taxableAmount
+  const isInterState = taxSummary.isInterState
+  const cgstRate = propCgstRate !== undefined ? propCgstRate : taxSummary.cgstRate
+  const cgstAmount = propCgstAmount !== undefined ? propCgstAmount : taxSummary.cgstAmount
+  const sgstRate = propSgstRate !== undefined ? propSgstRate : taxSummary.sgstRate
+  const sgstAmount = propSgstAmount !== undefined ? propSgstAmount : taxSummary.sgstAmount
+  const igstRate = propIgstRate !== undefined ? propIgstRate : taxSummary.igstRate
+  const igstAmount = propIgstAmount !== undefined ? propIgstAmount : taxSummary.igstAmount
+  const roundOff = propRoundOff !== undefined ? propRoundOff : taxSummary.roundOff
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -149,20 +183,41 @@ export function InvoicePreviewDialog({
                 ))}
               </tbody>
               <tfoot>
-                {additionalCost && additionalCost > 0 ? (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: 'right' }}>Taxable Value</td>
+                  <td>{formatCurrency(taxable)}</td>
+                </tr>
+                {!isInterState ? (
                   <>
                     <tr>
-                      <td colSpan={5} style={{ textAlign: 'right' }}>Subtotal</td>
-                      <td>{formatCurrency(subtotal)}</td>
+                      <td colSpan={5} style={{ textAlign: 'right' }}>CGST @ {cgstRate}%</td>
+                      <td>{formatCurrency(cgstAmount)}</td>
                     </tr>
                     <tr>
-                      <td colSpan={5} style={{ textAlign: 'right' }}>
-                        Additional Cost {additionalCostRemarks ? `(${additionalCostRemarks})` : ''}
-                      </td>
-                      <td>{formatCurrency(additionalCost)}</td>
+                      <td colSpan={5} style={{ textAlign: 'right' }}>SGST @ {sgstRate}%</td>
+                      <td>{formatCurrency(sgstAmount)}</td>
                     </tr>
                   </>
+                ) : (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: 'right' }}>IGST @ {igstRate}%</td>
+                    <td>{formatCurrency(igstAmount)}</td>
+                  </tr>
+                )}
+                {additionalCost && additionalCost > 0 ? (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: 'right' }}>
+                      Additional Cost {additionalCostRemarks ? `(${additionalCostRemarks})` : ''}
+                    </td>
+                    <td>{formatCurrency(additionalCost)}</td>
+                  </tr>
                 ) : null}
+                {roundOff !== 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: 'right' }}>Round Off</td>
+                    <td>{roundOff >= 0 ? '+' : ''}{formatCurrency(roundOff)}</td>
+                  </tr>
+                )}
                 <tr>
                   <td colSpan={5} style={{ textAlign: 'right', fontWeight: 'bold' }}>Total</td>
                   <td style={{ fontWeight: 'bold' }}>{formatCurrency(totalAmount)}</td>
