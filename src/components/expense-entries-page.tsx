@@ -83,7 +83,7 @@ export default function ExpenseEntriesPage({
   const [supplierId, setSupplierId] = useState('')
   const [linkedInvoiceId, setLinkedInvoiceId] = useState('')
   const [invoiceSearchOpen, setInvoiceSearchOpen] = useState(false)
-  const [supplierSearchOpen, setSupplierSearchOpen] = useState(false)
+  const [payeeInputFocused, setPayeeInputFocused] = useState(false)
   const [notes, setNotes] = useState('')
 
   // GST & ITC Statutory Fields (Configured by Master Category, loaded in background)
@@ -149,6 +149,57 @@ export default function ExpenseEntriesPage({
     }
   }
 
+  // Aggregated payee list from verified Suppliers + Prior Expense entries
+  const payeeSuggestions = useMemo(() => {
+    const map = new Map<string, { id?: string; name: string; gstin?: string; stateCode?: string; source: 'Supplier Master' | 'Previous Payee' }>()
+
+    // Prior Expense Entries
+    expenseEntries.forEach((e) => {
+      const clean = (e.supplierName || '').trim()
+      if (clean && !map.has(clean.toLowerCase())) {
+        map.set(clean.toLowerCase(), {
+          name: clean,
+          gstin: e.supplierGstin,
+          stateCode: e.supplierStateCode,
+          source: 'Previous Payee'
+        })
+      }
+    })
+
+    // Verified Supplier Master (higher priority)
+    suppliers.forEach((s) => {
+      const clean = (s.name || '').trim()
+      if (clean) {
+        map.set(clean.toLowerCase(), {
+          id: s.id,
+          name: clean,
+          gstin: s.gstin,
+          stateCode: s.stateCode,
+          source: 'Supplier Master'
+        })
+      }
+    })
+
+    return Array.from(map.values())
+  }, [suppliers, expenseEntries])
+
+  // Matching payees when at least 1 character is typed
+  const matchingPayees = useMemo(() => {
+    const q = supplierName.trim().toLowerCase()
+    if (q.length < 1) return []
+    return payeeSuggestions.filter((p) => p.name.toLowerCase().includes(q))
+  }, [supplierName, payeeSuggestions])
+
+  const showPayeeSuggestions = payeeInputFocused && supplierName.trim().length >= 1
+
+  const handleSelectPayee = (item: { id?: string; name: string; gstin?: string; stateCode?: string }) => {
+    setSupplierName(item.name)
+    if (item.id) setSupplierId(item.id)
+    if (item.gstin) handleGstinChange(item.gstin)
+    if (item.stateCode) setSupplierStateCode(item.stateCode)
+    setPayeeInputFocused(false)
+  }
+
   // Real-time GST calculation preview in background
   const taxBreakdown = useMemo(() => {
     return calculateExpenseTaxBreakdown({
@@ -183,6 +234,7 @@ export default function ExpenseEntriesPage({
     setGstRate(18)
     setIsItcEligible(true)
     setItcType('Input Services')
+    setPayeeInputFocused(false)
   }
 
   // Edit Expense Entry
@@ -824,57 +876,62 @@ export default function ExpenseEntriesPage({
               {/* Clean 4-Field Grid: Vendor Name, Vendor GSTIN, POS State, Invoice No & Date */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
                 
-                {/* Vendor Name Combobox / Free text */}
-                <div className="space-y-1">
+                {/* Vendor / Payee Hybrid Auto-Suggest Input */}
+                <div className="space-y-1 relative">
                   <Label className="text-[11px] font-bold text-slate-700">Vendor / Payee Name</Label>
-                  <Popover open={supplierSearchOpen} onOpenChange={setSupplierSearchOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        role="combobox"
-                        className="w-full h-8.5 justify-between text-xs bg-white font-medium truncate"
-                      >
-                        {supplierName || "Type or select vendor..."}
-                        <CaretUpDown className="ml-1 h-3.5 w-3.5 shrink-0 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[320px] p-0" align="start">
-                      <Command>
-                        <CommandInput 
-                          placeholder="Search or enter vendor name..." 
-                          value={supplierName}
-                          onValueChange={setSupplierName}
-                          className="h-8 text-xs" 
-                        />
-                        <CommandList className="max-h-[200px] overflow-y-auto">
-                          <CommandEmpty className="p-2 text-center text-xs text-slate-500">
-                            Press Enter to use "{supplierName}"
-                          </CommandEmpty>
-                          <CommandGroup heading="Existing Suppliers">
-                            {suppliers.map((s) => (
-                              <CommandItem
-                                key={s.id}
-                                value={`${s.name} ${s.gstin || ''}`}
-                                onSelect={() => {
-                                  setSupplierId(s.id)
-                                  setSupplierName(s.name)
-                                  if (s.gstin) handleGstinChange(s.gstin)
-                                  if (s.stateCode) setSupplierStateCode(s.stateCode)
-                                  setSupplierSearchOpen(false)
-                                }}
-                                className="text-xs cursor-pointer py-1.5 px-2.5"
-                              >
-                                <div className="flex items-center justify-between w-full">
-                                  <span className="font-bold text-slate-900">{s.name}</span>
-                                  <span className="text-[10px] text-slate-400 font-mono">{s.gstin || 'Unregistered'}</span>
-                                </div>
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
+                  <div className="relative">
+                    <Input
+                      type="text"
+                      placeholder="Enter vendor or payee name..."
+                      value={supplierName}
+                      onChange={(e) => {
+                        setSupplierName(e.target.value)
+                        setPayeeInputFocused(true)
+                      }}
+                      onFocus={() => setPayeeInputFocused(true)}
+                      onBlur={() => {
+                        setTimeout(() => setPayeeInputFocused(false), 200)
+                      }}
+                      className="h-8.5 text-xs bg-white font-medium"
+                    />
+
+                    {/* Lightweight Floating Popover List (1-2+ chars typed) */}
+                    {showPayeeSuggestions && matchingPayees.length > 0 && (
+                      <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-xl shadow-xl border border-slate-200 z-50 overflow-hidden max-h-[220px] overflow-y-auto divide-y divide-slate-100 animate-in fade-in-50 duration-100">
+                        <div className="px-2.5 py-1 bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          Suggested Payees ({matchingPayees.length})
+                        </div>
+                        {matchingPayees.map((item, idx) => (
+                          <div
+                            key={`${item.name}-${idx}`}
+                            onMouseDown={(e) => {
+                              e.preventDefault()
+                              handleSelectPayee(item)
+                            }}
+                            className="px-3 py-2 text-xs hover:bg-indigo-50/70 cursor-pointer flex items-center justify-between transition-colors"
+                          >
+                            <div className="truncate mr-2">
+                              <p className="font-bold text-slate-900 truncate">{item.name}</p>
+                              <p className="text-[10px] text-slate-400 font-mono">
+                                {item.gstin ? `GSTIN: ${item.gstin}` : 'Unregistered'}
+                                {item.stateCode ? ` · ${getStateName(item.stateCode)}` : ''}
+                              </p>
+                            </div>
+                            <Badge
+                              variant="outline"
+                              className={`text-[9px] font-semibold shrink-0 ${
+                                item.source === 'Supplier Master'
+                                  ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                  : 'bg-slate-50 text-slate-600 border-slate-200'
+                              }`}
+                            >
+                              {item.source}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Vendor GSTIN */}
