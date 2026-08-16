@@ -643,6 +643,7 @@ import {
   decodeXmlFileBuffer,
   TallyParsedXmlVoucher
 } from '@/lib/tally-xml-parser'
+import { Counter, CashBankTransaction } from '@/lib/cash-bank-types'
 
 export interface TallyImportDialogProps {
   open: boolean
@@ -651,6 +652,7 @@ export interface TallyImportDialogProps {
   suppliers?: Supplier[]
   items?: Item[]
   expenseTypes?: ExpenseType[]
+  counters?: Counter[]
   onCommitImport?: (
     newPayments: Payment[],
     newCustomerPayments: CustomerPayment[],
@@ -660,6 +662,8 @@ export interface TallyImportDialogProps {
       purchaseInvoices?: PurchaseInvoice[]
       creditNotes?: CustomerCreditNote[]
       debitNotes?: SupplierDebitNote[]
+      expenseEntries?: ExpenseEntry[]
+      cashBankTransactions?: CashBankTransaction[]
     }
   ) => void
 }
@@ -671,6 +675,7 @@ export function TallyImportDialog({
   suppliers = [],
   items = [],
   expenseTypes = [],
+  counters = [],
   onCommitImport
 }: TallyImportDialogProps) {
   const [parsedVouchers, setParsedVouchers] = useState<TallyParsedXmlVoucher[]>([])
@@ -681,6 +686,8 @@ export function TallyImportDialog({
 
   const supplierMap = useMemo(() => new Map(suppliers.map(s => [s.name.trim().toLowerCase(), s])), [suppliers])
   const customerMap = useMemo(() => new Map(customers.map(c => [c.name.trim().toLowerCase(), c])), [customers])
+  const counterMap = useMemo(() => new Map(counters.map(c => [c.name.trim().toLowerCase(), c])), [counters])
+  const expenseTypeMap = useMemo(() => new Map(expenseTypes.map(e => [e.name.trim().toLowerCase(), e])), [expenseTypes])
   const itemMap = useMemo(() => {
     const map = new Map(items.map(it => [it.name.trim().toLowerCase(), it]))
     items.forEach(it => {
@@ -694,8 +701,39 @@ export function TallyImportDialog({
       const normParty = v.partyName.trim().toLowerCase()
       let matchedEntityType = v.matchedEntityType || 'unmapped'
       let matchedEntityId = v.matchedEntityId
+      let contraDetails = v.contraDetails
+      let expenseDetails = v.expenseDetails
 
-      if (matchedEntityType === 'unmapped') {
+      if (v.normalizedType === 'contra') {
+        const fromName = v.contraDetails?.fromCounterName || v.legs.find(l => l.drCr === 'Cr')?.ledgerName || ''
+        const toName = v.contraDetails?.toCounterName || v.legs.find(l => l.drCr === 'Dr')?.ledgerName || ''
+        const fromId = counterMap.get(fromName.trim().toLowerCase())?.id
+        const toId = counterMap.get(toName.trim().toLowerCase())?.id
+
+        contraDetails = {
+          fromCounterName: fromName,
+          toCounterName: toName,
+          fromCounterId: fromId,
+          toCounterId: toId,
+          amount: v.totalAmount
+        }
+
+        if (counters.length > 0) {
+          if (fromId && toId) {
+            matchedEntityType = 'counter'
+            matchedEntityId = toId
+          } else {
+            matchedEntityType = 'unmapped'
+          }
+        } else {
+          matchedEntityType = 'counter'
+        }
+      } else if (v.normalizedType === 'expense') {
+        if (expenseTypeMap.has(normParty)) {
+          matchedEntityType = 'expense'
+          matchedEntityId = expenseTypeMap.get(normParty)?.id
+        }
+      } else if (matchedEntityType === 'unmapped') {
         if (customerMap.has(normParty)) {
           matchedEntityType = 'customer'
           matchedEntityId = customerMap.get(normParty)?.id
@@ -711,7 +749,9 @@ export function TallyImportDialog({
       let unmappedReason = v.skipReason
 
       if (v.normalizedType !== 'skipped') {
-        if (matchedEntityType === 'unmapped') {
+        if (v.normalizedType === 'contra' && matchedEntityType === 'unmapped') {
+          unmappedReason = `Unmapped Counter: ${!contraDetails?.fromCounterId ? contraDetails?.fromCounterName : contraDetails?.toCounterName}`
+        } else if (matchedEntityType === 'unmapped') {
           unmappedReason = `Unmapped Master: ${v.partyName}`
         } else if (hasUnmappedItem) {
           unmappedReason = `Unmapped Item: ${unmappedItems.map(i => i.itemName).join(', ')}`
@@ -722,12 +762,14 @@ export function TallyImportDialog({
         ...v,
         matchedEntityType,
         matchedEntityId,
+        contraDetails,
+        expenseDetails,
         hasUnmappedItem,
         unmappedItemNames: unmappedItems.map(i => i.itemName),
         skipReason: unmappedReason
       }
     })
-  }, [parsedVouchers, supplierMap, customerMap, itemMap])
+  }, [parsedVouchers, supplierMap, customerMap, counterMap, expenseTypeMap, itemMap, counters.length])
 
   const validCount = processedList.filter(v => v.normalizedType !== 'skipped' && v.matchedEntityType !== 'unmapped' && !v.hasUnmappedItem).length
   const unmappedCount = processedList.filter(v => v.normalizedType !== 'skipped' && (v.matchedEntityType === 'unmapped' || v.hasUnmappedItem)).length
@@ -756,7 +798,8 @@ export function TallyImportDialog({
           customers,
           suppliers,
           items,
-          expenseTypes
+          expenseTypes,
+          counters
         })
 
         setParsedVouchers(result.vouchers)
@@ -774,8 +817,9 @@ export function TallyImportDialog({
           customers,
           suppliers,
           items,
-          expenseTypes
-        })
+          expenseTypes,
+          counters
+        } as any)
 
         setParsedVouchers(result.vouchers)
 
@@ -817,6 +861,8 @@ export function TallyImportDialog({
     const newPurchaseInvoices: PurchaseInvoice[] = []
     const newCreditNotes: CustomerCreditNote[] = []
     const newDebitNotes: SupplierDebitNote[] = []
+    const newExpenseEntries: ExpenseEntry[] = []
+    const newCashBankTransactions: CashBankTransaction[] = []
     let skipped = 0
 
     processedList.forEach((v, idx) => {
@@ -836,6 +882,40 @@ export function TallyImportDialog({
           notes: `Imported from Tally Voucher #${v.voucherNumber}`,
           createdAt: Date.now()
         } as any)
+      } else if (v.normalizedType === 'expense') {
+        const crLeg = v.legs.find(l => l.drCr === 'Cr')
+        newExpenseEntries.push({
+          id: `tally-exp-${Date.now()}-${idx}`,
+          date: v.voucherDate || new Date().toISOString().split('T')[0],
+          expenseDate: v.voucherDate || new Date().toISOString().split('T')[0],
+          categoryId: v.expenseDetails?.categoryId || v.matchedEntityId || 'exp-cat-general',
+          categoryName: v.expenseDetails?.categoryName || v.partyName,
+          expenseTypeId: v.expenseDetails?.categoryId || v.matchedEntityId || 'exp-cat-general',
+          amount: v.totalAmount,
+          paymentAccountId: crLeg?.ledgerName,
+          paymentAccountName: crLeg?.ledgerName || 'Bank Account',
+          paymentMode: 'Bank',
+          notes: v.narration || `Imported from Tally Expense Voucher #${v.voucherNumber}`,
+          fy: '2025-2026',
+          createdAt: Date.now()
+        } as any)
+      } else if (v.normalizedType === 'contra') {
+        const fromName = v.contraDetails?.fromCounterName || 'Source Counter'
+        const toName = v.contraDetails?.toCounterName || 'Destination Counter'
+        const fromId = v.contraDetails?.fromCounterId || counterMap.get(fromName.trim().toLowerCase())?.id || 'counter-src'
+        const toId = v.contraDetails?.toCounterId || counterMap.get(toName.trim().toLowerCase())?.id || 'counter-dst'
+
+        newCashBankTransactions.push({
+          id: `tally-contra-${Date.now()}-${idx}`,
+          date: v.voucherDate || new Date().toISOString().split('T')[0],
+          counterId: fromId,
+          counterName: fromName,
+          type: 'Transfer',
+          amount: v.totalAmount,
+          toCounterId: toId,
+          toCounterName: toName,
+          narration: v.narration || `Tally Contra Transfer #${v.voucherNumber}`
+        })
       } else if (v.normalizedType === 'receipt' && v.matchedEntityType === 'customer' && v.matchedEntityId) {
         newCustomerPayments.push({
           id: `tally-rec-${Date.now()}-${idx}`,
@@ -905,16 +985,18 @@ export function TallyImportDialog({
       }
     })
 
-    const imported = newPayments.length + newCustomerPayments.length + newSalesInvoices.length + newPurchaseInvoices.length + newCreditNotes.length + newDebitNotes.length
+    const imported = newPayments.length + newCustomerPayments.length + newSalesInvoices.length + newPurchaseInvoices.length + newCreditNotes.length + newDebitNotes.length + newExpenseEntries.length + newCashBankTransactions.length
     
     onCommitImport?.(newPayments, newCustomerPayments, { importedCount: imported, skippedCount: skipped }, {
       salesInvoices: newSalesInvoices,
       purchaseInvoices: newPurchaseInvoices,
       creditNotes: newCreditNotes,
-      debitNotes: newDebitNotes
+      debitNotes: newDebitNotes,
+      expenseEntries: newExpenseEntries,
+      cashBankTransactions: newCashBankTransactions
     })
 
-    toast.success(`Successfully imported ${imported} voucher(s) into ERP ledger accounts`, {
+    toast.success(`Successfully imported ${imported} voucher(s) into ERP accounts`, {
       description: skipped > 0 ? `${skipped} unmapped/journal vouchers skipped per strict master policy` : undefined
     })
 
@@ -932,11 +1014,15 @@ export function TallyImportDialog({
       case 'receipt':
         return <Badge className="bg-violet-100 text-violet-800 border-violet-200 text-[10px] font-bold">Receipt</Badge>
       case 'payment':
-        return <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px] font-bold">Payment</Badge>
+        return <Badge className="bg-orange-100 text-orange-800 border-orange-200 text-[10px] font-bold">Supplier Payment</Badge>
+      case 'expense':
+        return <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px] font-bold">Expense</Badge>
+      case 'contra':
+        return <Badge className="bg-cyan-100 text-cyan-800 border-cyan-200 text-[10px] font-bold">Contra Transfer</Badge>
       case 'credit_note':
         return <Badge className="bg-rose-100 text-rose-800 border-rose-200 text-[10px] font-bold">Credit Note</Badge>
       case 'debit_note':
-        return <Badge className="bg-cyan-100 text-cyan-800 border-cyan-200 text-[10px] font-bold">Debit Note</Badge>
+        return <Badge className="bg-indigo-100 text-indigo-800 border-indigo-200 text-[10px] font-bold">Debit Note</Badge>
       default:
         return <Badge variant="outline" className="text-[10px] text-slate-500">{raw}</Badge>
     }
@@ -1072,6 +1158,10 @@ export function TallyImportDialog({
                           <Badge variant="outline" className="text-[10px] text-amber-700 bg-amber-50 border-amber-200" title={`Unmapped Item: ${v.unmappedItemNames?.join(', ')}`}>
                             Unmapped Item
                           </Badge>
+                        ) : v.normalizedType === 'contra' || v.matchedEntityType === 'counter' ? (
+                          <Badge className="bg-cyan-100 text-cyan-800 text-[10px]">Contra Transfer</Badge>
+                        ) : v.normalizedType === 'expense' || v.matchedEntityType === 'expense' ? (
+                          <Badge className="bg-amber-100 text-amber-800 text-[10px]">Expense Match</Badge>
                         ) : v.matchedEntityType === 'supplier' ? (
                           <Badge className="bg-blue-100 text-blue-800 text-[10px]">Supplier Match</Badge>
                         ) : v.matchedEntityType === 'customer' ? (

@@ -530,4 +530,79 @@ describe('Official 14-Column Tally Prime AccountingVouchers.xlsx Schema & Strict
     expect(unmappedVch?.matchedEntityType).toBe('unmapped')
     expect(unmappedVch?.skipReason).toContain('Unmapped Master: Unknown Foreign Buyer Inc')
   })
+
+  it('parses Contra and Expense vouchers from 14-column Excel correctly', () => {
+    const rawRows = [
+      // 1. Contra Voucher
+      {
+        'Voucher Date': '05-12-2025',
+        'Voucher Type Name': 'Contra',
+        'Voucher Number': '53',
+        'Ledger Name': 'CANARA BANK OD A/C - 125001590160',
+        'Ledger Amount': 50000.00,
+        'Ledger Amount Dr/Cr': 'Cr',
+        'Item Name': '',
+        'Change Mode': 'Accounting Invoice'
+      },
+      {
+        'Voucher Date': '05-12-2025',
+        'Voucher Type Name': 'Contra',
+        'Voucher Number': '53',
+        'Ledger Name': 'Indusind Bank (SB)-159635070410',
+        'Ledger Amount': 50000.00,
+        'Ledger Amount Dr/Cr': 'Dr',
+        'Item Name': '',
+        'Change Mode': 'Accounting Invoice'
+      },
+      // 2. Expense Voucher (Bank Charges)
+      {
+        'Voucher Date': '01-12-2025',
+        'Voucher Type Name': 'Payment',
+        'Voucher Number': '171',
+        'Ledger Name': 'Bank Charges',
+        'Ledger Amount': 2469.00,
+        'Ledger Amount Dr/Cr': 'Dr',
+        'Item Name': '',
+        'Change Mode': 'Accounting Invoice'
+      },
+      {
+        'Voucher Date': '01-12-2025',
+        'Voucher Type Name': 'Payment',
+        'Voucher Number': '171',
+        'Ledger Name': 'CANARA BANK OD A/C - 125001590160',
+        'Ledger Amount': 2469.00,
+        'Ledger Amount Dr/Cr': 'Cr',
+        'Item Name': '',
+        'Change Mode': 'Accounting Invoice'
+      }
+    ]
+
+    const ws = XLSX.utils.json_to_sheet(rawRows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Accounting Voucher')
+    const buffer = new Uint8Array(XLSX.write(wb, { bookType: 'xlsx', type: 'array' }))
+
+    const result = parseTallyAccountingVouchersExcel(buffer, {
+      expenseTypes: [
+        { id: 'exp-bank-charges', name: 'Bank Charges' }
+      ]
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.summary.contraCount).toBe(1)
+    expect(result.summary.expenseCount).toBe(1)
+
+    const contraVch = result.vouchers.find(v => v.voucherNumber === '53')
+    expect(contraVch).toBeDefined()
+    expect(contraVch?.normalizedType).toBe('contra')
+    expect(contraVch?.contraDetails?.fromCounterName).toBe('CANARA BANK OD A/C - 125001590160')
+    expect(contraVch?.contraDetails?.toCounterName).toBe('Indusind Bank (SB)-159635070410')
+    expect(contraVch?.totalAmount).toBe(50000)
+
+    const expVch = result.vouchers.find(v => v.voucherNumber === '171')
+    expect(expVch).toBeDefined()
+    expect(expVch?.normalizedType).toBe('expense')
+    expect(expVch?.matchedEntityId).toBe('exp-bank-charges')
+    expect(expVch?.totalAmount).toBe(2469)
+  })
 })

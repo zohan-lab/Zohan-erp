@@ -2769,6 +2769,7 @@ function App() {
             suppliers={safeSuppliers}
             items={safeItems}
             expenseTypes={safeExpenseTypes}
+            counters={visibleCashBankCounters}
             onCommitImport={(newPayments, newCustomerPayments, _summary, extraEntities) => {
               if (newPayments.length > 0) {
                 syncSetPayments([...payments, ...newPayments])
@@ -2787,6 +2788,12 @@ function App() {
               }
               if (extraEntities?.debitNotes && extraEntities.debitNotes.length > 0) {
                 setDebitNotes(prev => [...prev, ...extraEntities.debitNotes!])
+              }
+              if (extraEntities?.expenseEntries && extraEntities.expenseEntries.length > 0) {
+                syncSetExpenseEntries([...expenseEntries, ...extraEntities.expenseEntries])
+              }
+              if (extraEntities?.cashBankTransactions && extraEntities.cashBankTransactions.length > 0) {
+                syncSetCashBankTransactions([...cashBankTransactions, ...extraEntities.cashBankTransactions])
               }
             }}
           />

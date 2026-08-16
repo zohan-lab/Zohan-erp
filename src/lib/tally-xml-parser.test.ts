@@ -336,7 +336,125 @@ describe('Native Tally XML Ingestion Engine', () => {
     expect(result.summary.matchedCount).toBe(0)
   })
 
-  it('parses real export Transactions.xml (UTF-16LE) correctly without runtime errors', () => {
+  it('parses Contra vouchers into Counter Transfers accurately', () => {
+    const contraXml = `<ENVELOPE>
+      <BODY>
+        <IMPORTDATA>
+          <REQUESTDATA>
+            <TALLYMESSAGE>
+              <VOUCHER VCHTYPE="Contra" DATE="20260418">
+                <VOUCHERTYPENAME>Contra</VOUCHERTYPENAME>
+                <VOUCHERNUMBER>53</VOUCHERNUMBER>
+                <NARRATION>Bank to Bank transfer</NARRATION>
+                <ALLLEDGERENTRIES.LIST>
+                  <LEDGERNAME>CANARA BANK OD A/C - 125001590160</LEDGERNAME>
+                  <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+                  <AMOUNT>50000.00</AMOUNT>
+                </ALLLEDGERENTRIES.LIST>
+                <ALLLEDGERENTRIES.LIST>
+                  <LEDGERNAME>Indusind Bank (SB)-159635070410</LEDGERNAME>
+                  <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+                  <AMOUNT>-50000.00</AMOUNT>
+                </ALLLEDGERENTRIES.LIST>
+              </VOUCHER>
+            </TALLYMESSAGE>
+          </REQUESTDATA>
+        </IMPORTDATA>
+      </BODY>
+    </ENVELOPE>`
+
+    const result = parseTallyXmlVouchers(contraXml, {
+      counters: [
+        { id: 'cntr-canara', name: 'CANARA BANK OD A/C - 125001590160', type: 'Bank', openingBalance: 0, currentBalance: 0 },
+        { id: 'cntr-indusind', name: 'Indusind Bank (SB)-159635070410', type: 'Bank', openingBalance: 0, currentBalance: 0 }
+      ]
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.summary.contraCount).toBe(1)
+    const vch = result.vouchers[0]
+    expect(vch.normalizedType).toBe('contra')
+    expect(vch.voucherNumber).toBe('53')
+    expect(vch.partyName).toBe('CANARA BANK OD A/C - 125001590160 → Indusind Bank (SB)-159635070410')
+    expect(vch.totalAmount).toBe(50000)
+    expect(vch.isBalanced).toBe(true)
+    expect(vch.matchedEntityType).toBe('counter')
+    expect(vch.contraDetails?.fromCounterName).toBe('CANARA BANK OD A/C - 125001590160')
+    expect(vch.contraDetails?.fromCounterId).toBe('cntr-canara')
+    expect(vch.contraDetails?.toCounterName).toBe('Indusind Bank (SB)-159635070410')
+    expect(vch.contraDetails?.toCounterId).toBe('cntr-indusind')
+    expect(vch.contraDetails?.amount).toBe(50000)
+  })
+
+  it('classifies Payment vouchers into Supplier Payments vs Indirect Expenses', () => {
+    const paymentXml = `<ENVELOPE>
+      <BODY>
+        <IMPORTDATA>
+          <REQUESTDATA>
+            <!-- 1. Supplier Payment -->
+            <TALLYMESSAGE>
+              <VOUCHER VCHTYPE="Payment" DATE="20260420">
+                <VOUCHERNUMBER>PAY-101</VOUCHERNUMBER>
+                <ALLLEDGERENTRIES.LIST>
+                  <LEDGERNAME>Apex Steel Corp</LEDGERNAME>
+                  <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+                  <AMOUNT>-50000.00</AMOUNT>
+                </ALLLEDGERENTRIES.LIST>
+                <ALLLEDGERENTRIES.LIST>
+                  <LEDGERNAME>HDFC Bank</LEDGERNAME>
+                  <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+                  <AMOUNT>50000.00</AMOUNT>
+                </ALLLEDGERENTRIES.LIST>
+              </VOUCHER>
+            </TALLYMESSAGE>
+
+            <!-- 2. Indirect Expense Payment -->
+            <TALLYMESSAGE>
+              <VOUCHER VCHTYPE="Payment" DATE="20260421">
+                <VOUCHERNUMBER>EXP-202</VOUCHERNUMBER>
+                <NARRATION>Bank processing fee</NARRATION>
+                <ALLLEDGERENTRIES.LIST>
+                  <LEDGERNAME>Bank Charges</LEDGERNAME>
+                  <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+                  <AMOUNT>-2469.00</AMOUNT>
+                </ALLLEDGERENTRIES.LIST>
+                <ALLLEDGERENTRIES.LIST>
+                  <LEDGERNAME>HDFC Bank</LEDGERNAME>
+                  <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+                  <AMOUNT>2469.00</AMOUNT>
+                </ALLLEDGERENTRIES.LIST>
+              </VOUCHER>
+            </TALLYMESSAGE>
+          </REQUESTDATA>
+        </IMPORTDATA>
+      </BODY>
+    </ENVELOPE>`
+
+    const result = parseTallyXmlVouchers(paymentXml, {
+      suppliers: mockSuppliers,
+      expenseTypes: [
+        { id: 'exp-bank-charges', name: 'Bank Charges' }
+      ]
+    })
+
+    expect(result.success).toBe(true)
+    expect(result.summary.paymentCount).toBe(1)
+    expect(result.summary.expenseCount).toBe(1)
+
+    const payVch = result.vouchers.find(v => v.voucherNumber === 'PAY-101')!
+    expect(payVch.normalizedType).toBe('payment')
+    expect(payVch.matchedEntityType).toBe('supplier')
+    expect(payVch.matchedEntityId).toBe('s-apex')
+
+    const expVch = result.vouchers.find(v => v.voucherNumber === 'EXP-202')!
+    expect(expVch.normalizedType).toBe('expense')
+    expect(expVch.matchedEntityType).toBe('expense')
+    expect(expVch.matchedEntityId).toBe('exp-bank-charges')
+    expect(expVch.expenseDetails?.categoryName).toBe('Bank Charges')
+    expect(expVch.expenseDetails?.amount).toBe(2469)
+  })
+
+  it('parses real export Transactions.xml (UTF-16LE) correctly with Contra and Expense support', () => {
     const transactionsPath = path.resolve(process.cwd(), 'Transactions.xml')
     if (fs.existsSync(transactionsPath)) {
       const rawBuf = fs.readFileSync(transactionsPath)
@@ -345,7 +463,22 @@ describe('Native Tally XML Ingestion Engine', () => {
 
       const result = parseTallyXmlVouchers(decoded, {
         customers: mockCustomers,
-        suppliers: mockSuppliers
+        suppliers: [
+          ...mockSuppliers,
+          { id: 's-captain', name: 'Captain Steel India Limited', gstin: '', stateCode: '19', paymentCDRules: [], invoiceCloseCDRules: [] },
+          { id: 's-shyam', name: 'SHYAM STEEL INDUSTRIES LIMITED', gstin: '', stateCode: '19', paymentCDRules: [], invoiceCloseCDRules: [] },
+          { id: 's-srmb', name: 'Srmb Srijan Private Limited', gstin: '', stateCode: '19', paymentCDRules: [], invoiceCloseCDRules: [] },
+          { id: 's-steel-mkt', name: 'Steel Marketing Private Limited', gstin: '', stateCode: '19', paymentCDRules: [], invoiceCloseCDRules: [] },
+          { id: 's-alankar', name: 'Alankar Tading Co.', gstin: '', stateCode: '19', paymentCDRules: [], invoiceCloseCDRules: [] },
+          { id: 's-narveram', name: 'NARVERAM LEASING CO PVT LTD', gstin: '', stateCode: '19', paymentCDRules: [], invoiceCloseCDRules: [] }
+        ],
+        expenseTypes: [
+          { id: 'exp-interest-od', name: 'Interest on OD A/C' },
+          { id: 'exp-bank-charges', name: 'Bank Charges' },
+          { id: 'exp-drawings', name: 'Drawings' },
+          { id: 'exp-insurance', name: 'STOCK INSURANCE' },
+          { id: 'exp-interest-car', name: 'Interest on Car Loan' }
+        ]
       })
 
       expect(result.success).toBe(true)
@@ -353,8 +486,32 @@ describe('Native Tally XML Ingestion Engine', () => {
       expect(result.summary.salesCount).toBe(448)
       expect(result.summary.purchaseCount).toBe(103)
       expect(result.summary.receiptCount).toBe(216)
-      expect(result.summary.paymentCount).toBe(213)
-      expect(result.summary.skippedCount).toBe(62) // 26 Contra + 36 Journal skipped per standard audit policy
+      expect(result.summary.contraCount).toBe(26)
+      expect(result.summary.skippedCount).toBe(36) // Only the 36 Journal vouchers skipped
+
+      // Check Contra Voucher #53
+      const vch53 = result.vouchers.find(v => v.rawVoucherType === 'Contra' && v.voucherNumber === '53')
+      expect(vch53).toBeDefined()
+      expect(vch53?.normalizedType).toBe('contra')
+      expect(vch53?.totalAmount).toBe(50000)
+      expect(vch53?.contraDetails?.fromCounterName).toBe('CANARA BANK OD A/C - 125001590160')
+      expect(vch53?.contraDetails?.toCounterName).toBe('Indusind Bank (SB)-159635070410')
+
+      // Check Payment Voucher #171 (Bank Charges)
+      const vch171 = result.vouchers.find(v => v.rawVoucherType === 'Payment' && v.voucherNumber === '171')
+      expect(vch171).toBeDefined()
+      expect(vch171?.normalizedType).toBe('expense')
+      expect(vch171?.partyName).toBe('Bank Charges')
+      expect(vch171?.matchedEntityId).toBe('exp-bank-charges')
+      expect(vch171?.totalAmount).toBe(2469)
+
+      // Check Payment Voucher #172 (Captain Steel Supplier Payment)
+      const vch172 = result.vouchers.find(v => v.rawVoucherType === 'Payment' && v.voucherNumber === '172')
+      expect(vch172).toBeDefined()
+      expect(vch172?.normalizedType).toBe('payment')
+      expect(vch172?.partyName).toBe('Captain Steel India Limited')
+      expect(vch172?.matchedEntityId).toBe('s-captain')
+      expect(vch172?.totalAmount).toBe(1600000)
     }
   })
 })

@@ -1026,6 +1026,8 @@ export function parseTallyAccountingVouchersExcel(
         purchaseCount: 0,
         receiptCount: 0,
         paymentCount: 0,
+        expenseCount: 0,
+        contraCount: 0,
         creditNoteCount: 0,
         debitNoteCount: 0,
         skippedCount: 0,
@@ -1048,6 +1050,8 @@ export function parseTallyAccountingVouchersExcel(
         purchaseCount: 0,
         receiptCount: 0,
         paymentCount: 0,
+        expenseCount: 0,
+        contraCount: 0,
         creditNoteCount: 0,
         debitNoteCount: 0,
         skippedCount: 0,
@@ -1076,6 +1080,8 @@ export function parseTallyAccountingVouchersExcel(
         purchaseCount: 0,
         receiptCount: 0,
         paymentCount: 0,
+        expenseCount: 0,
+        contraCount: 0,
         creditNoteCount: 0,
         debitNoteCount: 0,
         skippedCount: 0,
@@ -1138,7 +1144,8 @@ export function parseTallyAccountingVouchersExcel(
   let vchIndex = 0
   groups.forEach((group, groupKey) => {
     vchIndex++
-    const { rawVoucherType, normalizedType, voucherNo, isoDate, displayDate, partyAddress, partyPincode, rows } = group
+    const { rawVoucherType, voucherNo, isoDate, displayDate, partyAddress, partyPincode, rows } = group
+    let normalizedType = group.normalizedType
 
     const legs: { ledgerName: string; amount: number; drCr: 'Dr' | 'Cr'; isDeemedPositive: boolean }[] = []
     const inventory: { itemName: string; quantity: number; unit?: string; rate: number; amount: number }[] = []
@@ -1209,25 +1216,118 @@ export function parseTallyAccountingVouchersExcel(
     const diff = Math.abs(drTotal - crTotal)
     const isBalanced = diff < 0.01
     const totalAmount = drTotal || crTotal || inventory.reduce((s, it) => s + it.amount, 0)
-
-    // Strict master matching (NO auto-creation of customers, suppliers, or items)
-    const normParty = partyName.trim().toLowerCase()
     let matchedEntityType: TallyParsedXmlVoucher['matchedEntityType'] = 'unmapped'
     let matchedEntityId: string | undefined
-
-    if (custMap.has(normParty)) {
-      matchedEntityType = 'customer'
-      matchedEntityId = custMap.get(normParty)?.id
-    } else if (suppMap.has(normParty)) {
-      matchedEntityType = 'supplier'
-      matchedEntityId = suppMap.get(normParty)?.id
-    }
-
+    let contraDetails: TallyParsedXmlVoucher['contraDetails'] | undefined
+    let expenseDetails: TallyParsedXmlVoucher['expenseDetails'] | undefined
     let skipReason: string | undefined
-    if (normalizedType === 'skipped') {
+
+    if (normalizedType === 'contra') {
+      const crLeg = legs.find(l => l.drCr === 'Cr') || legs[0]
+      const drLeg = legs.find(l => l.drCr === 'Dr') || legs[1] || legs[0]
+      const fromCounterName = crLeg ? crLeg.ledgerName : 'Source Counter'
+      const toCounterName = drLeg ? drLeg.ledgerName : 'Destination Counter'
+      partyName = `${fromCounterName} → ${toCounterName}`
+
+      contraDetails = {
+        fromCounterName,
+        toCounterName,
+        amount: totalAmount
+      }
+      matchedEntityType = 'counter'
+    } else if (normalizedType === 'payment') {
+      const drLeg = legs.find(l => l.drCr === 'Dr')
+      const crLeg = legs.find(l => l.drCr === 'Cr')
+      const drParty = (drLeg?.ledgerName || partyName || '').trim()
+      const normDr = drParty.toLowerCase()
+
+      if (suppMap.has(normDr)) {
+        normalizedType = 'payment'
+        matchedEntityType = 'supplier'
+        matchedEntityId = suppMap.get(normDr)?.id
+        partyName = drParty
+      } else if (context?.expenseTypes && context.expenseTypes.some(e => e.name.trim().toLowerCase() === normDr)) {
+        const exp = context.expenseTypes.find(e => e.name.trim().toLowerCase() === normDr)
+        normalizedType = 'expense'
+        matchedEntityType = 'expense'
+        matchedEntityId = exp?.id
+        partyName = drParty
+        expenseDetails = {
+          categoryId: matchedEntityId,
+          categoryName: drParty,
+          amount: totalAmount,
+          paymentAccountId: crLeg?.ledgerName,
+          paymentAccountName: crLeg?.ledgerName
+        }
+      } else if (custMap.has(normDr)) {
+        normalizedType = 'payment'
+        matchedEntityType = 'customer'
+        matchedEntityId = custMap.get(normDr)?.id
+        partyName = drParty
+      } else {
+        normalizedType = 'expense'
+        partyName = drParty
+        expenseDetails = {
+          categoryName: drParty,
+          amount: totalAmount,
+          paymentAccountId: crLeg?.ledgerName,
+          paymentAccountName: crLeg?.ledgerName
+        }
+        matchedEntityType = 'unmapped'
+        skipReason = `Unmapped Master: ${drParty}`
+      }
+    } else if (normalizedType === 'receipt') {
+      const crLeg = legs.find(l => l.drCr === 'Cr')
+      const crParty = (crLeg?.ledgerName || partyName || '').trim()
+      const normCr = crParty.toLowerCase()
+
+      if (custMap.has(normCr)) {
+        matchedEntityType = 'customer'
+        matchedEntityId = custMap.get(normCr)?.id
+        partyName = crParty
+      } else if (suppMap.has(normCr)) {
+        matchedEntityType = 'supplier'
+        matchedEntityId = suppMap.get(normCr)?.id
+        partyName = crParty
+      } else {
+        matchedEntityType = 'unmapped'
+        partyName = crParty
+        skipReason = `Unmapped Master: ${crParty}`
+      }
+    } else if (normalizedType === 'sales' || normalizedType === 'credit_note') {
+      const drLeg = legs.find(l => l.drCr === 'Dr' && !l.ledgerName.toLowerCase().includes('round off'))
+      const pName = (drLeg ? drLeg.ledgerName : (partyName || legs[0]?.ledgerName || 'General Account')).trim()
+      partyName = pName
+      const normParty = pName.toLowerCase()
+
+      if (custMap.has(normParty)) {
+        matchedEntityType = 'customer'
+        matchedEntityId = custMap.get(normParty)?.id
+      } else if (suppMap.has(normParty)) {
+        matchedEntityType = 'supplier'
+        matchedEntityId = suppMap.get(normParty)?.id
+      } else {
+        matchedEntityType = 'unmapped'
+        skipReason = `Unmapped Master: ${pName}`
+      }
+    } else if (normalizedType === 'purchase' || normalizedType === 'debit_note') {
+      const crLeg = legs.find(l => l.drCr === 'Cr' && !l.ledgerName.toLowerCase().includes('round off'))
+      const pName = (crLeg ? crLeg.ledgerName : (partyName || legs[0]?.ledgerName || 'General Account')).trim()
+      partyName = pName
+      const normParty = pName.toLowerCase()
+
+      if (suppMap.has(normParty)) {
+        matchedEntityType = 'supplier'
+        matchedEntityId = suppMap.get(normParty)?.id
+      } else if (custMap.has(normParty)) {
+        matchedEntityType = 'customer'
+        matchedEntityId = custMap.get(normParty)?.id
+      } else {
+        matchedEntityType = 'unmapped'
+        skipReason = `Unmapped Master: ${pName}`
+      }
+    } else if (normalizedType === 'skipped') {
       skipReason = `Non-billing voucher type (${rawVoucherType}) skipped per standard ERP audit policy`
-    } else if (matchedEntityType === 'unmapped') {
-      skipReason = `Unmapped Master: ${partyName}`
     }
 
     // Check inventory items matching
@@ -1257,6 +1357,8 @@ export function parseTallyAccountingVouchersExcel(
       imbalanceDifference: diff,
       matchedEntityId,
       matchedEntityType,
+      contraDetails,
+      expenseDetails,
       skipReason
     })
   })
@@ -1266,11 +1368,13 @@ export function parseTallyAccountingVouchersExcel(
   const purchaseCount = vouchers.filter(v => v.normalizedType === 'purchase').length
   const receiptCount = vouchers.filter(v => v.normalizedType === 'receipt').length
   const paymentCount = vouchers.filter(v => v.normalizedType === 'payment').length
+  const expenseCount = vouchers.filter(v => v.normalizedType === 'expense').length
+  const contraCount = vouchers.filter(v => v.normalizedType === 'contra').length
   const creditNoteCount = vouchers.filter(v => v.normalizedType === 'credit_note').length
   const debitNoteCount = vouchers.filter(v => v.normalizedType === 'debit_note').length
   const skippedCount = vouchers.filter(v => v.normalizedType === 'skipped').length
-  const matchedCount = vouchers.filter(v => v.matchedEntityType !== 'unmapped' && v.normalizedType !== 'skipped').length
-  const unmappedCount = vouchers.filter(v => v.matchedEntityType === 'unmapped' && v.normalizedType !== 'skipped').length
+  const matchedCount = vouchers.filter(v => v.matchedEntityType !== 'unmapped' && v.normalizedType !== 'skipped' && (!v.skipReason || !v.skipReason.startsWith('Unmapped Item'))).length
+  const unmappedCount = vouchers.filter(v => (v.matchedEntityType === 'unmapped' || Boolean(v.skipReason && v.skipReason.startsWith('Unmapped Item'))) && v.normalizedType !== 'skipped').length
 
   return {
     success: vouchers.length > 0 && errors.length === 0,
@@ -1281,6 +1385,8 @@ export function parseTallyAccountingVouchersExcel(
       purchaseCount,
       receiptCount,
       paymentCount,
+      expenseCount,
+      contraCount,
       creditNoteCount,
       debitNoteCount,
       skippedCount,
