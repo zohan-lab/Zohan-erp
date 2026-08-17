@@ -331,8 +331,8 @@ export function TallyExportDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-[620px] p-6 rounded-2xl">
-          <DialogHeader className="space-y-1.5">
+        <DialogContent className="sm:max-w-[620px] max-h-[90dvh] flex flex-col p-0 overflow-hidden rounded-2xl">
+          <DialogHeader className="p-6 pb-4 border-b border-slate-100 shrink-0 space-y-1.5">
             <div className="flex items-center justify-between">
               <DialogTitle className="text-lg font-bold flex items-center gap-2 text-slate-900">
                 <span className="p-2 rounded-xl bg-violet-50 text-violet-700 border border-violet-100">
@@ -349,146 +349,148 @@ export function TallyExportDialog({
             </DialogDescription>
           </DialogHeader>
 
-          {/* Period Filter Bar */}
-          <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <CalendarBlank className="w-4 h-4 text-violet-600" />
-                1. Select Filing Period / Date Range
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            {/* Period Filter Bar */}
+            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/80 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <CalendarBlank className="w-4 h-4 text-violet-600" />
+                  1. Select Filing Period / Date Range
+                </span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <Select value={selectedMonth} onValueChange={setSelectedMonth}>
+                  <SelectTrigger className="h-9 flex-1 bg-white text-xs font-medium">
+                    <SelectValue placeholder="Select Month" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MONTH_OPTIONS.map(m => (
+                      <SelectItem key={m.value} value={m.value} className="text-xs">
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <Select value={selectedYear} onValueChange={setSelectedYear}>
+                  <SelectTrigger className="h-9 w-28 bg-white text-xs font-medium">
+                    <SelectValue placeholder="Year" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="2025" className="text-xs">2025</SelectItem>
+                    <SelectItem value="2026" className="text-xs">2026</SelectItem>
+                    <SelectItem value="2027" className="text-xs">2027</SelectItem>
+                    <SelectItem value="2028" className="text-xs">2028</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Module Selection Checkboxes */}
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-700">
+                  2. Select Modules to Include in Export
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleToggleSelectAll}
+                  className="h-6 text-[11px] font-bold text-violet-600 hover:text-violet-700 hover:bg-violet-50 px-2"
+                >
+                  {isAllChecked ? 'Deselect All' : 'Select All'}
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2 bg-slate-50/50 p-3 rounded-xl border border-slate-200/80 text-xs">
+                {/* Sales Invoices */}
+                <label className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200/60 hover:border-violet-300 transition-all cursor-pointer">
+                  <div className="flex items-center gap-2.5">
+                    <Checkbox checked={includeSales} onCheckedChange={v => setIncludeSales(!!v)} />
+                    <div>
+                      <span className="font-semibold text-slate-800">Sales Invoices</span>
+                      <p className="text-[11px] text-slate-400">Dr Customer, Cr Sales, Cr Output Taxes, Round Off</p>
+                    </div>
+                  </div>
+                  <Badge variant="secondary" className="font-mono text-[11px]">
+                    {filteredSales.length} Vouchers
+                  </Badge>
+                </label>
+
+                {/* Purchase Invoices */}
+                <label className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200/60 hover:border-violet-300 transition-all cursor-pointer">
+                  <div className="flex items-center gap-2.5">
+                    <Checkbox checked={includePurchases} onCheckedChange={v => setIncludePurchases(!!v)} />
+                    <div>
+                      <span className="font-semibold text-slate-800">Purchase Invoices</span>
+                      <p className="text-[11px] text-slate-400">Cr Supplier, Dr Purchase, Dr Input Taxes, Round Off</p>
+                    </div>
+                  </div>
+                  <Badge variant="secondary" className="font-mono text-[11px]">
+                    {filteredPurchases.length} Vouchers
+                  </Badge>
+                </label>
+
+                {/* Credit & Debit Notes */}
+                <label className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200/60 hover:border-violet-300 transition-all cursor-pointer">
+                  <div className="flex items-center gap-2.5">
+                    <Checkbox checked={includeNotes} onCheckedChange={v => setIncludeNotes(!!v)} />
+                    <div>
+                      <span className="font-semibold text-slate-800">Credit & Debit Notes</span>
+                      <p className="text-[11px] text-slate-400">Customer CN & Supplier DN with original invoice link & tax reversals</p>
+                    </div>
+                  </div>
+                  <Badge variant="secondary" className="font-mono text-[11px]">
+                    {filteredCreditNotes.length + filteredDebitNotes.length} Vouchers
+                  </Badge>
+                </label>
+
+                {/* Operating Expenses & GTA RCM */}
+                <label className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200/60 hover:border-violet-300 transition-all cursor-pointer">
+                  <div className="flex items-center gap-2.5">
+                    <Checkbox checked={includeExpenses} onCheckedChange={v => setIncludeExpenses(!!v)} />
+                    <div>
+                      <span className="font-semibold text-slate-800">Expenses & GTA Freight RCM</span>
+                      <p className="text-[11px] text-slate-400">Operational expenses with GST breakdown + Dual RCM journal vouchers</p>
+                    </div>
+                  </div>
+                  <Badge variant="secondary" className="font-mono text-[11px]">
+                    {filteredExpenses.length} Vouchers
+                  </Badge>
+                </label>
+
+                {/* Customer Receipts & Supplier Payments */}
+                <label className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200/60 hover:border-violet-300 transition-all cursor-pointer">
+                  <div className="flex items-center gap-2.5">
+                    <Checkbox checked={includePayments} onCheckedChange={v => setIncludePayments(!!v)} />
+                    <div>
+                      <span className="font-semibold text-slate-800">Bank Receipts & Payments</span>
+                      <p className="text-[11px] text-slate-400">Customer bank receipts & Supplier payment payouts</p>
+                    </div>
+                  </div>
+                  <Badge variant="secondary" className="font-mono text-[11px]">
+                    {filteredPayments.length + filteredCustomerPayments.length} Vouchers
+                  </Badge>
+                </label>
+              </div>
+            </div>
+
+            {/* Live Selection Summary Banner */}
+            <div className="bg-violet-50/60 border border-violet-100 p-3 rounded-xl flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-violet-700 shrink-0" weight="bold" />
+                <span className="font-medium text-violet-950">
+                  Ready to Export: <strong className="font-bold">{allSelectedCount} Vouchers</strong>
+                </span>
+              </div>
+              <span className="font-mono font-extrabold text-violet-900">
+                Total Value: {formatCurrency(totalSelectedValue)}
               </span>
             </div>
-            <div className="flex items-center gap-2.5">
-              <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-                <SelectTrigger className="h-9 flex-1 bg-white text-xs font-medium">
-                  <SelectValue placeholder="Select Month" />
-                </SelectTrigger>
-                <SelectContent>
-                  {MONTH_OPTIONS.map(m => (
-                    <SelectItem key={m.value} value={m.value} className="text-xs">
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select value={selectedYear} onValueChange={setSelectedYear}>
-                <SelectTrigger className="h-9 w-28 bg-white text-xs font-medium">
-                  <SelectValue placeholder="Year" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="2025" className="text-xs">2025</SelectItem>
-                  <SelectItem value="2026" className="text-xs">2026</SelectItem>
-                  <SelectItem value="2027" className="text-xs">2027</SelectItem>
-                  <SelectItem value="2028" className="text-xs">2028</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* Module Selection Checkboxes */}
-          <div className="space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-700">
-                2. Select Modules to Include in Export
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleToggleSelectAll}
-                className="h-6 text-[11px] font-bold text-violet-600 hover:text-violet-700 hover:bg-violet-50 px-2"
-              >
-                {isAllChecked ? 'Deselect All' : 'Select All'}
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-1 gap-2 bg-slate-50/50 p-3 rounded-xl border border-slate-200/80 text-xs">
-              {/* Sales Invoices */}
-              <label className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200/60 hover:border-violet-300 transition-all cursor-pointer">
-                <div className="flex items-center gap-2.5">
-                  <Checkbox checked={includeSales} onCheckedChange={v => setIncludeSales(!!v)} />
-                  <div>
-                    <span className="font-semibold text-slate-800">Sales Invoices</span>
-                    <p className="text-[11px] text-slate-400">Dr Customer, Cr Sales, Cr Output Taxes, Round Off</p>
-                  </div>
-                </div>
-                <Badge variant="secondary" className="font-mono text-[11px]">
-                  {filteredSales.length} Vouchers
-                </Badge>
-              </label>
-
-              {/* Purchase Invoices */}
-              <label className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200/60 hover:border-violet-300 transition-all cursor-pointer">
-                <div className="flex items-center gap-2.5">
-                  <Checkbox checked={includePurchases} onCheckedChange={v => setIncludePurchases(!!v)} />
-                  <div>
-                    <span className="font-semibold text-slate-800">Purchase Invoices</span>
-                    <p className="text-[11px] text-slate-400">Cr Supplier, Dr Purchase, Dr Input Taxes, Round Off</p>
-                  </div>
-                </div>
-                <Badge variant="secondary" className="font-mono text-[11px]">
-                  {filteredPurchases.length} Vouchers
-                </Badge>
-              </label>
-
-              {/* Credit & Debit Notes */}
-              <label className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200/60 hover:border-violet-300 transition-all cursor-pointer">
-                <div className="flex items-center gap-2.5">
-                  <Checkbox checked={includeNotes} onCheckedChange={v => setIncludeNotes(!!v)} />
-                  <div>
-                    <span className="font-semibold text-slate-800">Credit & Debit Notes</span>
-                    <p className="text-[11px] text-slate-400">Customer CN & Supplier DN with original invoice link & tax reversals</p>
-                  </div>
-                </div>
-                <Badge variant="secondary" className="font-mono text-[11px]">
-                  {filteredCreditNotes.length + filteredDebitNotes.length} Vouchers
-                </Badge>
-              </label>
-
-              {/* Operating Expenses & GTA RCM */}
-              <label className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200/60 hover:border-violet-300 transition-all cursor-pointer">
-                <div className="flex items-center gap-2.5">
-                  <Checkbox checked={includeExpenses} onCheckedChange={v => setIncludeExpenses(!!v)} />
-                  <div>
-                    <span className="font-semibold text-slate-800">Expenses & GTA Freight RCM</span>
-                    <p className="text-[11px] text-slate-400">Operational expenses with GST breakdown + Dual RCM journal vouchers</p>
-                  </div>
-                </div>
-                <Badge variant="secondary" className="font-mono text-[11px]">
-                  {filteredExpenses.length} Vouchers
-                </Badge>
-              </label>
-
-              {/* Customer Receipts & Supplier Payments */}
-              <label className="flex items-center justify-between p-2 rounded-lg bg-white border border-slate-200/60 hover:border-violet-300 transition-all cursor-pointer">
-                <div className="flex items-center gap-2.5">
-                  <Checkbox checked={includePayments} onCheckedChange={v => setIncludePayments(!!v)} />
-                  <div>
-                    <span className="font-semibold text-slate-800">Bank Receipts & Payments</span>
-                    <p className="text-[11px] text-slate-400">Customer bank receipts & Supplier payment payouts</p>
-                  </div>
-                </div>
-                <Badge variant="secondary" className="font-mono text-[11px]">
-                  {filteredPayments.length + filteredCustomerPayments.length} Vouchers
-                </Badge>
-              </label>
-            </div>
-          </div>
-
-          {/* Live Selection Summary Banner */}
-          <div className="bg-violet-50/60 border border-violet-100 p-3 rounded-xl flex items-center justify-between text-xs">
-            <div className="flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 text-violet-700 shrink-0" weight="bold" />
-              <span className="font-medium text-violet-950">
-                Ready to Export: <strong className="font-bold">{allSelectedCount} Vouchers</strong>
-              </span>
-            </div>
-            <span className="font-mono font-extrabold text-violet-900">
-              Total Value: {formatCurrency(totalSelectedValue)}
-            </span>
           </div>
 
           {/* Footer Actions */}
-          <DialogFooter className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-2">
+          <DialogFooter className="p-4 border-t border-slate-100 bg-slate-50/50 shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <Button
               variant="outline"
               size="sm"
@@ -530,8 +532,8 @@ export function TallyExportDialog({
 
       {/* Ledger Mapping Dialog */}
       <Dialog open={isMappingDialogOpen} onOpenChange={setIsMappingDialogOpen}>
-        <DialogContent className="sm:max-w-[540px]">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-[540px] max-h-[90dvh] flex flex-col p-0 overflow-hidden rounded-2xl">
+          <DialogHeader className="p-5 border-b border-slate-100 shrink-0">
             <DialogTitle className="text-base font-bold flex items-center gap-2">
               <Gear className="w-5 h-5 text-violet-600" weight="duotone" />
               Tally Ledger Name Configuration
@@ -541,94 +543,96 @@ export function TallyExportDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid grid-cols-2 gap-3 py-2 text-xs">
-            <div className="space-y-1">
-              <label className="font-semibold text-slate-700 text-[11px]">Sales Account</label>
-              <Input
-                value={tempMapping.salesLedgerName}
-                onChange={e => setTempMapping({ ...tempMapping, salesLedgerName: e.target.value })}
-                className="h-8 text-xs font-mono"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="font-semibold text-slate-700 text-[11px]">Purchase Account</label>
-              <Input
-                value={tempMapping.purchaseLedgerName}
-                onChange={e => setTempMapping({ ...tempMapping, purchaseLedgerName: e.target.value })}
-                className="h-8 text-xs font-mono"
-              />
-            </div>
+          <div className="flex-1 overflow-y-auto p-5">
+            <div className="grid grid-cols-2 gap-3 py-2 text-xs">
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-700 text-[11px]">Sales Account</label>
+                <Input
+                  value={tempMapping.salesLedgerName}
+                  onChange={e => setTempMapping({ ...tempMapping, salesLedgerName: e.target.value })}
+                  className="h-8 text-xs font-mono"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-700 text-[11px]">Purchase Account</label>
+                <Input
+                  value={tempMapping.purchaseLedgerName}
+                  onChange={e => setTempMapping({ ...tempMapping, purchaseLedgerName: e.target.value })}
+                  className="h-8 text-xs font-mono"
+                />
+              </div>
 
-            <div className="space-y-1">
-              <label className="font-semibold text-slate-700 text-[11px]">Output CGST</label>
-              <Input
-                value={tempMapping.outputCgstLedgerName}
-                onChange={e => setTempMapping({ ...tempMapping, outputCgstLedgerName: e.target.value })}
-                className="h-8 text-xs font-mono"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="font-semibold text-slate-700 text-[11px]">Output SGST</label>
-              <Input
-                value={tempMapping.outputSgstLedgerName}
-                onChange={e => setTempMapping({ ...tempMapping, outputSgstLedgerName: e.target.value })}
-                className="h-8 text-xs font-mono"
-              />
-            </div>
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-700 text-[11px]">Output CGST</label>
+                <Input
+                  value={tempMapping.outputCgstLedgerName}
+                  onChange={e => setTempMapping({ ...tempMapping, outputCgstLedgerName: e.target.value })}
+                  className="h-8 text-xs font-mono"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-700 text-[11px]">Output SGST</label>
+                <Input
+                  value={tempMapping.outputSgstLedgerName}
+                  onChange={e => setTempMapping({ ...tempMapping, outputSgstLedgerName: e.target.value })}
+                  className="h-8 text-xs font-mono"
+                />
+              </div>
 
-            <div className="space-y-1">
-              <label className="font-semibold text-slate-700 text-[11px]">Output IGST</label>
-              <Input
-                value={tempMapping.outputIgstLedgerName}
-                onChange={e => setTempMapping({ ...tempMapping, outputIgstLedgerName: e.target.value })}
-                className="h-8 text-xs font-mono"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="font-semibold text-slate-700 text-[11px]">Round Off Account</label>
-              <Input
-                value={tempMapping.roundOffLedgerName}
-                onChange={e => setTempMapping({ ...tempMapping, roundOffLedgerName: e.target.value })}
-                className="h-8 text-xs font-mono"
-              />
-            </div>
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-700 text-[11px]">Output IGST</label>
+                <Input
+                  value={tempMapping.outputIgstLedgerName}
+                  onChange={e => setTempMapping({ ...tempMapping, outputIgstLedgerName: e.target.value })}
+                  className="h-8 text-xs font-mono"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-700 text-[11px]">Round Off Account</label>
+                <Input
+                  value={tempMapping.roundOffLedgerName}
+                  onChange={e => setTempMapping({ ...tempMapping, roundOffLedgerName: e.target.value })}
+                  className="h-8 text-xs font-mono"
+                />
+              </div>
 
-            <div className="space-y-1">
-              <label className="font-semibold text-slate-700 text-[11px]">Input CGST</label>
-              <Input
-                value={tempMapping.inputCgstLedgerName}
-                onChange={e => setTempMapping({ ...tempMapping, inputCgstLedgerName: e.target.value })}
-                className="h-8 text-xs font-mono"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="font-semibold text-slate-700 text-[11px]">Input SGST</label>
-              <Input
-                value={tempMapping.inputSgstLedgerName}
-                onChange={e => setTempMapping({ ...tempMapping, inputSgstLedgerName: e.target.value })}
-                className="h-8 text-xs font-mono"
-              />
-            </div>
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-700 text-[11px]">Input CGST</label>
+                <Input
+                  value={tempMapping.inputCgstLedgerName}
+                  onChange={e => setTempMapping({ ...tempMapping, inputCgstLedgerName: e.target.value })}
+                  className="h-8 text-xs font-mono"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-700 text-[11px]">Input SGST</label>
+                <Input
+                  value={tempMapping.inputSgstLedgerName}
+                  onChange={e => setTempMapping({ ...tempMapping, inputSgstLedgerName: e.target.value })}
+                  className="h-8 text-xs font-mono"
+                />
+              </div>
 
-            <div className="space-y-1">
-              <label className="font-semibold text-slate-700 text-[11px]">Input IGST</label>
-              <Input
-                value={tempMapping.inputIgstLedgerName}
-                onChange={e => setTempMapping({ ...tempMapping, inputIgstLedgerName: e.target.value })}
-                className="h-8 text-xs font-mono"
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="font-semibold text-slate-700 text-[11px]">Sales Return</label>
-              <Input
-                value={tempMapping.salesReturnLedgerName}
-                onChange={e => setTempMapping({ ...tempMapping, salesReturnLedgerName: e.target.value })}
-                className="h-8 text-xs font-mono"
-              />
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-700 text-[11px]">Input IGST</label>
+                <Input
+                  value={tempMapping.inputIgstLedgerName}
+                  onChange={e => setTempMapping({ ...tempMapping, inputIgstLedgerName: e.target.value })}
+                  className="h-8 text-xs font-mono"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="font-semibold text-slate-700 text-[11px]">Sales Return</label>
+                <Input
+                  value={tempMapping.salesReturnLedgerName}
+                  onChange={e => setTempMapping({ ...tempMapping, salesReturnLedgerName: e.target.value })}
+                  className="h-8 text-xs font-mono"
+                />
+              </div>
             </div>
           </div>
 
-          <DialogFooter className="gap-2">
+          <DialogFooter className="p-4 border-t border-slate-100 bg-slate-50/50 shrink-0 gap-2">
             <Button
               variant="outline"
               size="sm"

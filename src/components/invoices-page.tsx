@@ -560,6 +560,8 @@ export default function InvoicesPage({
       return
     }
 
+    const supplier = suppliers.find(s => s.id === supplierId)
+
     const sanitizedItems: InvoiceItem[] = invoiceItems.map(item => {
       const itemDef = items.find(i => i.id === item.itemId)
       const lineGstRate = typeof item.gstRate === 'number'
@@ -575,8 +577,15 @@ export default function InvoicesPage({
         basicRate: item.basicRate,
         baseRate: item.baseRate,
         enteredRate: item.enteredRate,
-        itemNameSnapshot: itemDef?.name,
-        itemUnitSnapshot: itemDef?.unit,
+        // Immutable Item Snapshots
+        itemNameSnapshot: itemDef?.name || item.itemNameSnapshot,
+        hsnCodeSnapshot: itemDef?.hsnCode || item.hsnCodeSnapshot,
+        unitSnapshot: item.enteredUnit || itemDef?.unit || item.unitSnapshot,
+        itemUnitSnapshot: itemDef?.unit || item.itemUnitSnapshot,
+        categorySnapshot: itemDef?.category || item.categorySnapshot,
+        basicRateSnapshot: item.basicRate,
+        gstRateSnapshot: lineGstRate,
+        itemDescriptionSnapshot: itemDef?.description || item.itemDescriptionSnapshot,
         gstRate: lineGstRate,
         taxableAmount: item.taxableAmount
       }
@@ -588,7 +597,7 @@ export default function InvoicesPage({
       additionalCharges,
       additionalCostBasicRate: additionalCostBasicRate || 0,
       additionalCostFinal: additionalCost || 0,
-      partyState: suppliers.find(s => s.id === supplierId)?.stateCode || suppliers.find(s => s.id === supplierId)?.stateName || suppliers.find(s => s.id === supplierId)?.state,
+      partyState: supplier?.stateCode || supplier?.stateName || supplier?.state,
       customRoundOff: roundOffAdjustment,
       defaultGstRate: gstPercentage
     })
@@ -610,6 +619,16 @@ export default function InvoicesPage({
       }
     })
 
+    // Resolved Supplier Snapshots
+    const partyNameSnap = supplier?.name || editingInvoice?.partyNameSnapshot || 'Supplier'
+    const partyGstinSnap = supplier?.gstin || editingInvoice?.partyGstinSnapshot || ''
+    const partyPhoneSnap = supplier?.phone || editingInvoice?.partyPhoneSnapshot || ''
+    const partyAddressSnap = supplier?.address || editingInvoice?.partyAddressSnapshot || ''
+    const billingAddressSnap = supplier?.address || editingInvoice?.billingAddressSnapshot || ''
+    const shippingAddressSnap = (supplier?.shippingSameAsBilling ? supplier.address : supplier?.shippingAddress) || editingInvoice?.shippingAddressSnapshot || billingAddressSnap
+    const stateCodeSnap = supplier?.stateCode || editingInvoice?.stateCodeSnapshot || '19'
+    const stateNameSnap = supplier?.stateName || supplier?.state || editingInvoice?.stateNameSnapshot || 'West Bengal'
+
     if (editingInvoice) {
       const updated: PurchaseInvoice = {
         ...editingInvoice,
@@ -623,6 +642,16 @@ export default function InvoicesPage({
         additionalCostBasicRate: additionalCostBasicRate || undefined,
         additionalCostRemarks: additionalCostRemarks || undefined,
         roundOffAdjustment: roundOffAdjustment || undefined,
+        // Immutable Snapshots
+        partyNameSnapshot: partyNameSnap,
+        supplierNameSnapshot: partyNameSnap,
+        partyGstinSnapshot: partyGstinSnap,
+        partyPhoneSnapshot: partyPhoneSnap,
+        partyAddressSnapshot: partyAddressSnap,
+        billingAddressSnapshot: billingAddressSnap,
+        shippingAddressSnapshot: shippingAddressSnap,
+        stateCodeSnapshot: stateCodeSnap,
+        stateNameSnapshot: stateNameSnap,
         taxableAmount: taxSummary.taxableAmount,
         cgstRate: taxSummary.cgstRate,
         cgstAmount: taxSummary.cgstAmount,
@@ -668,6 +697,16 @@ export default function InvoicesPage({
         additionalCostBasicRate: additionalCostBasicRate || undefined,
         additionalCostRemarks: additionalCostRemarks || undefined,
         roundOffAdjustment: roundOffAdjustment || undefined,
+        // Immutable Snapshots
+        partyNameSnapshot: partyNameSnap,
+        supplierNameSnapshot: partyNameSnap,
+        partyGstinSnapshot: partyGstinSnap,
+        partyPhoneSnapshot: partyPhoneSnap,
+        partyAddressSnapshot: partyAddressSnap,
+        billingAddressSnapshot: billingAddressSnap,
+        shippingAddressSnapshot: shippingAddressSnap,
+        stateCodeSnapshot: stateCodeSnap,
+        stateNameSnapshot: stateNameSnap,
         taxableAmount: taxSummary.taxableAmount,
         cgstRate: taxSummary.cgstRate,
         cgstAmount: taxSummary.cgstAmount,

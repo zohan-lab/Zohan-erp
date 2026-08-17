@@ -91,7 +91,7 @@ export default function SupplierLedgerPage({
       rawTransactions.push({
         date: dn.date,
         description: 'Debit Note',
-        debit: dn.amount,
+        debit: dn.totalAmount ?? dn.amount ?? 0,
         credit: 0,
         type: 'payment',
         refId: dn.id,
@@ -106,7 +106,7 @@ export default function SupplierLedgerPage({
         date: cn.date,
         description: 'Credit Note',
         debit: 0,
-        credit: cn.amount,
+        credit: cn.totalAmount ?? cn.amount ?? 0,
         type: 'invoice',
         refId: cn.id,
         timestamp: cn.createdAt || new Date(cn.date).getTime(),
@@ -289,9 +289,9 @@ export default function SupplierLedgerPage({
                   <h4 className="text-sm font-semibold mb-3 text-foreground">
                     Ledger Entries for {selectedSupplier?.name} {periodFilter.periodType === 'current_month' ? '(Current Month)' : periodFilter.periodType === 'previous_month' ? '(Previous Month)' : periodFilter.periodType === 'previous_fy' ? `(${getPreviousFY(currentFY)})` : periodFilter.periodType === 'custom' ? `(${periodFilter.fromDate || '...'} to ${periodFilter.toDate || '...'})` : `- ${currentFY}`}
                   </h4>
-                  <div className="rounded-lg border border-border">
+                  <div className="rounded-lg border border-border overflow-hidden">
                     <Table>
-                      <TableHeader>
+                      <TableHeader className="sticky top-0 z-20 bg-white/95 backdrop-blur shadow-xs">
                         <TableRow className="bg-muted/50">
                           <TableHead className="font-semibold">Date</TableHead>
                           <TableHead className="font-semibold">Description</TableHead>

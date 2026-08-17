@@ -225,15 +225,15 @@ export function ItemEditorDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-[min(760px,calc(100vw-2rem))] max-h-[85dvh] overflow-y-auto p-0">
-          <DialogHeader className="border-b border-border px-6 py-4 bg-slate-50/50">
+        <DialogContent className="max-w-[min(760px,calc(100vw-2rem))] max-h-[90dvh] flex flex-col p-0 overflow-hidden rounded-2xl">
+          <DialogHeader className="border-b border-border px-6 py-4 bg-slate-50/50 shrink-0">
             <DialogTitle className="flex items-center gap-2 text-xl font-bold text-slate-800">
               <Package size={24} className="text-blue-600" weight="duotone" />
               {item ? 'Edit Item' : 'Create New Items'}
             </DialogTitle>
           </DialogHeader>
 
-          <div className="p-6 space-y-5">
+          <div className="flex-1 overflow-y-auto p-6 space-y-5">
             {/* Header Badge */}
             <div className="flex items-center justify-between rounded-lg bg-blue-50/80 border border-blue-100 px-4 py-2.5">
               <span className="text-sm font-bold text-blue-800">Basic Details *</span>
@@ -602,14 +602,14 @@ export function ItemEditorDialog({
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50">
+          <DialogFooter className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/50 shrink-0">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button type="button" onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6">
               {item ? 'Update Item' : 'Save Item'}
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

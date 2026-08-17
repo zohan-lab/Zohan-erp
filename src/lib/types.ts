@@ -200,8 +200,17 @@ export interface InvoiceItem {
   amount: number
   baseRate?: number
   enteredRate?: number
+  
+  // Frozen Item Snapshots for Legal Immutability
   itemNameSnapshot?: string
+  hsnCodeSnapshot?: string
+  unitSnapshot?: string
   itemUnitSnapshot?: string
+  categorySnapshot?: string
+  basicRateSnapshot?: number
+  gstRateSnapshot?: number
+  itemDescriptionSnapshot?: string
+
   taxableAmount?: number
   gstRate?: number
   cgstRate?: number
@@ -241,6 +250,17 @@ export interface PurchaseInvoice {
   additionalCostRemarks?: string
   roundOffAdjustment?: number
 
+  // Frozen Party Snapshots for Legal Immutability
+  partyNameSnapshot?: string
+  supplierNameSnapshot?: string
+  partyGstinSnapshot?: string
+  partyPhoneSnapshot?: string
+  partyAddressSnapshot?: string
+  billingAddressSnapshot?: string
+  shippingAddressSnapshot?: string
+  stateCodeSnapshot?: string
+  stateNameSnapshot?: string
+
   // Structured GST tax breakdown
   taxableAmount?: number
   cgstRate?: number
@@ -271,6 +291,8 @@ export interface Payment {
   doNotApplyCD?: boolean
   counterId?: string
   counterName?: string
+  partyNameSnapshot?: string
+  counterNameSnapshot?: string
   fy: string
   createdAt?: number
   advanceCDSnapshot?: number
@@ -375,6 +397,17 @@ export interface SalesInvoice {
   additionalCostRemarks?: string
   roundOffAdjustment?: number
 
+  // Frozen Party Snapshots for Legal Immutability
+  partyNameSnapshot?: string
+  customerNameSnapshot?: string
+  partyGstinSnapshot?: string
+  partyPhoneSnapshot?: string
+  partyAddressSnapshot?: string
+  billingAddressSnapshot?: string
+  shippingAddressSnapshot?: string
+  stateCodeSnapshot?: string
+  stateNameSnapshot?: string
+
   // Structured GST tax breakdown
   taxableAmount?: number
   cgstRate?: number
@@ -402,6 +435,8 @@ export interface CustomerPayment {
   isAdvance?: boolean
   counterId?: string
   counterName?: string
+  partyNameSnapshot?: string
+  counterNameSnapshot?: string
   fy: string
   createdAt?: number
   history?: EditHistoryLog[]

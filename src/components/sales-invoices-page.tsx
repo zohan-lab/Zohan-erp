@@ -503,6 +503,7 @@ export default function SalesInvoicesPage({
       return
     }
     const invoiceNo = formData.get('invoiceNo') as string
+    const customer = customers.find(c => c.id === customerId)
 
     const sanitizedItems: InvoiceItem[] = invoiceItems.map(item => {
       const itemDef = items.find(i => i.id === item.itemId)
@@ -519,14 +520,20 @@ export default function SalesInvoicesPage({
         basicRate: item.basicRate,
         baseRate: item.baseRate,
         enteredRate: item.enteredRate,
-        itemNameSnapshot: itemDef?.name,
-        itemUnitSnapshot: itemDef?.unit,
+        // Immutable Item Snapshots
+        itemNameSnapshot: itemDef?.name || item.itemNameSnapshot,
+        hsnCodeSnapshot: itemDef?.hsnCode || item.hsnCodeSnapshot,
+        unitSnapshot: item.enteredUnit || itemDef?.unit || item.unitSnapshot,
+        itemUnitSnapshot: itemDef?.unit || item.itemUnitSnapshot,
+        categorySnapshot: itemDef?.category || item.categorySnapshot,
+        basicRateSnapshot: item.basicRate,
+        gstRateSnapshot: lineGstRate,
+        itemDescriptionSnapshot: itemDef?.description || item.itemDescriptionSnapshot,
         gstRate: lineGstRate,
         taxableAmount: item.taxableAmount
       }
     })
 
-    const customer = customers.find(c => c.id === customerId)
     const taxSummary = calculateInvoiceTaxBreakdown({
       items: sanitizedItems,
       itemsMaster: items,
@@ -555,6 +562,16 @@ export default function SalesInvoicesPage({
       }
     })
 
+    // Resolved Party Snapshots
+    const partyNameSnap = customer?.name || editingInvoice?.partyNameSnapshot || 'Customer'
+    const partyGstinSnap = customer?.gstin || editingInvoice?.partyGstinSnapshot || ''
+    const partyPhoneSnap = customer?.phone || editingInvoice?.partyPhoneSnapshot || ''
+    const partyAddressSnap = customer?.address || editingInvoice?.partyAddressSnapshot || ''
+    const billingAddressSnap = customer?.address || editingInvoice?.billingAddressSnapshot || ''
+    const shippingAddressSnap = (customer?.shippingSameAsBilling ? customer.address : customer?.shippingAddress) || editingInvoice?.shippingAddressSnapshot || billingAddressSnap
+    const stateCodeSnap = customer?.stateCode || editingInvoice?.stateCodeSnapshot || '19'
+    const stateNameSnap = customer?.stateName || customer?.state || editingInvoice?.stateNameSnapshot || 'West Bengal'
+
     if (editingInvoice) {
       const updatedInvoice: SalesInvoice = {
         ...editingInvoice,
@@ -568,6 +585,16 @@ export default function SalesInvoicesPage({
         additionalCostBasicRate: additionalCostBasicRate || undefined,
         additionalCostRemarks: additionalCostRemarks || undefined,
         roundOffAdjustment: roundOffAdjustment || undefined,
+        // Immutable Snapshots
+        partyNameSnapshot: partyNameSnap,
+        customerNameSnapshot: partyNameSnap,
+        partyGstinSnapshot: partyGstinSnap,
+        partyPhoneSnapshot: partyPhoneSnap,
+        partyAddressSnapshot: partyAddressSnap,
+        billingAddressSnapshot: billingAddressSnap,
+        shippingAddressSnapshot: shippingAddressSnap,
+        stateCodeSnapshot: stateCodeSnap,
+        stateNameSnapshot: stateNameSnap,
         taxableAmount: taxSummary.taxableAmount,
         cgstRate: taxSummary.cgstRate,
         cgstAmount: taxSummary.cgstAmount,
@@ -611,6 +638,16 @@ export default function SalesInvoicesPage({
         additionalCostBasicRate: additionalCostBasicRate || undefined,
         additionalCostRemarks: additionalCostRemarks || undefined,
         roundOffAdjustment: roundOffAdjustment || undefined,
+        // Immutable Snapshots
+        partyNameSnapshot: partyNameSnap,
+        customerNameSnapshot: partyNameSnap,
+        partyGstinSnapshot: partyGstinSnap,
+        partyPhoneSnapshot: partyPhoneSnap,
+        partyAddressSnapshot: partyAddressSnap,
+        billingAddressSnapshot: billingAddressSnap,
+        shippingAddressSnapshot: shippingAddressSnap,
+        stateCodeSnapshot: stateCodeSnap,
+        stateNameSnapshot: stateNameSnap,
         taxableAmount: taxSummary.taxableAmount,
         cgstRate: taxSummary.cgstRate,
         cgstAmount: taxSummary.cgstAmount,
@@ -1326,7 +1363,7 @@ export default function SalesInvoicesPage({
                           <FileText size={20} weight="fill" />
                           <div>
                             <h3>Invoice Information</h3>
-                            <p>Add notes and terms related to this purchase.</p>
+                            <p>Add notes and terms related to this sales invoice.</p>
                           </div>
                         </div>
                         <div className="erp-footer-section-content">
@@ -1390,7 +1427,7 @@ export default function SalesInvoicesPage({
                           <Wallet size={20} weight="fill" />
                           <div>
                             <h3>Payment Settlement</h3>
-                            <p>Record the amount paid while saving this purchase invoice.</p>
+                            <p>Record payment received while saving this sales invoice.</p>
                           </div>
                         </div>
                         <div className="erp-footer-section-content">
@@ -1401,7 +1438,7 @@ export default function SalesInvoicesPage({
 
                           <div className="erp-payment-fields-row mt-1">
                             <div className="erp-payment-field">
-                              <label>Amount Paid</label>
+                              <label>Amount Received</label>
                               <div className="relative">
                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono">₹</span>
                                 <Input
@@ -1436,11 +1473,11 @@ export default function SalesInvoicesPage({
 
                           <div className="erp-payment-summary-box">
                             <div className="erp-payment-summary-row">
-                              <span>Total Payable</span>
+                              <span>Total Receivable</span>
                               <span className="value">₹{finalInvoiceAmountPreview.toFixed(2)}</span>
                             </div>
                             <div className="erp-payment-summary-row">
-                              <span>Amount Paid</span>
+                              <span>Amount Received</span>
                               <span className="value text-blue-600">₹{receivedAmountPreview.toFixed(2)}</span>
                             </div>
                             <div className="erp-payment-summary-row divider"></div>

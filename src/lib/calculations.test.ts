@@ -18,7 +18,7 @@ import {
   isInterStateTransaction
 } from './calculations'
 import { convertItemQuantity, getInvoiceQtyForUnit, isUnitCompatible } from './unit-conversion-service'
-import { Payment, PurchaseInvoice, Supplier, AdditionalCharge } from './types'
+import { Payment, PurchaseInvoice, Supplier, AdditionalCharge, SupplierDebitNote } from './types'
 
 function invoice(overrides: Partial<PurchaseInvoice>): PurchaseInvoice {
   const amount = overrides.invoiceAmount ?? 1000

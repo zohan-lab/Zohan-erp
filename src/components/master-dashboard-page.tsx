@@ -474,7 +474,7 @@ export default function MasterDashboardPage({
   return (
     <div className="dashboard-page space-y-6 p-1">
       {/* ── 8 Stat Cards Grid (4 cols x 2 rows) ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-stretch">
 
         {/* Card 1: Total Payables */}
         <AnimatedCard className="bg-white rounded-2xl p-5 border border-[#E8EAEF] shadow-[0_2px_12px_rgba(91,95,239,0.06)] hover:shadow-lg transition-all relative overflow-hidden flex flex-col justify-between">
@@ -593,6 +593,7 @@ export default function MasterDashboardPage({
               Received: {formatCurrency(totalDiscountsReceived)}
             </p>
           </div>
+          <Sparkline color="#F59E0B" />
         </AnimatedCard>
 
         {/* Card 6: Total Sales Revenue */}
@@ -616,6 +617,7 @@ export default function MasterDashboardPage({
               {salesInvoices.length} Invoices{formatUnitSummary(salesVolumeByUnit, 1) !== '0 items in stock' && formatUnitSummary(salesVolumeByUnit, 1) ? ` • ${formatUnitSummary(salesVolumeByUnit, 1)}` : ''}
             </p>
           </div>
+          <Sparkline color="#8B5CF6" />
         </AnimatedCard>
 
         {/* Card 7: Purchase Value */}
@@ -639,6 +641,7 @@ export default function MasterDashboardPage({
               {purchaseInvoices.length} Invoices{formatUnitSummary(purchaseVolumeByUnit, 1) !== '0 items in stock' && formatUnitSummary(purchaseVolumeByUnit, 1) ? ` • ${formatUnitSummary(purchaseVolumeByUnit, 1)}` : ''}
             </p>
           </div>
+          <Sparkline color="#06B6D4" />
         </AnimatedCard>
 
         {/* Card 8: Inventory Items */}
@@ -660,6 +663,7 @@ export default function MasterDashboardPage({
               Items in catalog
             </p>
           </div>
+          <Sparkline color="#EC4899" />
         </AnimatedCard>
 
       </div>
