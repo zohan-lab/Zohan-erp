@@ -10,7 +10,8 @@ import {
   isLikelyCommercialEntity,
   isLikelyIndirectExpenseLedger
 } from './tally-xml-parser'
-import { Customer, Supplier, Item } from './types'
+import { Customer, Supplier, Item, InvoiceItem, PurchaseInvoice, AdditionalCharge } from './types'
+import { calculateInvoiceTaxBreakdown, roundCurrency } from './calculations'
 
 describe('Native Tally XML Ingestion Engine', () => {
   const mockCustomers: Customer[] = [
@@ -873,6 +874,8 @@ describe('Native Tally XML Ingestion Engine', () => {
     expect(vch.additionalCharges).toBeDefined()
     expect(vch.additionalCharges).toHaveLength(1)
     expect(vch.additionalCharges![0].ledgerName).toBe('Freight Charges')
+    expect(vch.additionalCharges![0].name).toBe('Freight Charges')
+    expect(vch.additionalCharges![0].chargeName).toBe('Freight Charges')
     expect(vch.additionalCharges![0].sacCode).toBe('996511')
     expect(vch.additionalCharges![0].taxableAmount).toBe(1200.00)
     expect(vch.additionalCharges![0].cgstAmount).toBe(108.00)
@@ -884,6 +887,97 @@ describe('Native Tally XML Ingestion Engine', () => {
     expect(vch.sgstAmount).toBe(63354.81)
     expect(vch.roundOff).toBe(0.01)
     expect(vch.taxableAmount).toBe(703942.37)
+
+    // Verify Tally Ingestion Rate Mapping into PurchaseInvoice Line Items
+    const itemsMaster: Item[] = [
+      { id: 'item-8mm', name: '8MM TMT BAR', unit: 'TON', purchasePrice: 58628.80, salesPrice: 60000, gstRate: 18, category: 'TMT' },
+      { id: 'item-12mm', name: '12MM TMT BAR', unit: 'TON', purchasePrice: 57188.49, salesPrice: 59000, gstRate: 18, category: 'TMT' }
+    ]
+
+    const sanitizedItems: InvoiceItem[] = vch.inventory.map((inv, iIdx) => {
+      const resolvedItem = itemsMaster.find(it => it.name === inv.itemName)
+      const gstRate = resolvedItem?.gstRate ?? 18
+      const halfGst = gstRate / 2
+      const rawRate = inv.rate
+      const rawAmount = inv.amount
+      const lineTaxable = rawAmount
+      const lineCgst = roundCurrency(lineTaxable * (halfGst / 100))
+      const lineSgst = roundCurrency(lineTaxable * (halfGst / 100))
+      const grossAmount = roundCurrency(rawAmount * (1 + gstRate / 100))
+      const inclusiveRate = roundCurrency(rawRate * (1 + gstRate / 100))
+
+      return {
+        itemId: resolvedItem?.id || 'item-gen',
+        baseQuantity: inv.quantity,
+        enteredQuantity: inv.quantity,
+        enteredUnit: inv.unit || 'TON',
+        basicRate: rawRate,
+        baseRate: inclusiveRate,
+        enteredRate: inclusiveRate,
+        rate: inclusiveRate,
+        amount: grossAmount,
+        taxableAmount: lineTaxable,
+        gstRate,
+        cgstRate: halfGst,
+        cgstAmount: lineCgst,
+        sgstRate: halfGst,
+        sgstAmount: lineSgst,
+        igstRate: 0,
+        igstAmount: 0,
+        itemNameSnapshot: inv.itemName,
+        itemUnitSnapshot: inv.unit || 'TON'
+      }
+    })
+
+    // Verify Line 1 (8MM) Exact Rates
+    expect(sanitizedItems[0].basicRate).toBe(58628.80) // Price (Excl. Tax)
+    expect(sanitizedItems[0].rate).toBe(69181.98) // Price (Incl. Tax)
+    expect(sanitizedItems[0].taxableAmount).toBe(531176.89)
+    expect(sanitizedItems[0].amount).toBe(626788.73)
+
+    // Verify Line 2 (12MM) Exact Rates
+    expect(sanitizedItems[1].basicRate).toBe(57188.49)
+    expect(sanitizedItems[1].rate).toBe(67482.42)
+    expect(sanitizedItems[1].taxableAmount).toBe(171565.48)
+    expect(sanitizedItems[1].amount).toBe(202447.27)
+
+    // Verify Additional Charges mapping
+    const mappedCharges: AdditionalCharge[] = (vch.additionalCharges || []).map(c => ({
+      id: c.id,
+      name: c.name || c.chargeName || c.ledgerName || c.remarks || '',
+      chargeName: c.chargeName || c.name || c.ledgerName || c.remarks || '',
+      remarks: c.remarks || c.name || c.chargeName || c.ledgerName || '',
+      sacCode: c.sacCode,
+      taxMode: c.taxMode || 'gst',
+      basicRate: c.basicRate,
+      taxableAmount: c.taxableAmount,
+      gstRate: c.gstRate,
+      cgstAmount: c.cgstAmount,
+      sgstAmount: c.sgstAmount,
+      igstAmount: c.igstAmount,
+      finalAmt: c.finalAmt
+    }))
+
+    expect(mappedCharges[0].name).toBe('Freight Charges')
+    expect(mappedCharges[0].chargeName).toBe('Freight Charges')
+    expect(mappedCharges[0].basicRate).toBe(1200.00)
+    expect(mappedCharges[0].finalAmt).toBe(1416.00)
+
+    // Compute Tax Breakdown immediately on modal open (Edit Mode)
+    const breakdown = calculateInvoiceTaxBreakdown({
+      items: sanitizedItems,
+      itemsMaster,
+      additionalCharges: mappedCharges,
+      partyState: '19',
+      customRoundOff: vch.roundOff,
+      defaultGstRate: 18
+    })
+
+    expect(breakdown.taxableAmount).toBe(703942.37)
+    expect(breakdown.cgstAmount).toBe(63354.81)
+    expect(breakdown.sgstAmount).toBe(63354.81)
+    expect(breakdown.roundOff).toBe(0.01)
+    expect(breakdown.totalAmount).toBe(830652.00)
   })
 
   it('enforces strict blacklist: routes Drawings & GST Payable to Expense, Credit Card to Contra, and NEVER creates Customers/Suppliers', () => {

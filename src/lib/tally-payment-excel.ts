@@ -1738,9 +1738,12 @@ export function parseTallyAccountingVouchersExcel(
 
         additionalCharges.push({
           id: `charge-${lIdx + 1}`,
+          name: leg.ledgerName,
+          chargeName: leg.ledgerName,
           ledgerName: leg.ledgerName,
           remarks: leg.ledgerName,
           sacCode,
+          taxMode: isTcs ? 'none' : 'gst',
           basicRate: chargeTaxable,
           taxableAmount: chargeTaxable,
           gstRate: chargeGstRate,

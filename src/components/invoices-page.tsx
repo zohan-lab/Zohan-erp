@@ -15,7 +15,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { ArrowLeft, CaretLeft, Plus, Receipt, Trash, X, Info, PencilSimple, FunnelSimple, Warning, DownloadSimple, MagnifyingGlass, Barcode, Package, UserPlus, GearSix, Keyboard, UploadSimple, FileText, Wallet, TrendUp, SlidersHorizontal, Scales } from '@phosphor-icons/react'
-import { formatCurrency, formatMT, getFYMonths, getFYFromDate, calculatePaymentAllocations, calculateRateWithGst, calculateBasicRateFromInclusive, calculateRoundOffAdjustment, calculateInvoiceFinalAmount, calculateCostBreakdownDetails, calculateInvoiceItemsTotals, calculateAdditionalChargesTotals, calculateInvoiceTaxBreakdown, isInterStateTransaction, calculateInvoiceTotals } from '@/lib/calculations'
+import { formatCurrency, roundCurrency, formatMT, getFYMonths, getFYFromDate, calculatePaymentAllocations, calculateRateWithGst, calculateBasicRateFromInclusive, calculateRoundOffAdjustment, calculateInvoiceFinalAmount, calculateCostBreakdownDetails, calculateInvoiceItemsTotals, calculateAdditionalChargesTotals, calculateInvoiceTaxBreakdown, isInterStateTransaction, calculateInvoiceTotals } from '@/lib/calculations'
 import { cn } from '@/lib/utils'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
@@ -420,10 +420,16 @@ export default function InvoicesPage({
     setInvoiceItems(prev => prev.filter((_, i) => i !== index))
   }
 
-  const handleUpdateCharge = (id: string, field: keyof AdditionalCharge, value: any) => {
+  const handleUpdateCharge = (id: string, field: keyof AdditionalCharge | 'name' | 'chargeName', value: any) => {
     setAdditionalCharges(prev => prev.map(c => {
       if (c.id !== id) return c;
       const updated = { ...c, [field]: value };
+
+      if (field === 'remarks' || field === 'name' || (field as string) === 'chargeName') {
+        updated.remarks = value;
+        updated.name = value;
+        updated.chargeName = value;
+      }
 
       if (field === 'basicRate' || field === 'taxMode' || field === 'gstRate' || field === 'sacCode') {
         const rate = field === 'basicRate' ? parseFloat(value) || 0 : (updated.basicRate || 0);
@@ -431,8 +437,8 @@ export default function InvoicesPage({
         const gRate = field === 'gstRate' ? parseFloat(value) || 0 : (updated.gstRate ?? gstPercentage);
 
         const taxable = rate;
-        const taxAmt = mode === 'gst' ? Math.round(taxable * (gRate / 100) * 100) / 100 : 0;
-        const halfTax = Math.round((taxAmt / 2) * 100) / 100;
+        const taxAmt = mode === 'gst' ? roundCurrency(taxable * (gRate / 100)) : 0;
+        const halfTax = roundCurrency(taxAmt / 2);
 
         updated.taxableAmount = taxable;
         updated.basicRate = rate;
@@ -441,7 +447,7 @@ export default function InvoicesPage({
         updated.cgstAmount = halfTax;
         updated.sgstAmount = halfTax;
         updated.igstAmount = 0;
-        updated.finalAmt = Math.round((taxable + taxAmt) * 100) / 100;
+        updated.finalAmt = roundCurrency(taxable + taxAmt);
       }
       return updated;
     }));
@@ -450,6 +456,8 @@ export default function InvoicesPage({
   const addAnotherCharge = () => {
     setAdditionalCharges(prev => [...prev, {
       id: Math.random().toString(36).substring(7),
+      name: '',
+      chargeName: '',
       remarks: '',
       sacCode: '996511',
       basicRate: 0,
@@ -817,19 +825,66 @@ export default function InvoicesPage({
     setSelectedSupplierId(invoice.supplierId)
     setSupplierPickerOpen(false)
     setSupplierSearch('')
-    setInvoiceItems(invoice.items || [])
+
+    const mappedItems: InvoiceItem[] = (invoice.items || []).map(item => {
+      const itemDef = items.find(i => i.id === item.itemId)
+      const itemGst = typeof item.gstRate === 'number'
+        ? item.gstRate
+        : (typeof itemDef?.gstRate === 'number' ? itemDef.gstRate : gstPercentage)
+      
+      let basicRate = item.basicRate
+      let rate = item.rate
+
+      if (basicRate !== undefined && basicRate !== null && Number(basicRate) > 0) {
+        basicRate = Number(basicRate)
+        rate = (rate !== undefined && rate !== null && Number(rate) > 0)
+          ? Number(rate)
+          : roundCurrency(basicRate * (1 + itemGst / 100))
+      } else if (rate !== undefined && rate !== null && Number(rate) > 0) {
+        rate = Number(rate)
+        basicRate = roundCurrency(rate / (1 + itemGst / 100))
+      } else {
+        basicRate = 0
+        rate = 0
+      }
+
+      const qty = item.enteredQuantity !== undefined && item.enteredQuantity !== null
+        ? item.enteredQuantity
+        : (item.baseQuantity || 0)
+      const taxableAmount = item.taxableAmount !== undefined && item.taxableAmount !== null && Number(item.taxableAmount) > 0
+        ? Number(item.taxableAmount)
+        : roundCurrency(qty * basicRate)
+      const amount = item.amount !== undefined && item.amount !== null && Number(item.amount) > 0
+        ? Number(item.amount)
+        : roundCurrency(qty * rate)
+
+      return {
+        ...item,
+        basicRate,
+        rate,
+        taxableAmount,
+        amount,
+        gstRate: itemGst
+      }
+    })
+    setInvoiceItems(mappedItems)
+
     if (invoice.additionalCharges && invoice.additionalCharges.length > 0) {
       setShowAdditionalCharge(true)
       setAdditionalCharges(invoice.additionalCharges.map(c => {
         const taxMode = c.taxMode || (c.gstRate && c.gstRate > 0 ? 'gst' : 'none');
         const gstRate = c.gstRate ?? gstPercentage;
         const basicRate = c.basicRate ?? c.taxableAmount ?? 0;
-        const taxAmt = taxMode === 'gst' ? Math.round(basicRate * (gstRate / 100) * 100) / 100 : 0;
-        const halfTax = Math.round((taxAmt / 2) * 100) / 100;
-        const finalAmt = c.finalAmt ?? Math.round((basicRate + taxAmt) * 100) / 100;
+        const taxAmt = taxMode === 'gst' ? roundCurrency(basicRate * (gstRate / 100)) : 0;
+        const halfTax = roundCurrency(taxAmt / 2);
+        const finalAmt = c.finalAmt ?? roundCurrency(basicRate + taxAmt);
+        const chargeName = c.name || c.chargeName || c.remarks || (c as any).ledgerName || '';
 
         return {
           ...c,
+          name: chargeName,
+          chargeName: chargeName,
+          remarks: chargeName,
           taxMode,
           gstRate,
           basicRate,
@@ -837,7 +892,7 @@ export default function InvoicesPage({
           cgstAmount: c.cgstAmount ?? halfTax,
           sgstAmount: c.sgstAmount ?? halfTax,
           igstAmount: c.igstAmount ?? 0,
-          sacCode: c.sacCode || (c.remarks?.toLowerCase().includes('freight') || c.remarks?.toLowerCase().includes('transport') ? '996511' : undefined),
+          sacCode: c.sacCode || (chargeName.toLowerCase().includes('freight') || chargeName.toLowerCase().includes('transport') ? '996511' : undefined),
           finalAmt
         };
       }))
@@ -845,10 +900,13 @@ export default function InvoicesPage({
       const hasCost = Boolean(invoice.additionalCost || invoice.additionalCostBasicRate || invoice.additionalCostRemarks)
       setShowAdditionalCharge(hasCost)
       if (hasCost) {
+        const chargeName = invoice.additionalCostRemarks || 'Freight Charges'
         setAdditionalCharges([{
           id: Math.random().toString(36).substring(7),
-          remarks: invoice.additionalCostRemarks || '',
-          sacCode: invoice.additionalCostRemarks?.toLowerCase().includes('freight') || invoice.additionalCostRemarks?.toLowerCase().includes('transport') ? '996511' : undefined,
+          name: chargeName,
+          chargeName: chargeName,
+          remarks: chargeName,
+          sacCode: chargeName.toLowerCase().includes('freight') || chargeName.toLowerCase().includes('transport') ? '996511' : undefined,
           basicRate: invoice.additionalCostBasicRate || 0,
           taxableAmount: invoice.additionalCostBasicRate || 0,
           taxMode: invoice.additionalCostBasicRate && invoice.additionalCost && invoice.additionalCost > invoice.additionalCostBasicRate ? 'gst' : 'none',
@@ -1575,8 +1633,12 @@ export default function InvoicesPage({
                                   <div className="flex gap-2">
                                     <Input
                                       type="text"
-                                      value={charge.remarks}
-                                      onChange={(e) => handleUpdateCharge(charge.id, 'remarks', e.target.value)}
+                                      value={charge.name || charge.chargeName || charge.remarks || ''}
+                                      onChange={(e) => {
+                                        handleUpdateCharge(charge.id, 'name', e.target.value)
+                                        handleUpdateCharge(charge.id, 'chargeName', e.target.value)
+                                        handleUpdateCharge(charge.id, 'remarks', e.target.value)
+                                      }}
                                       placeholder="e.g. Freight Charges"
                                       className="bg-muted/50 border-muted flex-1 text-xs"
                                     />

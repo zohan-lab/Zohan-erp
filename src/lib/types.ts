@@ -224,6 +224,8 @@ export interface InvoiceItem {
 
 export interface AdditionalCharge {
   id: string
+  name?: string
+  chargeName?: string
   remarks: string
   basicRate: number
   taxMode: 'none' | 'gst'

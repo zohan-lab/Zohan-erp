@@ -61,7 +61,7 @@ import {
   AdditionalCharge,
   ExpenseType
 } from '@/lib/types'
-import { formatCurrency } from '@/lib/calculations'
+import { formatCurrency, roundCurrency } from '@/lib/calculations'
 import {
   TallyLedgerMapping,
   DEFAULT_TALLY_LEDGER_MAPPING,
@@ -1571,10 +1571,24 @@ export function TallyImportDialog({
         }
       } else if (v.effectiveType === 'sales' && v.matchedEntityType === 'customer') {
         const custId = v.matchedEntityId || autoCustMap.get(normParty) || customerMap.get(normParty)?.id || 'cust-cash'
-        const charges = v.additionalCharges || []
+        const charges: AdditionalCharge[] = (v.additionalCharges || []).map(c => ({
+          id: c.id,
+          name: c.name || c.chargeName || c.ledgerName || c.remarks || '',
+          chargeName: c.chargeName || c.name || c.ledgerName || c.remarks || '',
+          remarks: c.remarks || c.name || c.chargeName || c.ledgerName || '',
+          sacCode: c.sacCode,
+          taxMode: c.taxMode || 'gst',
+          basicRate: c.basicRate,
+          taxableAmount: c.taxableAmount,
+          gstRate: c.gstRate,
+          cgstAmount: c.cgstAmount,
+          sgstAmount: c.sgstAmount,
+          igstAmount: c.igstAmount,
+          finalAmt: c.finalAmt
+        }))
         const addCost = charges.reduce((s, c) => s + c.finalAmt, 0)
         const addCostBasic = charges.reduce((s, c) => s + c.basicRate, 0)
-        const addCostRemarks = charges.map(c => c.remarks || c.ledgerName).filter(Boolean).join(', ')
+        const addCostRemarks = charges.map(c => c.remarks || c.name || c.chargeName).filter(Boolean).join(', ')
 
         const sanitizedItems: InvoiceItem[] = (v.inventory || []).map((inv, iIdx) => {
           const norm = inv.itemName.trim().toLowerCase()
@@ -1588,18 +1602,20 @@ export function TallyImportDialog({
           const itemUnit = resolvedItem?.unit || inv.unit || 'PCS'
           const gstRate = resolvedItem?.gstRate ?? 18
           const halfGst = gstRate / 2
-          const lineTaxable = inv.amount
-          const lineCgst = Math.round(lineTaxable * (halfGst / 100) * 100) / 100
-          const lineSgst = Math.round(lineTaxable * (halfGst / 100) * 100) / 100
-          const grossAmount = Math.round((lineTaxable + lineCgst + lineSgst) * 100) / 100
-          const inclusiveRate = Math.round(inv.rate * (1 + gstRate / 100) * 100) / 100
+          const rawRate = inv.rate
+          const rawAmount = inv.amount
+          const lineTaxable = rawAmount
+          const lineCgst = roundCurrency(lineTaxable * (halfGst / 100))
+          const lineSgst = roundCurrency(lineTaxable * (halfGst / 100))
+          const grossAmount = roundCurrency(rawAmount * (1 + gstRate / 100))
+          const inclusiveRate = roundCurrency(rawRate * (1 + gstRate / 100))
 
           return {
             itemId,
             baseQuantity: inv.quantity,
             enteredQuantity: inv.quantity,
             enteredUnit: itemUnit,
-            basicRate: inv.rate,
+            basicRate: rawRate,
             baseRate: inclusiveRate,
             enteredRate: inclusiveRate,
             rate: inclusiveRate,
@@ -1624,7 +1640,7 @@ export function TallyImportDialog({
           invoiceDate: v.voucherDate || new Date().toISOString().split('T')[0],
           invoiceAmount: v.totalAmount,
           totalAmount: v.totalAmount,
-          additionalCharges: charges,
+          additionalCharges: charges.length > 0 ? charges : undefined,
           additionalCost: addCost > 0 ? addCost : undefined,
           additionalCostBasicRate: addCostBasic > 0 ? addCostBasic : undefined,
           additionalCostRemarks: addCostRemarks || undefined,
@@ -1641,10 +1657,24 @@ export function TallyImportDialog({
       } else if (v.effectiveType === 'purchase' && v.matchedEntityType === 'supplier') {
         const suppId = v.matchedEntityId || autoSuppMap.get(normParty) || supplierMap.get(normParty)?.id
         if (suppId) {
-          const charges = v.additionalCharges || []
+          const charges: AdditionalCharge[] = (v.additionalCharges || []).map(c => ({
+            id: c.id,
+            name: c.name || c.chargeName || c.ledgerName || c.remarks || '',
+            chargeName: c.chargeName || c.name || c.ledgerName || c.remarks || '',
+            remarks: c.remarks || c.name || c.chargeName || c.ledgerName || '',
+            sacCode: c.sacCode,
+            taxMode: c.taxMode || 'gst',
+            basicRate: c.basicRate,
+            taxableAmount: c.taxableAmount,
+            gstRate: c.gstRate,
+            cgstAmount: c.cgstAmount,
+            sgstAmount: c.sgstAmount,
+            igstAmount: c.igstAmount,
+            finalAmt: c.finalAmt
+          }))
           const addCost = charges.reduce((s, c) => s + c.finalAmt, 0)
           const addCostBasic = charges.reduce((s, c) => s + c.basicRate, 0)
-          const addCostRemarks = charges.map(c => c.remarks || c.ledgerName).filter(Boolean).join(', ')
+          const addCostRemarks = charges.map(c => c.remarks || c.name || c.chargeName).filter(Boolean).join(', ')
 
           const sanitizedItems: InvoiceItem[] = (v.inventory || []).map((inv, iIdx) => {
             const norm = inv.itemName.trim().toLowerCase()
@@ -1658,18 +1688,20 @@ export function TallyImportDialog({
             const itemUnit = resolvedItem?.unit || inv.unit || 'PCS'
             const gstRate = resolvedItem?.gstRate ?? 18
             const halfGst = gstRate / 2
-            const lineTaxable = inv.amount
-            const lineCgst = Math.round(lineTaxable * (halfGst / 100) * 100) / 100
-            const lineSgst = Math.round(lineTaxable * (halfGst / 100) * 100) / 100
-            const grossAmount = Math.round((lineTaxable + lineCgst + lineSgst) * 100) / 100
-            const inclusiveRate = Math.round(inv.rate * (1 + gstRate / 100) * 100) / 100
+            const rawRate = inv.rate
+            const rawAmount = inv.amount
+            const lineTaxable = rawAmount
+            const lineCgst = roundCurrency(lineTaxable * (halfGst / 100))
+            const lineSgst = roundCurrency(lineTaxable * (halfGst / 100))
+            const grossAmount = roundCurrency(rawAmount * (1 + gstRate / 100))
+            const inclusiveRate = roundCurrency(rawRate * (1 + gstRate / 100))
 
             return {
               itemId,
               baseQuantity: inv.quantity,
               enteredQuantity: inv.quantity,
               enteredUnit: itemUnit,
-              basicRate: inv.rate,
+              basicRate: rawRate,
               baseRate: inclusiveRate,
               enteredRate: inclusiveRate,
               rate: inclusiveRate,
@@ -1694,7 +1726,7 @@ export function TallyImportDialog({
             invoiceDate: v.voucherDate || new Date().toISOString().split('T')[0],
             invoiceAmount: v.totalAmount,
             totalAmount: v.totalAmount,
-            additionalCharges: charges,
+            additionalCharges: charges.length > 0 ? charges : undefined,
             additionalCost: addCost > 0 ? addCost : undefined,
             additionalCostBasicRate: addCostBasic > 0 ? addCostBasic : undefined,
             additionalCostRemarks: addCostRemarks || undefined,

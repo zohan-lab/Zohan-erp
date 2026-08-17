@@ -50,7 +50,7 @@ import {
   ExpenseType
 } from '@/lib/types'
 import { Counter, CashBankTransaction } from '@/lib/cash-bank-types'
-import { formatCurrency } from '@/lib/calculations'
+import { formatCurrency, roundCurrency } from '@/lib/calculations'
 import {
   TallyLedgerMapping,
   DEFAULT_TALLY_LEDGER_MAPPING,
@@ -1206,18 +1206,32 @@ export function TallyIntegrationPage({
             const itemName = resolvedItem?.name || inv.itemName
             const unit = resolvedItem?.unit || inv.unit || 'PCS'
             const gstRate = resolvedItem?.gstRate || 18
+            const halfGst = gstRate / 2
+            const rawRate = inv.rate
+            const rawAmount = inv.amount
+            const lineTaxable = rawAmount
+            const lineCgst = roundCurrency(lineTaxable * (halfGst / 100))
+            const lineSgst = roundCurrency(lineTaxable * (halfGst / 100))
+            const grossAmount = roundCurrency(rawAmount * (1 + gstRate / 100))
+            const inclusiveRate = roundCurrency(rawRate * (1 + gstRate / 100))
 
             return {
               itemId,
               enteredQuantity: inv.quantity || 1,
               enteredUnit: unit,
               baseQuantity: inv.quantity || 1,
-              rate: inv.rate || 0,
-              amount: inv.amount || ((inv.quantity || 1) * (inv.rate || 0)),
-              taxableAmount: inv.amount || ((inv.quantity || 1) * (inv.rate || 0)),
+              basicRate: rawRate,
+              baseRate: inclusiveRate,
+              enteredRate: inclusiveRate,
+              rate: inclusiveRate,
+              amount: grossAmount,
+              taxableAmount: lineTaxable,
               gstRate,
-              cgstAmount: 0,
-              sgstAmount: 0,
+              cgstRate: halfGst,
+              cgstAmount: lineCgst,
+              sgstRate: halfGst,
+              sgstAmount: lineSgst,
+              igstRate: 0,
               igstAmount: 0,
               itemNameSnapshot: itemName,
               itemUnitSnapshot: unit
@@ -1276,8 +1290,12 @@ export function TallyIntegrationPage({
           items: resolveInvoiceItems(),
           additionalCharges: (v.additionalCharges || []).map(ch => ({
             id: ch.id,
-            chargeName: ch.ledgerName,
+            name: ch.name || ch.chargeName || ch.ledgerName || ch.remarks || '',
+            chargeName: ch.chargeName || ch.name || ch.ledgerName || ch.remarks || '',
+            remarks: ch.remarks || ch.name || ch.chargeName || ch.ledgerName || '',
+            basicRate: ch.basicRate || ch.taxableAmount || 0,
             amount: ch.finalAmt,
+            finalAmt: ch.finalAmt,
             taxableAmount: ch.taxableAmount,
             gstRate: ch.gstRate,
             cgstAmount: ch.cgstAmount,
@@ -1299,8 +1317,12 @@ export function TallyIntegrationPage({
           items: resolveInvoiceItems(),
           additionalCharges: (v.additionalCharges || []).map(ch => ({
             id: ch.id,
-            chargeName: ch.ledgerName,
+            name: ch.name || ch.chargeName || ch.ledgerName || ch.remarks || '',
+            chargeName: ch.chargeName || ch.name || ch.ledgerName || ch.remarks || '',
+            remarks: ch.remarks || ch.name || ch.chargeName || ch.ledgerName || '',
+            basicRate: ch.basicRate || ch.taxableAmount || 0,
             amount: ch.finalAmt,
+            finalAmt: ch.finalAmt,
             taxableAmount: ch.taxableAmount,
             gstRate: ch.gstRate,
             cgstAmount: ch.cgstAmount,

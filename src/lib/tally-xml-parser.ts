@@ -32,6 +32,8 @@ export interface TallyXmlInventoryItem {
 
 export interface TallyXmlAdditionalCharge {
   id: string
+  name?: string
+  chargeName?: string
   ledgerName: string
   remarks?: string
   sacCode?: string
@@ -1138,6 +1140,8 @@ export function parseTallyXmlVouchers(
 
         additionalCharges.push({
           id: `charge-${lIdx + 1}`,
+          name: leg.ledgerName,
+          chargeName: leg.ledgerName,
           ledgerName: leg.ledgerName,
           remarks: leg.ledgerName,
           sacCode,
