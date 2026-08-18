@@ -830,19 +830,88 @@ function App() {
     if (!currentUser) return false
     return currentUser.role === 'master_admin'
   }, [currentUser])
+
+  const permissionLevelFor = useCallback((viewId: string): PermissionLevel => {
+    if (isMasterAdmin) return 'edit'
+    if (viewId === 'dashboard') return 'view'
+    if (!currentUser) return 'none'
+
+    const perms = currentUser.permissions || {}
+
+    // 1. Direct match
+    if (perms[viewId] && perms[viewId] !== 'none') {
+      return perms[viewId]
+    }
+
+    // 2. Party aliases & backward compatibility
+    if (viewId === 'parties') {
+      const legacyLevel = perms['parties'] || perms['suppliers'] || perms['customers'] || perms['customer-ledger'] || perms['supplier-ledger']
+      if (legacyLevel && legacyLevel !== 'none') return legacyLevel
+    }
+    if (viewId === 'suppliers' || viewId === 'customers' || viewId === 'supplier-ledger' || viewId === 'customer-ledger') {
+      if (perms['parties'] && perms['parties'] !== 'none') return perms['parties']
+    }
+
+    // 3. Credit & Debit notes aliases
+    if (viewId === 'customer-credit-notes') {
+      const l = perms['customer-credit-notes'] || perms['credit-notes'] || perms['sales-invoices'] || perms['parties'] || perms['customers']
+      if (l && l !== 'none') return l
+    }
+    if (viewId === 'customer-debit-notes') {
+      const l = perms['customer-debit-notes'] || perms['debit-notes'] || perms['sales-invoices'] || perms['parties'] || perms['customers']
+      if (l && l !== 'none') return l
+    }
+    if (viewId === 'supplier-credit-notes') {
+      const l = perms['supplier-credit-notes'] || perms['credit-notes'] || perms['invoices'] || perms['parties'] || perms['suppliers']
+      if (l && l !== 'none') return l
+    }
+    if (viewId === 'supplier-debit-notes') {
+      const l = perms['supplier-debit-notes'] || perms['debit-notes'] || perms['invoices'] || perms['parties'] || perms['suppliers']
+      if (l && l !== 'none') return l
+    }
+
+    // 4. Returns aliases
+    if (viewId === 'sales-returns') {
+      const l = perms['sales-returns'] || perms['sales-invoices'] || perms['parties'] || perms['customers']
+      if (l && l !== 'none') return l
+    }
+    if (viewId === 'purchase-returns') {
+      const l = perms['purchase-returns'] || perms['invoices'] || perms['parties'] || perms['suppliers']
+      if (l && l !== 'none') return l
+    }
+
+    // 5. Default fallback for newly registered or unconfigured agent permissions:
+    // If permissions object has no operational entries configured (or empty {}),
+    // default to 'edit' for all standard operational views so agents are never blanked out!
+    const configuredKeys = Object.keys(perms).filter(k => k !== 'dashboard' && perms[k] && perms[k] !== 'none')
+    if (configuredKeys.length === 0) {
+      if (viewId === 'user-management') return 'none'
+      return 'edit'
+    }
+
+    return perms[viewId] || 'none'
+  }, [currentUser, isMasterAdmin])
+
+  const canAccessView = useCallback((viewId: string) => {
+    if (viewId === 'dashboard') return true
+    if (viewId === 'user-management') return isMasterAdmin
+    if (isMasterAdmin) return true
+    const level = permissionLevelFor(viewId)
+    return level === 'view' || level === 'edit'
+  }, [isMasterAdmin, permissionLevelFor])
+
   const availableNavGroups = useMemo(() => {
     if (isMasterAdmin) return [...navGroups, adminNavGroup]
     return navGroups
       .map((group) => ({
         ...group,
         items: group.items.filter((item) => {
-          const level = currentUser?.permissions[item.id] || 'none'
+          const level = permissionLevelFor(item.id)
           return level === 'view' || level === 'edit'
         })
       }))
       .filter((group) => group.items.length > 0)
-  }, [currentUser, isMasterAdmin])
-
+  }, [isMasterAdmin, permissionLevelFor])
   // Filter Cash & Bank Counters for Agents
   const agentAllowedCounters = currentUser?.role === 'agent' ? (currentUser.allowedCounters || []) : []
   const visibleCashBankCounters = useMemo(() => {
@@ -899,18 +968,6 @@ function App() {
     return Array.from(map.values())
   }, [metadata.businesses, metadata.activeFY, metadata.activeCompanyId, activeCompany, cashBankCounters])
 
-  const canAccessView = useCallback((viewId: string) => {
-    if (viewId === 'dashboard') return true
-    if (viewId === 'user-management') return isMasterAdmin
-    if (isMasterAdmin) return true
-    const level = currentUser?.permissions[viewId] || 'none'
-    return level === 'view' || level === 'edit'
-  }, [currentUser, isMasterAdmin])
-  const permissionLevelFor = useCallback((viewId: string): PermissionLevel => {
-    if (isMasterAdmin) return 'edit'
-    if (viewId === 'dashboard') return 'view'
-    return currentUser?.permissions[viewId] || 'none'
-  }, [currentUser, isMasterAdmin])
   const canEditView = useCallback((viewId: string) => permissionLevelFor(viewId) === 'edit', [permissionLevelFor])
   const isViewReadOnly = useCallback((viewId: string) => safeIsLocked || !canEditView(viewId), [canEditView, safeIsLocked])
 

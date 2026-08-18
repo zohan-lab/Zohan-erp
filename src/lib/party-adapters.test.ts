@@ -7,7 +7,8 @@ import {
   getParties,
   getPartyById
 } from './party-adapters'
-import { Party, TenantData } from './types'
+import { Party } from './types'
+import { TenantData } from './storage-utils'
 
 describe('Party Adapters & Migration Engine', () => {
   it('normalizes opening balance correctly', () => {

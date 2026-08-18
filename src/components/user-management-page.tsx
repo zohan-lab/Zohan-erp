@@ -208,7 +208,14 @@ export default function UserManagementPage({
     setUsername(account.username)
     setPasscode('')
     setIsActive(account.isActive)
-    setPermissions({ ...emptyPermissions(permissionOptions), ...account.permissions, dashboard: 'view' })
+    const base = { ...emptyPermissions(permissionOptions), ...account.permissions, dashboard: 'view' as PermissionLevel }
+    if (!base['parties'] || base['parties'] === 'none') {
+      const legacy = base['suppliers'] || base['customers'] || base['customer-ledger'] || base['supplier-ledger']
+      if (legacy && legacy !== 'none') {
+        base['parties'] = legacy
+      }
+    }
+    setPermissions(base)
     setAllowedCounters((account as any).allowedCounters || [])
     setAllowedBusinesses((account as any).allowedBusinesses || [])
   }
@@ -218,6 +225,17 @@ export default function UserManagementPage({
       ...prev,
       [id]: id === 'dashboard' ? 'view' : level
     }))
+  }
+
+  const grantAll = (level: PermissionLevel) => {
+    setPermissions(prev => {
+      const next: PermissionMap = { ...prev }
+      permissionOptions.forEach(opt => {
+        next[opt.id] = opt.id === 'dashboard' ? 'view' : level
+      })
+      return next
+    })
+    toast.success(`Set all permissions to ${level === 'edit' ? 'Edit' : level === 'view' ? 'View' : 'No access'}`)
   }
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -249,12 +267,20 @@ export default function UserManagementPage({
       return
     }
 
+    const fullPermissions: PermissionMap = {
+      ...permissions,
+      suppliers: permissions['parties'] || permissions['suppliers'] || 'none',
+      customers: permissions['parties'] || permissions['customers'] || 'none',
+      'customer-ledger': permissions['parties'] || permissions['customer-ledger'] || 'none',
+      'supplier-ledger': permissions['parties'] || permissions['supplier-ledger'] || 'none',
+    }
+
     try {
       if (editingId && isServerMode && onSaveAgent) {
         const nextAccounts = await onSaveAgent({
           id: editingId,
           displayName,
-          permissions,
+          permissions: fullPermissions,
           isActive,
           allowedCounters,
           allowedBusinesses
@@ -265,7 +291,7 @@ export default function UserManagementPage({
         const nextAccounts = await updateAgentAccount(editingId, {
           displayName,
           passcode: passcode.trim() || undefined,
-          permissions,
+          permissions: fullPermissions,
           isActive,
           allowedCounters,
           allowedBusinesses
@@ -275,7 +301,7 @@ export default function UserManagementPage({
             await onSaveAgent({
               id: editingId,
               displayName,
-              permissions,
+              permissions: fullPermissions,
               isActive,
               allowedCounters,
               allowedBusinesses
@@ -286,12 +312,24 @@ export default function UserManagementPage({
         }
         onAccountsChange(nextAccounts)
         toast.success('Agent updated')
+      } else if (isServerMode && onCreateRemoteAgent) {
+        await onCreateRemoteAgent({
+          email: username.trim().toLowerCase(),
+          displayName,
+          passcode,
+          permissions: fullPermissions,
+          companyId: businesses[0]?.id || 'sk_traders',
+          allowedCounters,
+          allowedBusinesses
+        })
+        onAccountsChange(getUserAccounts())
+        toast.success('Agent created successfully on server')
       } else {
         const created = await createAgentAccount({
           username,
           displayName,
           passcode,
-          permissions,
+          permissions: fullPermissions,
           allowedCounters,
           allowedBusinesses
         })
@@ -301,7 +339,7 @@ export default function UserManagementPage({
               email: username.trim().toLowerCase(),
               displayName,
               passcode,
-              permissions,
+              permissions: fullPermissions,
               companyId: '',
               allowedCounters,
               allowedBusinesses
@@ -553,11 +591,42 @@ export default function UserManagementPage({
         </Card>
 
         <Card className="neo-card">
-          <CardHeader>
-            <CardTitle>Permission Matrix</CardTitle>
-            <CardDescription>
-              View lets agents open a screen. Edit lets them create, update, and delete records.
-            </CardDescription>
+          <CardHeader className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div>
+              <CardTitle>Permission Matrix</CardTitle>
+              <CardDescription>
+                View lets agents open a screen. Edit lets them create, update, and delete records.
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs font-semibold px-2.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border-emerald-200"
+                onClick={() => grantAll('edit')}
+              >
+                Grant All Edit
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs font-semibold px-2.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200"
+                onClick={() => grantAll('view')}
+              >
+                Grant All View
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs px-2.5 text-slate-600 hover:bg-slate-100"
+                onClick={() => grantAll('none')}
+              >
+                Clear
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-5">
             {Object.entries(groupedOptions).map(([group, options]) => (

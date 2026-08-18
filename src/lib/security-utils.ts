@@ -10,6 +10,42 @@ export type UserRole = 'master_admin' | 'agent'
 export type PermissionLevel = 'none' | 'view' | 'edit'
 export type PermissionMap = Record<string, PermissionLevel>
 
+export const DEFAULT_AGENT_PERMISSIONS: PermissionMap = {
+  dashboard: 'view',
+  parties: 'edit',
+  suppliers: 'edit',
+  customers: 'edit',
+  'sales-invoices': 'edit',
+  'customer-payments': 'edit',
+  'customer-credit-notes': 'edit',
+  'customer-debit-notes': 'edit',
+  'sales-returns': 'edit',
+  invoices: 'edit',
+  payments: 'edit',
+  'supplier-debit-notes': 'edit',
+  'supplier-credit-notes': 'edit',
+  'purchase-returns': 'edit',
+  'expense-entries': 'edit',
+  'expense-types': 'edit',
+  items: 'edit',
+  'cash-bank-master': 'edit',
+  'cash-bank-voucher': 'edit',
+  'cash-bank-ledger': 'edit',
+  'gst-reports': 'edit',
+  'drawing-power': 'edit',
+  'cd-profit-report': 'edit',
+  'customer-aging': 'edit',
+  inventory: 'edit',
+  'cd-risk': 'edit',
+  wallet: 'edit',
+  annual: 'edit',
+  'supplier-cd-rules': 'edit',
+  'fixed-schemes': 'edit',
+  'mt-bookings': 'edit',
+  'invoice-details': 'edit',
+  'payment-details': 'edit'
+}
+
 export interface UserAccount {
   id: string
   username: string

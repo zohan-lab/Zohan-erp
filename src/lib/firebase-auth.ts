@@ -17,7 +17,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore'
 import { firebaseConfig, auth, db, isFirebaseAuthEnabled, isFirebaseConfigured } from './firebase-client'
-import { AuthenticatedUser, PermissionMap, UserAccount, isMasterAdminIdentifier, getCurrentUser, getUserAccounts, persistActiveUserSession } from './security-utils'
+import { AuthenticatedUser, PermissionMap, UserAccount, isMasterAdminIdentifier, getCurrentUser, getUserAccounts, persistActiveUserSession, DEFAULT_AGENT_PERMISSIONS } from './security-utils'
 
 // ─── Error Classes ────────────────────────────────────────────────────────────
 
@@ -215,7 +215,7 @@ export async function signInRemoteUser(
         email: cleanEmail,
         displayName,
         role: isMasterAdminEmail ? 'master_admin' : 'agent',
-        permissions: {},
+        permissions: isMasterAdminEmail ? {} : DEFAULT_AGENT_PERMISSIONS,
         isActive: true,
         companyId: null,
         allowedCounters: [],

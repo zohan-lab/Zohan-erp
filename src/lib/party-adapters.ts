@@ -196,8 +196,10 @@ export function migrateToUnifiedParties(tenantData: Partial<TenantData> = {}): P
       const incoming = normalizeParty(raw, fallbackType)
 
       // Combine opening balance across counterparty records
-      const existingSigned = existing.balanceType === 'Credit' ? -existing.openingBalance : existing.openingBalance
-      const incomingSigned = incoming.balanceType === 'Credit' ? -incoming.openingBalance : incoming.openingBalance
+      const existingBal = typeof existing.openingBalance === 'number' ? existing.openingBalance : 0
+      const incomingBal = typeof incoming.openingBalance === 'number' ? incoming.openingBalance : 0
+      const existingSigned = existing.balanceType === 'Credit' ? -existingBal : existingBal
+      const incomingSigned = incoming.balanceType === 'Credit' ? -incomingBal : incomingBal
       const combinedNet = existingSigned + incomingSigned
 
       const merged = normalizeParty({
