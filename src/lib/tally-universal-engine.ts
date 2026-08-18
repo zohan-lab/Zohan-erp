@@ -428,7 +428,7 @@ export function generateTallyCreditNoteVouchers(
   const custMap = new Map(customers.map(c => [c.id, c]))
 
   return creditNotes.map((cn, idx) => {
-    const cust = custMap.get(cn.customerId)
+    const cust = custMap.get(cn.partyId || cn.customerId || '')
     const partyName = cust?.name || 'Customer'
     const partyState = cust?.stateCode || (cust?.gstin ? cust.gstin.slice(0, 2) : companyState)
     const isInterState = isInterStateTransaction(partyState, companyState)
@@ -490,7 +490,7 @@ export function generateTallyDebitNoteVouchers(
   const supMap = new Map(suppliers.map(s => [s.id, s]))
 
   return debitNotes.map((dn, idx) => {
-    const sup = supMap.get(dn.supplierId)
+    const sup = supMap.get(dn.partyId || dn.supplierId || '')
     const partyName = sup?.name || 'Supplier'
     const partyState = sup?.stateCode || (sup?.gstin ? sup.gstin.slice(0, 2) : companyState)
     const isInterState = isInterStateTransaction(partyState, companyState)

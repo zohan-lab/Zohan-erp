@@ -332,7 +332,7 @@ export function calculatePaymentAllocations(
 
     } else if (entry.type === 'debitNote') {
       const dn = entry.data
-      const supplierId = dn.supplierId
+      const supplierId = dn.partyId || dn.supplierId || ''
       if (!supplierState.has(supplierId)) {
         supplierState.set(supplierId, { pendingInvoices: [], advancePayments: [], totalOutstanding: 0 })
       }
@@ -371,7 +371,7 @@ export function calculatePaymentAllocations(
       }
     } else if (entry.type === 'creditNote') {
       const cn = entry.data
-      const supplierId = cn.supplierId
+      const supplierId = cn.partyId || cn.supplierId || ''
       if (!supplierState.has(supplierId)) {
         supplierState.set(supplierId, { pendingInvoices: [], advancePayments: [], totalOutstanding: 0 })
       }

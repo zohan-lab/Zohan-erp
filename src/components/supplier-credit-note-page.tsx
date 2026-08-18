@@ -108,7 +108,7 @@ export default function SupplierCreditNotePage({
   const handleStartEdit = (item: SupplierCreditNote) => {
     setEditingItem(item)
     setNoteNo(item.noteNo || '')
-    setSelectedSupplierId(item.supplierId)
+    setSelectedSupplierId(item.partyId || item.supplierId || '')
     setDate(item.date)
     setAmount(String(item.amount || ''))
     setReason(item.reason || '02 - Post Sale Discount')

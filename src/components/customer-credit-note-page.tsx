@@ -117,7 +117,7 @@ export default function CustomerCreditNotePage({
   const handleStartEdit = (item: CustomerCreditNote) => {
     setEditingItem(item)
     setNoteNo(item.noteNo || '')
-    setSelectedCustomerId(item.customerId)
+    setSelectedCustomerId(item.partyId || item.customerId || '')
     setDate(item.date)
     setAmount(String(item.amount || ''))
     setReason(item.reason || '01 - Sales Return')

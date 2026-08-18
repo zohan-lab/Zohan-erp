@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import {
+  Party,
   Supplier,
   Customer,
   PurchaseInvoice,
@@ -51,13 +52,13 @@ import {
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 
-export type PartyType = 'supplier' | 'customer'
+export type PartyType = 'party' | 'supplier' | 'customer'
 
 interface PartyFullPageEditorProps {
-  type: PartyType
-  party?: Supplier | Customer | null
-  existingParties?: (Supplier | Customer)[]
-  onSave: (savedParty: Supplier | Customer) => void
+  type?: PartyType
+  party?: Supplier | Customer | Party | null
+  existingParties?: (Supplier | Customer | Party)[]
+  onSave: (savedParty: Party) => void
   onCancel: () => void
   isLocked?: boolean
   activeFY?: string
@@ -76,7 +77,7 @@ function trimOrUndefined(value: string) {
 }
 
 export function PartyFullPageEditor({
-  type,
+  type = 'party',
   party,
   existingParties = [],
   onSave,
@@ -93,7 +94,8 @@ export function PartyFullPageEditor({
 }: PartyFullPageEditorProps) {
   const isEditing = Boolean(party && party.id)
   const isSupplier = type === 'supplier'
-  const partyLabel = isSupplier ? 'Supplier' : 'Customer'
+  const isCustomer = type === 'customer'
+  const partyLabel = isSupplier ? 'Supplier' : isCustomer ? 'Customer' : 'Party'
 
   // Form State: Profile & Basic Details
   const [name, setName] = useState('')
@@ -302,74 +304,43 @@ export function PartyFullPageEditor({
     const cleanShippingCity = shippingSameAsBilling ? city : shippingCity
     const cleanShippingPincode = shippingSameAsBilling ? pincode : shippingPincode
 
-    if (isSupplier) {
-      const existingSup = party as Supplier | null | undefined
-      const advCD = parseFloat(advanceCDPercentage) || 0
-      const tMT = parseFloat(targetMT) || 0
-      const tRate = parseFloat(targetRatePerMT) || 0
-      const annualTarget: AnnualTarget | undefined = (tMT > 0 || tRate > 0) ? { targetMT: tMT, ratePerMT: tRate } : undefined
+    const advCD = parseFloat(advanceCDPercentage) || 0
+    const tMT = parseFloat(targetMT) || 0
+    const tRate = parseFloat(targetRatePerMT) || 0
+    const annualTarget: AnnualTarget | undefined = (tMT > 0 || tRate > 0) ? { targetMT: tMT, ratePerMT: tRate } : undefined
 
-      const supplierToSave: Supplier = {
-        ...(existingSup || {}),
-        id: existingSup?.id || `sup-${Date.now()}`,
-        name: cleanName,
-        phone: trimOrUndefined(phone),
-        email: trimOrUndefined(email),
-        address: trimOrUndefined(address),
-        state: trimOrUndefined(state),
-        stateCode: trimOrUndefined(stateCode),
-        stateName: trimOrUndefined(state),
-        city: trimOrUndefined(city),
-        pincode: trimOrUndefined(pincode),
-        shippingSameAsBilling,
-        shippingAddress: trimOrUndefined(cleanShippingAddress),
-        shippingState: trimOrUndefined(cleanShippingState),
-        shippingStateCode: trimOrUndefined(cleanShippingStateCode),
-        shippingStateName: trimOrUndefined(cleanShippingState),
-        shippingCity: trimOrUndefined(cleanShippingCity),
-        shippingPincode: trimOrUndefined(cleanShippingPincode),
-        gstin: trimOrUndefined(gstin.toUpperCase()),
-        openingBalance: opBal !== 0 ? opBal : undefined,
-        openingBalanceDate: opBal !== 0 ? openingBalanceDate : undefined,
-        balanceType,
-        advanceCDPercentage: advCD > 0 ? advCD : undefined,
-        paymentCDRules,
-        invoiceCloseCDRules,
-        annualTarget,
-        cdRuleVersions: existingSup?.cdRuleVersions,
-        cdRuleChangeLog: existingSup?.cdRuleChangeLog
-      }
-
-      onSave(supplierToSave)
-    } else {
-      const existingCust = party as Customer | null | undefined
-      const customerToSave: Customer = {
-        ...(existingCust || {}),
-        id: existingCust?.id || `cust-${Date.now()}`,
-        name: cleanName,
-        phone: trimOrUndefined(phone),
-        email: trimOrUndefined(email),
-        address: trimOrUndefined(address),
-        state: trimOrUndefined(state),
-        stateCode: trimOrUndefined(stateCode),
-        stateName: trimOrUndefined(state),
-        city: trimOrUndefined(city),
-        pincode: trimOrUndefined(pincode),
-        shippingSameAsBilling,
-        shippingAddress: trimOrUndefined(cleanShippingAddress),
-        shippingState: trimOrUndefined(cleanShippingState),
-        shippingStateCode: trimOrUndefined(cleanShippingStateCode),
-        shippingStateName: trimOrUndefined(cleanShippingState),
-        shippingCity: trimOrUndefined(cleanShippingCity),
-        shippingPincode: trimOrUndefined(cleanShippingPincode),
-        gstin: trimOrUndefined(gstin.toUpperCase()),
-        openingBalance: opBal !== 0 ? opBal : undefined,
-        openingBalanceDate: opBal !== 0 ? openingBalanceDate : undefined,
-        balanceType
-      }
-
-      onSave(customerToSave)
+    const partyToSave: Party = {
+      ...(party || {}),
+      id: party?.id || `party-${Date.now()}`,
+      name: cleanName,
+      phone: trimOrUndefined(phone),
+      email: trimOrUndefined(email),
+      address: trimOrUndefined(address),
+      state: trimOrUndefined(state),
+      stateCode: trimOrUndefined(stateCode),
+      stateName: trimOrUndefined(state),
+      city: trimOrUndefined(city),
+      pincode: trimOrUndefined(pincode),
+      shippingSameAsBilling,
+      shippingAddress: trimOrUndefined(cleanShippingAddress),
+      shippingState: trimOrUndefined(cleanShippingState),
+      shippingStateCode: trimOrUndefined(cleanShippingStateCode),
+      shippingStateName: trimOrUndefined(cleanShippingState),
+      shippingCity: trimOrUndefined(cleanShippingCity),
+      shippingPincode: trimOrUndefined(cleanShippingPincode),
+      gstin: trimOrUndefined(gstin.toUpperCase()),
+      openingBalance: opBal !== 0 ? opBal : undefined,
+      openingBalanceDate: opBal !== 0 ? openingBalanceDate : undefined,
+      balanceType,
+      advanceCDPercentage: advCD > 0 ? advCD : undefined,
+      paymentCDRules: paymentCDRules.length > 0 ? paymentCDRules : undefined,
+      invoiceCloseCDRules: invoiceCloseCDRules.length > 0 ? invoiceCloseCDRules : undefined,
+      annualTarget,
+      cdRuleVersions: (party as any)?.cdRuleVersions,
+      cdRuleChangeLog: (party as any)?.cdRuleChangeLog
     }
+
+    onSave(partyToSave)
   }
 
   return (

@@ -21,6 +21,7 @@ export interface AppMetadata {
 }
 
 export interface TenantData {
+  parties?: any[]
   suppliers: any[]
   customers: any[]
   items: any[]
@@ -46,6 +47,7 @@ export interface TenantData {
 }
 
 export const TENANT_COLLECTION_KEYS: Array<keyof TenantData> = [
+  'parties',
   'suppliers',
   'customers',
   'items',

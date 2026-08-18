@@ -108,7 +108,7 @@ export default function CustomerDebitNotePage({
   const handleStartEdit = (item: CustomerDebitNote) => {
     setEditingItem(item)
     setNoteNo(item.noteNo || '')
-    setSelectedCustomerId(item.customerId)
+    setSelectedCustomerId(item.partyId || item.customerId || '')
     setDate(item.date)
     setAmount(String(item.amount || ''))
     setReason(item.reason || '03 - Rate Difference / Weight Shortage')

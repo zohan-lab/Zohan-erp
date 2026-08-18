@@ -371,12 +371,28 @@ export async function saveItem(companyId: string, item: any): Promise<void> {
   await saveEntityRemote(companyId, 'items', item)
 }
 
+export async function saveParty(companyId: string, party: any): Promise<void> {
+  await saveEntityRemote(companyId, 'parties', party)
+  // Also mirror to legacy customer/supplier collection to preserve cross-version sync
+  if (party.partyType === 'SUPPLIER') {
+    await saveEntityRemote(companyId, 'suppliers', party).catch(() => {})
+  } else {
+    await saveEntityRemote(companyId, 'customers', party).catch(() => {})
+  }
+}
+
+export async function deleteParty(companyId: string, partyId: string): Promise<void> {
+  await deleteEntityRemote(companyId, 'parties', partyId)
+  await deleteEntityRemote(companyId, 'customers', partyId).catch(() => {})
+  await deleteEntityRemote(companyId, 'suppliers', partyId).catch(() => {})
+}
+
 export async function saveSupplier(companyId: string, supplier: any): Promise<void> {
-  await saveEntityRemote(companyId, 'suppliers', supplier)
+  await saveParty(companyId, supplier)
 }
 
 export async function saveCustomer(companyId: string, customer: any): Promise<void> {
-  await saveEntityRemote(companyId, 'customers', customer)
+  await saveParty(companyId, customer)
 }
 
 export async function savePayment(companyId: string, payment: any): Promise<void> {
@@ -388,11 +404,11 @@ export async function saveCustomerPayment(companyId: string, payment: any): Prom
 }
 
 export async function deleteCustomer(companyId: string, customerId: string): Promise<void> {
-  await deleteEntityRemote(companyId, 'customers', customerId)
+  await deleteParty(companyId, customerId)
 }
 
 export async function deleteSupplier(companyId: string, supplierId: string): Promise<void> {
-  await deleteEntityRemote(companyId, 'suppliers', supplierId)
+  await deleteParty(companyId, supplierId)
 }
 
 export async function deleteItem(companyId: string, itemId: string): Promise<void> {

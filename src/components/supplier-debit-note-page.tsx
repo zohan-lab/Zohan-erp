@@ -108,7 +108,7 @@ export default function SupplierDebitNotePage({
   const handleStartEdit = (item: SupplierDebitNote) => {
     setEditingItem(item)
     setNoteNo(item.noteNo || '')
-    setSelectedSupplierId(item.supplierId)
+    setSelectedSupplierId(item.partyId || item.supplierId || '')
     setDate(item.date)
     setAmount(String(item.amount || ''))
     setReason(item.reason || '01 - Purchase Return')

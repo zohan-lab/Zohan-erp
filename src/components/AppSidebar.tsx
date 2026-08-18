@@ -45,6 +45,15 @@ type ThemeConfig = {
 }
 
 const GROUP_THEMES: Record<string, ThemeConfig> = {
+  Parties: {
+    iconBg: 'bg-teal-50',
+    iconColor: 'text-teal-600',
+    activeBg: 'bg-teal-600',
+    activeText: 'text-white',
+    dotColor: 'bg-teal-500',
+    badgeBg: 'bg-teal-100 text-teal-700',
+    hoverBg: 'hover:bg-teal-50',
+  },
   Sales: {
     iconBg: 'bg-blue-50',
     iconColor: 'text-blue-600',

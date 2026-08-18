@@ -362,13 +362,14 @@ export function computeMonthlyGstReport(
   const gstr1Notes: Gstr1NoteItem[] = []
 
   customerCreditNotes.forEach(cn => {
-    const cust = custMap.get(cn.customerId)
+    const partyId = cn.partyId || cn.customerId || ''
+    const cust = custMap.get(partyId)
     const partyState = cust?.stateCode || (cust?.gstin ? cust.gstin.slice(0, 2) : companyState)
     const gstin = (cust?.gstin || '').trim().toUpperCase()
 
     gstr1Notes.push({
       id: cn.id,
-      partyId: cn.customerId,
+      partyId: partyId,
       gstin: gstin || 'UR',
       partyName: cust?.name || 'Customer',
       noteType: 'C',
@@ -390,13 +391,14 @@ export function computeMonthlyGstReport(
   })
 
   customerDebitNotes.forEach(dn => {
-    const cust = custMap.get(dn.customerId)
+    const partyId = dn.partyId || dn.customerId || ''
+    const cust = custMap.get(partyId)
     const partyState = cust?.stateCode || (cust?.gstin ? cust.gstin.slice(0, 2) : companyState)
     const gstin = (cust?.gstin || '').trim().toUpperCase()
 
     gstr1Notes.push({
       id: dn.id,
-      partyId: dn.customerId,
+      partyId: partyId,
       gstin: gstin || 'UR',
       partyName: cust?.name || 'Customer',
       noteType: 'D',
@@ -491,7 +493,7 @@ export function computeMonthlyGstReport(
 
   // 3. Supplier Credit Notes (ITC Reduction / Adjustment)
   supplierCreditNotes.forEach(cn => {
-    const sup = supMap.get(cn.supplierId)
+    const sup = supMap.get(cn.partyId || cn.supplierId || '')
     const partyState = sup?.stateCode || (sup?.gstin ? sup.gstin.slice(0, 2) : companyState)
     const gstin = (sup?.gstin || '').trim().toUpperCase()
 
@@ -520,7 +522,7 @@ export function computeMonthlyGstReport(
 
   // 4. Supplier Debit Notes (ITC Reversal)
   supplierDebitNotes.forEach(dn => {
-    const sup = supMap.get(dn.supplierId)
+    const sup = supMap.get(dn.partyId || dn.supplierId || '')
     const partyState = sup?.stateCode || (sup?.gstin ? sup.gstin.slice(0, 2) : companyState)
     const gstin = (sup?.gstin || '').trim().toUpperCase()
 

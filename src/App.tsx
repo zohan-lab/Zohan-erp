@@ -179,7 +179,9 @@ import {
   saveRemoteTenantData,
   subscribeTenantData,
   saveEntityRemote,
-  deleteEntityRemote
+  deleteEntityRemote,
+  saveParty,
+  deleteParty
 } from '@/lib/firebase-storage'
 import { appendServerAuditLog } from '@/lib/remote-audit'
 import { isLocalCacheDisabled, db } from '@/lib/firebase-client'
@@ -196,6 +198,7 @@ import {
   updateRemoteUserProfile
 } from '@/lib/firebase-auth'
 import {
+  Party,
   Supplier,
   PurchaseInvoice,
   Payment,
@@ -215,6 +218,9 @@ import {
   FixedScheme,
   MTBooking
 } from '@/lib/types'
+import { PartiesPage } from '@/components/parties-page'
+import { PartyFullPageEditor } from '@/components/party-full-page-editor'
+import { migrateToUnifiedParties } from '@/lib/party-adapters'
 import { AppHeader } from '@/components/AppHeader'
 import { AppSidebar } from '@/components/AppSidebar'
 import { AppDialogs } from '@/components/AppDialogs'
@@ -402,6 +408,13 @@ type NavGroup = {
 
 const navGroups: NavGroup[] = [
   {
+    title: 'Parties',
+    isSingle: true,
+    items: [
+      { id: 'parties', label: 'Parties', icon: Users },
+    ]
+  },
+  {
     title: 'Sales',
     items: [
       { id: 'sales-invoices', label: 'Sales Invoice', icon: Receipt },
@@ -409,20 +422,16 @@ const navGroups: NavGroup[] = [
       { id: 'customer-credit-notes', label: 'Credit Note', icon: FileText },
       { id: 'customer-debit-notes', label: 'Debit Note', icon: FileText },
       { id: 'sales-returns', label: 'Sales Return', icon: Receipt },
-      { id: 'customer-ledger', label: 'Customer Ledger', icon: FileText },
-      { id: 'customers', label: 'Customer', icon: UsersThree },
     ]
   },
   {
     title: 'Purchase',
     items: [
-      { id: 'invoices', label: 'Purchased Invoice', icon: Receipt },
+      { id: 'invoices', label: 'Purchase Invoice', icon: Receipt },
       { id: 'payments', label: 'Payment Out', icon: CreditCard },
       { id: 'supplier-debit-notes', label: 'Debit Note', icon: FileText },
       { id: 'supplier-credit-notes', label: 'Credit Note', icon: FileText },
-      { id: 'purchase-returns', label: 'Purchased Return', icon: Receipt },
-      { id: 'supplier-ledger', label: 'Supplier Ledger', icon: FileText },
-      { id: 'suppliers', label: 'Supplier', icon: Users },
+      { id: 'purchase-returns', label: 'Purchase Return', icon: Receipt },
     ]
   },
   {
@@ -452,7 +461,7 @@ const navGroups: NavGroup[] = [
       { id: 'gst-reports', label: 'GST Reports (GSTR-1/2B/3B)', icon: FileText },
       { id: 'drawing-power', label: 'Drawing Power Report (DP)', icon: ChartLineUp },
       { id: 'cd-profit-report', label: 'Payment CD & Profit Analytics', icon: Scales },
-      { id: 'customer-aging', label: 'Customer Aging & Receivables', icon: Clock },
+      { id: 'customer-aging', label: 'Party Aging & Receivables', icon: Clock },
       { id: 'inventory', label: 'Inventory Report', icon: Cube },
       { id: 'cd-risk', label: 'CD at Risk', icon: ChartBar },
       { id: 'wallet', label: 'Discount Wallet', icon: Wallet },
@@ -463,7 +472,7 @@ const navGroups: NavGroup[] = [
   {
     title: 'Discount Configuration',
     items: [
-      { id: 'supplier-cd-rules', label: 'Supplier CD Rules', icon: Percent },
+      { id: 'supplier-cd-rules', label: 'Party CD Rules', icon: Percent },
       { id: 'fixed-schemes', label: 'Fixed Schemes', icon: CalendarBlank },
       { id: 'annual', label: 'Annual Discount', icon: ChartPie },
       { id: 'mt-bookings', label: 'MT Booking Master', icon: BookBookmark },
@@ -495,24 +504,25 @@ const permissionOptions: PermissionOption[] = [
 
 const viewNames: Record<string, string> = {
   'dashboard': 'Dashboard',
-  'suppliers': 'Suppliers',
-  'customers': 'Customers',
+  'parties': 'Parties',
+  'suppliers': 'Parties',
+  'customers': 'Parties',
   'items': 'Items',
   'invoices': 'Purchase Invoices',
-  'payments': 'Supplier Payments',
+  'payments': 'Payment Out',
   'sales-invoices': 'Sales Invoices',
-  'customer-payments': 'Customer Payments',
+  'customer-payments': 'Payment In',
   'expense-entries': 'Expense Entries',
   'gst-reports': 'GST Reports (GSTR-1/2B/3B)',
   'drawing-power': 'Drawing Power Report (DP)',
   'cd-profit-report': 'Payment CD & Profit Analytics',
-  'customer-aging': 'Customer Aging & Receivables',
+  'customer-aging': 'Party Aging & Receivables',
   'inventory': 'Inventory Report',
   'cd-risk': 'CD at Risk',
   'wallet': 'Discount Wallet',
   'annual': 'Annual Discount',
-  'supplier-ledger': 'Supplier Ledger',
-  'customer-ledger': 'Customer Ledger',
+  'supplier-ledger': 'Party Ledger',
+  'customer-ledger': 'Party Ledger',
   'invoice-details': 'Invoice Details',
   'payment-details': 'Payment Details',
   'expense-types': 'Expense Types',
@@ -528,7 +538,7 @@ const viewNames: Record<string, string> = {
   'supplier-debit-notes': 'Debit Note',
   'supplier-credit-notes': 'Credit Note',
   'sales-returns': 'Sales Return',
-  'purchase-returns': 'Purchase Return',
+  'purchase-returns': 'Purchase Return'
 }
 
 function App() {
@@ -547,6 +557,7 @@ function App() {
     return meta
   })
 
+  const [parties, setParties] = useState<Party[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [items, setItems] = useState<Item[]>([])
@@ -569,6 +580,8 @@ function App() {
   const [salesReturns, setSalesReturns] = useState<SalesReturn[]>([])
   const [purchaseReturns, setPurchaseReturns] = useState<PurchaseReturn[]>([])
   const [selectedInvoiceDetailsNo, setSelectedInvoiceDetailsNo] = useState<string>('')
+  const [partyEditorOpen, setPartyEditorOpen] = useState(false)
+  const [editingParty, setEditingParty] = useState<Party | null>(null)
 
   // Wrap state setters for action-driven subcollection sync
   const syncSetState = <T extends { id: string }>(
@@ -601,8 +614,34 @@ function App() {
     }
   }
 
-  const syncSetSuppliers = syncSetState(setSuppliers, 'suppliers')
-  const syncSetCustomers = syncSetState(setCustomers, 'customers')
+  const syncSetParties = (updater: React.SetStateAction<Party[]>) => {
+    setParties((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      setSuppliers(next)
+      setCustomers(next)
+
+      if (
+        canUseRemoteStorage() &&
+        tenantHydrated &&
+        !isTenantLoadingRef.current &&
+        hydratedCompanyIdRef.current === metadata.activeCompanyId
+      ) {
+        const companyId = metadata.activeCompanyId
+        next.forEach((item) => {
+          if (!item || !item.id) return
+          const prevItem = prev.find((p) => p.id === item.id)
+          if (!prevItem || !areObjectsSemanticallyEqual(item, prevItem)) {
+            void saveParty(companyId, item)
+          }
+        })
+      }
+
+      return next
+    })
+  }
+
+  const syncSetSuppliers = (updater: React.SetStateAction<Supplier[]>) => syncSetParties(updater as any)
+  const syncSetCustomers = (updater: React.SetStateAction<Customer[]>) => syncSetParties(updater as any)
   const syncSetItems = syncSetState(setItems, 'items')
   const syncSetInvoices = syncSetState(setInvoices, 'invoices')
   const syncSetPayments = syncSetState(setPayments, 'payments')
@@ -761,8 +800,9 @@ function App() {
   const cashBankKey = getTenantKey(metadata.activeCompanyId)
   const storedCompanies = metadata.businesses.map(b => b.name)
 
-  const safeSuppliers = suppliers || []
-  const safeCustomers = customers || []
+  const safeParties = parties.length > 0 ? parties : (suppliers.length > 0 || customers.length > 0 ? migrateToUnifiedParties({ parties, suppliers, customers }) : [])
+  const safeSuppliers = safeParties
+  const safeCustomers = safeParties
   const safeItems = items || []
   const safeInvoices = invoices || []
   const safePayments = payments || []
@@ -1041,6 +1081,7 @@ function App() {
       saveTimerRef.current = null
     }
 
+    setParties([])
     setSuppliers([])
     setCustomers([])
     setItems([])
@@ -1069,6 +1110,7 @@ function App() {
     const applyTenantData = (parsedData: Partial<TenantData>) => {
       if (cancelled || currentFetchId !== switchSessionIdRef.current) return
       const normalizedData: TenantData = {
+        parties: parsedData.parties || [],
         suppliers: parsedData.suppliers || [],
         customers: parsedData.customers || [],
         items: parsedData.items || [],
@@ -1092,8 +1134,10 @@ function App() {
         purchaseReturns: parsedData.purchaseReturns || [],
         userAccounts: parsedData.userAccounts || getUserAccounts() || []
       }
-      setSuppliers(normalizedData.suppliers)
-      setCustomers(normalizedData.customers)
+      const unifiedParties = migrateToUnifiedParties(normalizedData)
+      setParties(unifiedParties)
+      setSuppliers(unifiedParties)
+      setCustomers(unifiedParties)
       setItems(normalizedData.items)
       setInvoices(normalizedData.invoices)
       setPayments(normalizedData.payments)
@@ -1175,6 +1219,7 @@ function App() {
       console.log(`📡 Realtime subscription received update for ${key}. Count: ${docs.length}`)
 
       const setters: Record<keyof TenantData, React.Dispatch<React.SetStateAction<any[]>>> = {
+        parties: setParties,
         suppliers: setSuppliers,
         customers: setCustomers,
         items: setItems,
@@ -1993,33 +2038,85 @@ function App() {
               onNavigateToReport={(reportName) => setActiveView(reportName)}
             />
           )
+        case 'parties':
         case 'suppliers':
-          return (
-            <SuppliersPage
-              suppliers={safeSuppliers}
-              setSuppliers={syncSetSuppliers}
-              invoices={safeInvoices}
-              payments={safePayments}
-              debitNotes={safeDebitNotes}
-              supplierCreditNotes={safeSupplierCreditNotes}
-              purchaseReturns={safePurchaseReturns}
-              expenseEntries={safeExpenseEntries}
-              isLocked={isViewReadOnly('suppliers')}
-              activeCompanyId={metadata.activeCompanyId}
-            />
-          )
         case 'customers':
+        case 'supplier-ledger':
+        case 'customer-ledger':
+          if (partyEditorOpen) {
+            return (
+              <PartyFullPageEditor
+                type="party"
+                party={editingParty}
+                existingParties={safeParties}
+                onSave={(savedParty) => {
+                  if (editingParty) {
+                    syncSetParties((prev) => prev.map((p) => (p.id === savedParty.id ? savedParty : p)))
+                    if (metadata.activeCompanyId) {
+                      void saveParty(metadata.activeCompanyId, savedParty)
+                    }
+                    toast.success(`Party "${savedParty.name}" updated successfully`)
+                  } else {
+                    syncSetParties((prev) => [savedParty, ...prev])
+                    if (metadata.activeCompanyId) {
+                      void saveParty(metadata.activeCompanyId, savedParty)
+                    }
+                    toast.success(`Party "${savedParty.name}" added successfully`)
+                  }
+                  setPartyEditorOpen(false)
+                  setEditingParty(null)
+                }}
+                onCancel={() => {
+                  setPartyEditorOpen(false)
+                  setEditingParty(null)
+                }}
+                isLocked={isViewReadOnly('parties')}
+                activeFY={safeCurrentFY}
+                invoices={safeInvoices}
+                salesInvoices={safeSalesInvoices}
+                payments={safePayments}
+                customerPayments={safeCustomerPayments}
+                debitNotes={safeDebitNotes}
+                supplierCreditNotes={safeSupplierCreditNotes}
+                purchaseReturns={safePurchaseReturns}
+              />
+            )
+          }
           return (
-            <CustomersPage
-              customers={safeCustomers}
-              setCustomers={syncSetCustomers}
-              isLocked={isViewReadOnly('customers')}
+            <PartiesPage
+              parties={safeParties}
               salesInvoices={safeSalesInvoices}
+              invoices={safeInvoices}
               customerPayments={safeCustomerPayments}
-              customerDebitNotes={safeCustomerDebitNotes}
+              payments={safePayments}
               creditNotes={safeCreditNotes}
+              supplierCreditNotes={safeSupplierCreditNotes}
+              debitNotes={safeDebitNotes}
+              customerDebitNotes={safeCustomerDebitNotes}
               salesReturns={safeSalesReturns}
-              activeCompanyId={metadata.activeCompanyId}
+              purchaseReturns={safePurchaseReturns}
+              onAddParty={() => {
+                setEditingParty(null)
+                setPartyEditorOpen(true)
+              }}
+              onEditParty={(party) => {
+                setEditingParty(party)
+                setPartyEditorOpen(true)
+              }}
+              onDeleteParty={(partyId) => {
+                syncSetParties((prev) => prev.filter((p) => p.id !== partyId))
+                if (metadata.activeCompanyId) {
+                  void deleteParty(metadata.activeCompanyId, partyId)
+                }
+                toast.success('Party deleted successfully')
+              }}
+              onNewSalesInvoice={() => setActiveView('sales-invoices')}
+              onNewPurchaseInvoice={() => setActiveView('invoices')}
+              onNewPaymentIn={() => setActiveView('customer-payments')}
+              onNewPaymentOut={() => setActiveView('payments')}
+              onNewCreditNote={() => setActiveView('customer-credit-notes')}
+              onNewDebitNote={() => setActiveView('supplier-debit-notes')}
+              isLocked={isViewReadOnly('parties')}
             />
           )
         case 'items':
@@ -2188,33 +2285,6 @@ function App() {
               invoices={safeInvoices}
               currentFY={safeCurrentFY}
               businessName={safeBusinessName}
-            />
-          )
-        case 'supplier-ledger':
-          return (
-            <SupplierLedgerPage
-              suppliers={safeSuppliers}
-              invoices={safeInvoices}
-              payments={safePayments}
-              debitNotes={safeDebitNotes}
-              supplierCreditNotes={safeSupplierCreditNotes}
-              purchaseReturns={safePurchaseReturns}
-              items={safeItems}
-              currentFY={safeCurrentFY}
-              businessName={safeBusinessName}
-            />
-          )
-        case 'customer-ledger':
-          return (
-            <CustomerLedgerPage
-              customers={safeCustomers}
-              salesInvoices={safeSalesInvoices}
-              customerPayments={safeCustomerPayments}
-              creditNotes={safeCreditNotes}
-              customerDebitNotes={safeCustomerDebitNotes}
-              salesReturns={safeSalesReturns}
-              items={safeItems}
-              currentFY={safeCurrentFY}
             />
           )
         case 'expense-types':
