@@ -45,7 +45,9 @@ export const DEFAULT_AGENT_PERMISSIONS: PermissionMap = {
   'fixed-schemes': 'edit',
   'mt-bookings': 'edit',
   'invoice-details': 'edit',
-  'payment-details': 'edit'
+  'payment-details': 'edit',
+  'user-management': 'edit',
+  'tally-integration': 'edit'
 }
 
 export interface UserAccount {

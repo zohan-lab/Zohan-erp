@@ -817,7 +817,11 @@ function App() {
   const safeCurrentFY = activeFY
   const isMasterAdmin = useMemo(() => {
     if (!currentUser) return false
-    return currentUser.role === 'master_admin'
+    return (
+      currentUser.role === 'master_admin' ||
+      (currentUser as any).role === 'admin' ||
+      isMasterAdminIdentifier(currentUser.username)
+    )
   }, [currentUser])
 
   const permissionLevelFor = useCallback((viewId: string): PermissionLevel => {
@@ -882,7 +886,12 @@ function App() {
     // default to 'edit' for all standard operational views so agents are never blanked out!
     const configuredKeys = Object.keys(perms).filter(k => k !== 'dashboard' && perms[k] && perms[k] !== 'none')
     if (configuredKeys.length === 0) {
-      if (viewId === 'user-management') return 'none'
+      return 'edit'
+    }
+
+    // 6. Admin fallback
+    if (viewId === 'user-management' || viewId === 'tally-integration') {
+      if (perms[viewId] && perms[viewId] !== 'none') return perms[viewId]
       return 'edit'
     }
 
@@ -891,15 +900,19 @@ function App() {
 
   const canAccessView = useCallback((viewId: string) => {
     if (viewId === 'dashboard') return true
-    if (viewId === 'user-management') return isMasterAdmin
     if (isMasterAdmin) return true
+    if (viewId === 'user-management') {
+      const level = permissionLevelFor('user-management')
+      return level === 'view' || level === 'edit'
+    }
     const level = permissionLevelFor(viewId)
     return level === 'view' || level === 'edit'
   }, [isMasterAdmin, permissionLevelFor])
 
   const availableNavGroups = useMemo(() => {
-    if (isMasterAdmin) return [...navGroups, adminNavGroup]
-    return navGroups
+    const allGroups = [...navGroups, adminNavGroup]
+    if (isMasterAdmin) return allGroups
+    return allGroups
       .map((group) => ({
         ...group,
         items: group.items.filter((item) => {

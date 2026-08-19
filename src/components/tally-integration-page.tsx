@@ -1440,7 +1440,7 @@ export function TallyIntegrationPage({
                     )}
                   >
                     <Checkbox checked={selectedModules.receipt} className="mr-1.5 h-3.5 w-3.5" />
-                    Customer Payments <span className="ml-1 text-[10px] opacity-80">({moduleCounts.receipt})</span>
+                    Payment In <span className="ml-1 text-[10px] opacity-80">({moduleCounts.receipt})</span>
                   </Badge>
 
                   <Badge
@@ -1452,7 +1452,7 @@ export function TallyIntegrationPage({
                     )}
                   >
                     <Checkbox checked={selectedModules.payment} className="mr-1.5 h-3.5 w-3.5" />
-                    Supplier Payments <span className="ml-1 text-[10px] opacity-80">({moduleCounts.payment})</span>
+                    Payment Out <span className="ml-1 text-[10px] opacity-80">({moduleCounts.payment})</span>
                   </Badge>
 
                   <Badge
