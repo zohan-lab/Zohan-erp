@@ -99,4 +99,22 @@ describe('Party Adapters & Migration Engine', () => {
     const tata = getPartyById({ parties }, 'p-1')
     expect(tata?.name).toBe('Tata Steel')
   })
+
+  it('normalizes gstRegistrationType to Tally Prime standard (Regular, Unregistered/Consumer, Composition)', () => {
+    const regParty = normalizeParty({ id: 'p1', name: 'Reg Buyer', gstin: '19AAACB1234F1Z1', gstRegistrationType: 'Registered' as any })
+    expect(regParty.gstRegistrationType).toBe('Regular')
+
+    const compParty = normalizeParty({ id: 'p2', name: 'Comp Buyer', gstin: '19AAACB1234F1Z1', gstRegistrationType: 'Composition' })
+    expect(compParty.gstRegistrationType).toBe('Composition')
+
+    const unregParty = normalizeParty({ id: 'p3', name: 'Retail Buyer', gstRegistrationType: 'Consumer' as any })
+    expect(unregParty.gstRegistrationType).toBe('Unregistered/Consumer')
+
+    const autoReg = normalizeParty({ id: 'p4', name: 'Auto Buyer', gstin: '19AAACB1234F1Z1' })
+    expect(autoReg.gstRegistrationType).toBe('Regular')
+
+    const autoUnreg = normalizeParty({ id: 'p5', name: 'Auto Retail' })
+    expect(autoUnreg.gstRegistrationType).toBe('Unregistered/Consumer')
+  })
 })
+

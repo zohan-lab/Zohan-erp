@@ -111,9 +111,9 @@ export function PartiesPage({
     let result = parties
 
     if (registrationTypeFilter === 'registered') {
-      result = result.filter(p => p.gstRegistrationType === 'Registered' || (p.gstin && p.gstin.trim().length === 15))
+      result = result.filter(p => p.gstRegistrationType === 'Regular' || p.gstRegistrationType === 'Registered' || (p.gstin && p.gstin.trim().length === 15))
     } else if (registrationTypeFilter === 'unregistered') {
-      result = result.filter(p => p.gstRegistrationType === 'Unregistered' || p.gstRegistrationType === 'Consumer' || (!p.gstin && p.gstRegistrationType !== 'Composition'))
+      result = result.filter(p => p.gstRegistrationType === 'Unregistered/Consumer' || p.gstRegistrationType === 'Unregistered' || p.gstRegistrationType === 'Consumer' || (!p.gstin && p.gstRegistrationType !== 'Composition' && p.gstRegistrationType !== 'Regular'))
     } else if (registrationTypeFilter === 'composition') {
       result = result.filter(p => p.gstRegistrationType === 'Composition')
     }
@@ -365,7 +365,7 @@ export function PartiesPage({
                     : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20'
                 }`}
               >
-                B2B Registered
+                Regular (B2B)
               </button>
               <button
                 type="button"
@@ -376,7 +376,7 @@ export function PartiesPage({
                     : 'bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-500/20'
                 }`}
               >
-                B2C Retail
+                Unregistered / Consumer (B2C)
               </button>
               <button
                 type="button"
@@ -403,7 +403,7 @@ export function PartiesPage({
                 const isSelected = selectedParty?.id === party.id
                 const isReceivable = summary?.closingBalanceType === 'Dr' && (summary?.closingBalance || 0) > 0
                 const isPayable = summary?.closingBalanceType === 'Cr' && (summary?.closingBalance || 0) > 0
-                const isB2B = party.gstRegistrationType === 'Registered' || (party.gstin && party.gstin.trim().length === 15)
+                const isB2B = party.gstRegistrationType === 'Regular' || party.gstRegistrationType === 'Registered' || (party.gstin && party.gstin.trim().length === 15)
 
                 return (
                   <div
@@ -418,14 +418,14 @@ export function PartiesPage({
                         <span className="font-semibold text-xs truncate">{party.name}</span>
                         <span
                           className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase ${
-                            isB2B
-                              ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
-                              : party.gstRegistrationType === 'Composition'
+                            party.gstRegistrationType === 'Composition'
                               ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
+                              : isB2B
+                              ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
                               : 'bg-blue-500/15 text-blue-700 dark:text-blue-400'
                           }`}
                         >
-                          {isB2B ? 'B2B' : party.gstRegistrationType === 'Composition' ? 'Comp' : 'B2C'}
+                          {party.gstRegistrationType === 'Composition' ? 'Composition' : isB2B ? 'Regular' : 'Unregistered'}
                         </span>
                       </div>
                       <div className="text-[11px] text-muted-foreground truncate mt-0.5">
@@ -478,18 +478,18 @@ export function PartiesPage({
                         <Badge
                           variant="outline"
                           className={
-                            selectedParty.gstRegistrationType === 'Registered' || (selectedParty.gstin && selectedParty.gstin.trim().length === 15)
+                            selectedParty.gstRegistrationType === 'Regular' || selectedParty.gstRegistrationType === 'Registered' || (selectedParty.gstin && selectedParty.gstin.trim().length === 15)
                               ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30'
                               : selectedParty.gstRegistrationType === 'Composition'
                               ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30'
                               : 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/30'
                           }
                         >
-                          {selectedParty.gstRegistrationType === 'Registered' || (selectedParty.gstin && selectedParty.gstin.trim().length === 15)
-                            ? 'B2B Registered'
+                          {selectedParty.gstRegistrationType === 'Regular' || selectedParty.gstRegistrationType === 'Registered' || (selectedParty.gstin && selectedParty.gstin.trim().length === 15)
+                            ? 'Regular (B2B)'
                             : selectedParty.gstRegistrationType === 'Composition'
-                            ? 'Composition Scheme'
-                            : 'B2C Retail / Consumer'}
+                            ? 'Composition (B2B)'
+                            : 'Unregistered / Consumer (B2C)'}
                         </Badge>
                         {selectedParty.gstin && (
                           <Badge variant="outline" className="font-mono text-[10px] uppercase">

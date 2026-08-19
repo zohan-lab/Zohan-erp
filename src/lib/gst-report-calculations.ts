@@ -289,7 +289,7 @@ export function computeMonthlyGstReport(
     const partyState = cust?.stateCode || (cust?.gstin ? cust.gstin.slice(0, 2) : (cust?.stateName ? getStateCode(cust.stateName) : companyState))
     const isInterState = isInterStateTransaction(partyState, companyState)
     const gstin = (cust?.gstin || '').trim().toUpperCase()
-    const isB2B = cust?.gstRegistrationType === 'Registered' || (gstin.length === 15)
+    const isB2B = cust?.gstRegistrationType === 'Regular' || cust?.gstRegistrationType === 'Composition' || cust?.gstRegistrationType === 'Registered' || (gstin.length === 15)
 
     const taxableAmount = inv.taxableAmount ?? (inv.items ? inv.items.reduce((s, it) => s + (it.taxableAmount || it.amount || 0), 0) : inv.invoiceAmount)
     const igst = inv.igstAmount ?? 0

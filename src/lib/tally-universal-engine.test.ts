@@ -8,9 +8,10 @@ import {
   generateTallyExpenseVouchers,
   exportCompoundVouchersToTallyExcel,
   generateTallyXML,
+  generateTallyLedgersXML,
   DEFAULT_TALLY_LEDGER_MAPPING
 } from './tally-universal-engine'
-import { SalesInvoice, PurchaseInvoice, CustomerCreditNote, SupplierDebitNote, ExpenseEntry, Customer, Supplier, Item, ExpenseType } from './types'
+import { SalesInvoice, PurchaseInvoice, CustomerCreditNote, SupplierDebitNote, ExpenseEntry, Customer, Supplier, Party, Item, ExpenseType } from './types'
 
 describe('Universal Tally Compound Double-Entry Engine', () => {
   const mockCustomers: Customer[] = [
@@ -287,6 +288,27 @@ describe('Universal Tally Compound Double-Entry Engine', () => {
     expect(xml).toContain('<AMOUNT>-11800.00</AMOUNT>') // Debit is negative in Tally XML
     expect(xml).toContain('<LEDGERNAME>Sales Account</LEDGERNAME>')
     expect(xml).toContain('<AMOUNT>10000.00</AMOUNT>') // Credit is positive in Tally XML
+    expect(xml).toContain('<GSTREGISTRATIONTYPE>Regular</GSTREGISTRATIONTYPE>')
+  })
+
+  it('generates Tally Master XML with mapped GSTREGISTRATIONTYPE for Regular, Unregistered, and Composition', () => {
+    const parties: Party[] = [
+      { id: 'p1', name: 'Tata Steel Ltd', gstin: '19AAACT1234F1Z1', gstRegistrationType: 'Regular', partyType: 'SUPPLIER' },
+      { id: 'p2', name: 'Local Retail Buyer', gstRegistrationType: 'Unregistered/Consumer', partyType: 'CUSTOMER' },
+      { id: 'p3', name: 'Sharma Composite Works', gstin: '19AAACS5678F1Z2', gstRegistrationType: 'Composition', partyType: 'CUSTOMER' }
+    ]
+
+    const xml = generateTallyLedgersXML(parties, 'SK TRADERS')
+    expect(xml).toContain('<LEDGER NAME="Tata Steel Ltd"')
+    expect(xml).toContain('<PARENT>Sundry Creditors</PARENT>')
+    expect(xml).toContain('<GSTREGISTRATIONTYPE>Regular</GSTREGISTRATIONTYPE>')
+
+    expect(xml).toContain('<LEDGER NAME="Local Retail Buyer"')
+    expect(xml).toContain('<PARENT>Sundry Debtors</PARENT>')
+    expect(xml).toContain('<GSTREGISTRATIONTYPE>Unregistered</GSTREGISTRATIONTYPE>')
+
+    expect(xml).toContain('<LEDGER NAME="Sharma Composite Works"')
+    expect(xml).toContain('<GSTREGISTRATIONTYPE>Composition</GSTREGISTRATIONTYPE>')
   })
 
   it('exports compound vouchers to official 14-column Accounting Voucher Excel workbook', () => {

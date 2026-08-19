@@ -39,7 +39,7 @@ export interface Item {
 
 export type PartyType = 'CUSTOMER' | 'SUPPLIER' | string
 
-export type GstRegistrationType = 'Registered' | 'Unregistered' | 'Composition' | 'Consumer'
+export type GstRegistrationType = 'Regular' | 'Unregistered/Consumer' | 'Composition' | 'Registered' | 'Unregistered' | 'Consumer'
 
 export interface Party {
   id: string

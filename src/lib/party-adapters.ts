@@ -1,4 +1,4 @@
-import { Party, PartyType } from './types'
+import { Party, PartyType, GstRegistrationType } from './types'
 import { TenantData } from './storage-utils'
 
 /**
@@ -113,9 +113,17 @@ export function normalizeParty(party: Partial<Party> & { name?: string }, fallba
 
   const gstin = party.gstin ? party.gstin.trim().toUpperCase() : undefined
   const stateCode = party.stateCode || (gstin && /^\d{2}/.test(gstin) ? gstin.slice(0, 2) : undefined)
-  const gstRegistrationType =
-    party.gstRegistrationType ||
-    (gstin && gstin.length === 15 ? 'Registered' : 'Unregistered')
+  
+  let gstRegistrationType: GstRegistrationType = 'Unregistered/Consumer'
+  if (party.gstRegistrationType === 'Regular' || party.gstRegistrationType === 'Registered') {
+    gstRegistrationType = 'Regular'
+  } else if (party.gstRegistrationType === 'Composition') {
+    gstRegistrationType = 'Composition'
+  } else if (party.gstRegistrationType === 'Unregistered/Consumer' || party.gstRegistrationType === 'Unregistered' || party.gstRegistrationType === 'Consumer') {
+    gstRegistrationType = 'Unregistered/Consumer'
+  } else if (gstin && gstin.length === 15) {
+    gstRegistrationType = 'Regular'
+  }
 
   const now = new Date().toISOString()
   const createdAt = party.createdAt

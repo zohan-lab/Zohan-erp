@@ -205,10 +205,11 @@ describe('GST Report Calculations Engine', () => {
 
   it('correctly bifurcates B2C Large (> ₹1 Lakh Interstate) vs B2C Small (Table 7) and respects gstRegistrationType', () => {
     const mixedCustomers: Customer[] = [
-      { id: 'c-b2b', name: 'Explicit B2B', gstRegistrationType: 'Registered', gstin: '19AAACB9999F1Z1', stateCode: '19' },
-      { id: 'c-inter-large', name: 'Bihar Retail High Value', gstRegistrationType: 'Unregistered', stateCode: '10' },
-      { id: 'c-intra-small', name: 'Local Retail Small', gstRegistrationType: 'Unregistered', stateCode: '19' },
-      { id: 'c-inter-small', name: 'Jharkhand Retail Low Value', gstRegistrationType: 'Unregistered', stateCode: '20' }
+      { id: 'c-b2b', name: 'Explicit Regular B2B', gstRegistrationType: 'Regular', gstin: '19AAACB9999F1Z1', stateCode: '19' },
+      { id: 'c-comp', name: 'Explicit Composition B2B', gstRegistrationType: 'Composition', gstin: '19AAACB8888F1Z2', stateCode: '19' },
+      { id: 'c-inter-large', name: 'Bihar Retail High Value', gstRegistrationType: 'Unregistered/Consumer', stateCode: '10' },
+      { id: 'c-intra-small', name: 'Local Retail Small', gstRegistrationType: 'Unregistered/Consumer', stateCode: '19' },
+      { id: 'c-inter-small', name: 'Jharkhand Retail Low Value', gstRegistrationType: 'Unregistered/Consumer', stateCode: '20' }
     ]
 
     const testInvoices: SalesInvoice[] = [
@@ -221,6 +222,17 @@ describe('GST Report Calculations Engine', () => {
         taxableAmount: 42372.88,
         cgstAmount: 3813.56,
         sgstAmount: 3813.56,
+        fy: '2026-2027'
+      },
+      {
+        id: 'si-comp',
+        customerId: 'c-comp',
+        invoiceNo: 'INV-COMP',
+        invoiceDate: '2026-04-02',
+        invoiceAmount: 30000,
+        taxableAmount: 25423.73,
+        cgstAmount: 2288.13,
+        sgstAmount: 2288.13,
         fy: '2026-2027'
       },
       {
@@ -266,9 +278,10 @@ describe('GST Report Calculations Engine', () => {
       expenseEntries: []
     }, filter)
 
-    // 1 B2B invoice
-    expect(report.gstr1.b2b).toHaveLength(1)
-    expect(report.gstr1.b2b[0].invoiceNo).toBe('INV-B2B')
+    // 2 B2B invoices (Regular & Composition)
+    expect(report.gstr1.b2b).toHaveLength(2)
+    expect(report.gstr1.b2b.map(b => b.invoiceNo)).toContain('INV-B2B')
+    expect(report.gstr1.b2b.map(b => b.invoiceNo)).toContain('INV-COMP')
 
     // 1 B2C Large (Table 5) invoice
     expect(report.gstr1.b2cLarge).toHaveLength(1)

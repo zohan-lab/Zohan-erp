@@ -13,7 +13,8 @@ import {
   Payment,
   CustomerPayment,
   Item,
-  ExpenseType
+  ExpenseType,
+  GstRegistrationType
 } from './types'
 import { roundCurrency, isInterStateTransaction, getActiveCompanyStateCode, calculateInvoiceTaxBreakdown, calculateExpenseTaxBreakdown } from './calculations'
 import { getStateName, getStateCode } from './constants/indian-states'
@@ -85,11 +86,23 @@ export interface TallyCompoundVoucher {
   partyAddress?: string
   partyPincode?: string
   partyGstin?: string
+  partyGstRegistrationType?: 'Regular' | 'Unregistered' | 'Composition'
   narration?: string
   legs: TallyCompoundLeg[]
   totalAmount: number
   isBalanced: boolean
   imbalanceDifference?: number
+}
+
+export function mapGstRegistrationTypeToTally(
+  regType?: GstRegistrationType | string,
+  gstin?: string
+): 'Regular' | 'Unregistered' | 'Composition' {
+  if (regType === 'Composition') return 'Composition'
+  if (regType === 'Regular' || regType === 'Registered') return 'Regular'
+  if (regType === 'Unregistered/Consumer' || regType === 'Unregistered' || regType === 'Consumer') return 'Unregistered'
+  if (gstin && gstin.trim().length === 15) return 'Regular'
+  return 'Unregistered'
 }
 
 function formatDateForTally(dateStr?: string): { iso: string; dmy: string; yyyymmdd: string } {
@@ -259,6 +272,7 @@ export function generateTallySalesVouchers(
       partyAddress: [cust?.address, cust?.city, cust?.stateName || getStateName(partyState)].filter(Boolean).join(', '),
       partyPincode: cust?.pincode,
       partyGstin: cust?.gstin,
+      partyGstRegistrationType: mapGstRegistrationTypeToTally((cust as any)?.gstRegistrationType, (cust as any)?.gstin),
       narration: `Being Sales Invoice #${inv.invoiceNo} issued to ${partyName}`,
       legs,
       totalAmount: grossAmount,
@@ -405,6 +419,7 @@ export function generateTallyPurchaseVouchers(
       partyAddress: [sup?.address, sup?.city, sup?.stateName || getStateName(partyState)].filter(Boolean).join(', '),
       partyPincode: sup?.pincode,
       partyGstin: sup?.gstin,
+      partyGstRegistrationType: mapGstRegistrationTypeToTally((sup as any)?.gstRegistrationType, (sup as any)?.gstin),
       narration: `Being Purchase Invoice #${inv.invoiceNo} from ${partyName}`,
       legs,
       totalAmount: grossAmount,
@@ -467,6 +482,7 @@ export function generateTallyCreditNoteVouchers(
       partyAddress: [cust?.address, cust?.city].filter(Boolean).join(', '),
       partyPincode: cust?.pincode,
       partyGstin: cust?.gstin,
+      partyGstRegistrationType: mapGstRegistrationTypeToTally((cust as any)?.gstRegistrationType, (cust as any)?.gstin),
       narration: `Being Credit Note #${cn.noteNo || cn.invoiceRef} issued against Invoice #${cn.originalInvoiceNo || '-'} dt ${cn.originalInvoiceDate || '-'} for reason: ${cn.reason || 'Sales Return'}`,
       legs,
       totalAmount: grossAmount,
@@ -529,6 +545,7 @@ export function generateTallyDebitNoteVouchers(
       partyAddress: [sup?.address, sup?.city].filter(Boolean).join(', '),
       partyPincode: sup?.pincode,
       partyGstin: sup?.gstin,
+      partyGstRegistrationType: mapGstRegistrationTypeToTally((sup as any)?.gstRegistrationType, (sup as any)?.gstin),
       narration: `Being Debit Note #${dn.noteNo || dn.invoiceRef} issued against Purchase Invoice #${dn.originalInvoiceNo || '-'} dt ${dn.originalInvoiceDate || '-'} for reason: ${dn.reason || 'Purchase Return'}`,
       legs,
       totalAmount: grossAmount,
@@ -803,6 +820,9 @@ export function generateTallyXML(
       xml += `            <PARTYGSTIN>${escapeXML(v.partyGstin)}</PARTYGSTIN>\n`
     }
 
+    const regType = v.partyGstRegistrationType || (v.partyGstin ? 'Regular' : 'Unregistered')
+    xml += `            <GSTREGISTRATIONTYPE>${escapeXML(regType)}</GSTREGISTRATIONTYPE>\n`
+
     v.legs.forEach(leg => {
       const isDebit = leg.drCr === 'Dr'
       // Tally XML convention: Dr is negative (-amount), Cr is positive (+amount)
@@ -834,6 +854,66 @@ export function generateTallyXML(
     })
 
     xml += '          </VOUCHER>\n'
+    xml += '        </TALLYMESSAGE>\n'
+  })
+
+  xml += '      </REQUESTDATA>\n'
+  xml += '    </IMPORTDATA>\n'
+  xml += '  </BODY>\n'
+  xml += '</ENVELOPE>'
+
+  return xml
+}
+
+/**
+ * 8. TALLY LEDGERS XML EXPORTER
+ * Exports Party Master list as standard Tally Prime Master XML.
+ */
+export function generateTallyLedgersXML(
+  parties: (Party | Customer | Supplier)[],
+  companyName: string = 'SK TRADERS'
+): string {
+  let xml = '<?xml version="1.0" encoding="utf-8"?>\n'
+  xml += '<ENVELOPE>\n'
+  xml += '  <HEADER>\n'
+  xml += '    <TALLYREQUEST>Import Data</TALLYREQUEST>\n'
+  xml += '  </HEADER>\n'
+  xml += '  <BODY>\n'
+  xml += '    <IMPORTDATA>\n'
+  xml += '      <REQUESTDESC>\n'
+  xml += '        <REPORTNAME>All Masters</REPORTNAME>\n'
+  xml += '        <STATICVARIABLES>\n'
+  xml += `          <SVCURRENTCOMPANY>${escapeXML(companyName)}</SVCURRENTCOMPANY>\n`
+  xml += '        </STATICVARIABLES>\n'
+  xml += '      </REQUESTDESC>\n'
+  xml += '      <REQUESTDATA>\n'
+
+  parties.forEach(p => {
+    const parentGroup = (p as any).partyType === 'SUPPLIER' ? 'Sundry Creditors' : 'Sundry Debtors'
+    const regType = mapGstRegistrationTypeToTally(p.gstRegistrationType, p.gstin)
+    const stateName = (p as any).stateName || getStateName((p as any).stateCode || '') || 'West Bengal'
+
+    xml += '        <TALLYMESSAGE xmlns:UDF="TallyUDF">\n'
+    xml += `          <LEDGER NAME="${escapeXML(p.name)}" ACTION="Create">\n`
+    xml += `            <NAME>${escapeXML(p.name)}</NAME>\n`
+    xml += `            <PARENT>${escapeXML(parentGroup)}</PARENT>\n`
+    xml += `            <OPENINGBALANCE>${p.openingBalance ? (p.balanceType === 'Debit' ? -Math.abs(p.openingBalance) : Math.abs(p.openingBalance)).toFixed(2) : '0.00'}</OPENINGBALANCE>\n`
+    if (p.address) {
+      xml += '            <ADDRESS.LIST>\n'
+      xml += `              <ADDRESS>${escapeXML(p.address)}</ADDRESS>\n`
+      xml += '            </ADDRESS.LIST>\n'
+    }
+    if ((p as any).stateCode || (p as any).state) {
+      xml += `            <STATENAME>${escapeXML(stateName)}</STATENAME>\n`
+    }
+    if (p.pincode) {
+      xml += `            <PINCODE>${escapeXML(p.pincode)}</PINCODE>\n`
+    }
+    if (p.gstin) {
+      xml += `            <PARTYGSTIN>${escapeXML(p.gstin)}</PARTYGSTIN>\n`
+    }
+    xml += `            <GSTREGISTRATIONTYPE>${escapeXML(regType)}</GSTREGISTRATIONTYPE>\n`
+    xml += '          </LEDGER>\n'
     xml += '        </TALLYMESSAGE>\n'
   })
 
