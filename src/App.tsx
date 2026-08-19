@@ -2622,6 +2622,8 @@ function App() {
         case 'tally-integration':
           return (
             <TallyIntegrationPage
+              parties={safeParties}
+              setParties={syncSetParties}
               customers={safeCustomers}
               setCustomers={syncSetCustomers}
               suppliers={safeSuppliers}

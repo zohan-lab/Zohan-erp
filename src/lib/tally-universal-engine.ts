@@ -9,6 +9,7 @@ import {
   ExpenseEntry,
   Customer,
   Supplier,
+  Party,
   Payment,
   CustomerPayment,
   Item,
@@ -130,7 +131,7 @@ function validateAndBalanceLegs(legs: TallyCompoundLeg[]): { isBalanced: boolean
  */
 export function generateTallySalesVouchers(
   salesInvoices: SalesInvoice[] = [],
-  customers: Customer[] = [],
+  customers: (Customer | Party)[] = [],
   items: Item[] = [],
   mapping: TallyLedgerMapping = DEFAULT_TALLY_LEDGER_MAPPING,
   companyState: string = '19'
@@ -138,9 +139,9 @@ export function generateTallySalesVouchers(
   const custMap = new Map(customers.map(c => [c.id, c]))
 
   return salesInvoices.map((inv, idx) => {
-    const cust = custMap.get(inv.customerId)
-    const partyName = cust?.name || 'Cash Customer'
-    const partyState = cust?.stateCode || (cust?.gstin ? cust.gstin.slice(0, 2) : companyState)
+    const cust = custMap.get(inv.partyId || inv.customerId)
+    const partyName = inv.partyNameSnapshot || cust?.name || 'Cash Customer'
+    const partyState = (cust as any)?.stateCode || ((cust as any)?.gstin ? (cust as any).gstin.slice(0, 2) : companyState)
     const isInterState = isInterStateTransaction(partyState, companyState)
     const { iso, dmy } = formatDateForTally(inv.invoiceDate)
 
@@ -276,7 +277,7 @@ export function generateTallySalesVouchers(
  */
 export function generateTallyPurchaseVouchers(
   purchaseInvoices: PurchaseInvoice[] = [],
-  suppliers: Supplier[] = [],
+  suppliers: (Supplier | Party)[] = [],
   items: Item[] = [],
   mapping: TallyLedgerMapping = DEFAULT_TALLY_LEDGER_MAPPING,
   companyState: string = '19'
@@ -284,9 +285,9 @@ export function generateTallyPurchaseVouchers(
   const supMap = new Map(suppliers.map(s => [s.id, s]))
 
   return purchaseInvoices.map((inv, idx) => {
-    const sup = supMap.get(inv.supplierId)
-    const partyName = sup?.name || 'Sundry Supplier'
-    const partyState = sup?.stateCode || (sup?.gstin ? sup.gstin.slice(0, 2) : companyState)
+    const sup = supMap.get(inv.partyId || inv.supplierId)
+    const partyName = inv.partyNameSnapshot || inv.supplierNameSnapshot || sup?.name || 'Sundry Supplier'
+    const partyState = (sup as any)?.stateCode || ((sup as any)?.gstin ? (sup as any).gstin.slice(0, 2) : companyState)
     const isInterState = isInterStateTransaction(partyState, companyState)
     const { iso, dmy } = formatDateForTally(inv.invoiceDate)
 
@@ -421,7 +422,7 @@ export function generateTallyPurchaseVouchers(
  */
 export function generateTallyCreditNoteVouchers(
   creditNotes: CustomerCreditNote[] = [],
-  customers: Customer[] = [],
+  customers: (Customer | Party)[] = [],
   mapping: TallyLedgerMapping = DEFAULT_TALLY_LEDGER_MAPPING,
   companyState: string = '19'
 ): TallyCompoundVoucher[] {
@@ -429,8 +430,8 @@ export function generateTallyCreditNoteVouchers(
 
   return creditNotes.map((cn, idx) => {
     const cust = custMap.get(cn.partyId || cn.customerId || '')
-    const partyName = cust?.name || 'Customer'
-    const partyState = cust?.stateCode || (cust?.gstin ? cust.gstin.slice(0, 2) : companyState)
+    const partyName = cn.partyNameSnapshot || cust?.name || 'Party Account'
+    const partyState = (cust as any)?.stateCode || ((cust as any)?.gstin ? (cust as any).gstin.slice(0, 2) : companyState)
     const isInterState = isInterStateTransaction(partyState, companyState)
     const { iso, dmy } = formatDateForTally(cn.date)
 
@@ -483,7 +484,7 @@ export function generateTallyCreditNoteVouchers(
  */
 export function generateTallyDebitNoteVouchers(
   debitNotes: SupplierDebitNote[] = [],
-  suppliers: Supplier[] = [],
+  suppliers: (Supplier | Party)[] = [],
   mapping: TallyLedgerMapping = DEFAULT_TALLY_LEDGER_MAPPING,
   companyState: string = '19'
 ): TallyCompoundVoucher[] {
@@ -491,8 +492,8 @@ export function generateTallyDebitNoteVouchers(
 
   return debitNotes.map((dn, idx) => {
     const sup = supMap.get(dn.partyId || dn.supplierId || '')
-    const partyName = sup?.name || 'Supplier'
-    const partyState = sup?.stateCode || (sup?.gstin ? sup.gstin.slice(0, 2) : companyState)
+    const partyName = dn.partyNameSnapshot || sup?.name || 'Party Account'
+    const partyState = (sup as any)?.stateCode || ((sup as any)?.gstin ? (sup as any).gstin.slice(0, 2) : companyState)
     const isInterState = isInterStateTransaction(partyState, companyState)
     const { iso, dmy } = formatDateForTally(dn.date)
 
