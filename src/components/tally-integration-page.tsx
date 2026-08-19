@@ -47,10 +47,11 @@ import {
   CustomerPayment,
   Item,
   InvoiceItem,
+  AdditionalCharge,
   ExpenseType
 } from '@/lib/types'
 import { Counter, CashBankTransaction } from '@/lib/cash-bank-types'
-import { formatCurrency, roundCurrency } from '@/lib/calculations'
+import { formatCurrency, roundCurrency, calculateInvoiceTaxBreakdown } from '@/lib/calculations'
 import {
   TallyLedgerMapping,
   DEFAULT_TALLY_LEDGER_MAPPING,
@@ -968,35 +969,158 @@ export function TallyIntegrationPage({
     const newExpenseEntries: ExpenseEntry[] = []
     const newCashBankTransactions: CashBankTransaction[] = []
 
+    // Helper to resolve party
+    const resolvePartyObj = (partyName: string | undefined) => {
+      const norm = (partyName || '').trim().toLowerCase()
+      const customMappedId = partyMappings[norm]
+      if (customMappedId && customMappedId !== 'auto-create') {
+        const matched = effectiveParties.find(p => p.id === customMappedId)
+        if (matched) return matched
+      }
+      const existing = partyMap.get(norm)
+      if (existing) return existing
+      const generated = newPartiesMap.get(norm)
+      if (generated) return generated
+      return null
+    }
+
+    // Helper to resolve or auto-create counter
+    const resolveCounterObj = (rawName: string | undefined) => {
+      const raw = (rawName || '').trim()
+      const norm = raw.toLowerCase()
+      if (!norm) {
+        const defaultCtr = cashBankCounters.find(c => (c as any).isDefault) || cashBankCounters[0]
+        return {
+          id: defaultCtr?.id || 'counter-1',
+          name: defaultCtr?.name || 'Cash in Hand',
+          isCash: true
+        }
+      }
+      const customMappedId = counterMappings[norm]
+      if (customMappedId && customMappedId !== 'auto-create') {
+        const matched = cashBankCounters.find(c => c.id === customMappedId)
+        if (matched) return { id: matched.id, name: matched.name, isCash: matched.type === 'Cash' || (matched.type as any) === 'cash' }
+      }
+      const existing = counterMap.get(norm)
+      if (existing) return { id: existing.id, name: existing.name, isCash: existing.type === 'Cash' || (existing.type as any) === 'cash' }
+      const generated = newCountersMap.get(norm)
+      if (generated) return { id: generated.id, name: generated.name, isCash: generated.type === 'Cash' || (generated.type as any) === 'cash' }
+
+      // Auto-create new counter if not present
+      const isCash = norm.includes('cash')
+      const newCtrId = `ctr-tally-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`
+      const newCtr: Counter = {
+        id: newCtrId,
+        name: raw || (isCash ? 'Cash in Hand' : 'Bank Account'),
+        type: isCash ? 'Cash' : 'Bank',
+        openingBalance: 0,
+        currentBalance: 0
+      }
+      newCountersMap.set(norm, newCtr)
+      return { id: newCtrId, name: newCtr.name, isCash }
+    }
+
     includedVouchers.forEach((v, idx) => {
       const normParty = v.partyName.trim().toLowerCase()
-      const targetPartyId = v.matchedEntityId || partyMappings[normParty] || newPartiesMap.get(normParty)?.id || 'party-unmapped'
+      const resolvedParty = resolvePartyObj(v.partyName)
+      const targetPartyId = v.matchedEntityId || partyMappings[normParty] || resolvedParty?.id || 'party-unmapped'
       const targetExpId = v.matchedEntityId || expenseMappings[normParty] || newExpenseTypesMap.get(normParty)?.id || 'exp-unmapped'
 
-      const contraFromId = v.contraDetails?.fromCounterId || newCountersMap.get((v.contraDetails?.fromCounterName || '').trim().toLowerCase())?.id || 'counter-1'
-      const contraToId = v.contraDetails?.toCounterId || newCountersMap.get((v.contraDetails?.toCounterName || '').trim().toLowerCase())?.id || 'counter-2'
+      const partyNameSnap = resolvedParty?.name || v.partyName || 'Party'
+      const partyGstinSnap = resolvedParty?.gstin || v.partyGstin || ''
+      const partyPhoneSnap = resolvedParty?.phone || ''
+      const partyAddressSnap = resolvedParty?.address || ''
+      const billingAddressSnap = resolvedParty?.address || ''
+      const shippingAddressSnap = (resolvedParty?.shippingSameAsBilling ? resolvedParty.address : resolvedParty?.shippingAddress) || billingAddressSnap
+      const stateCodeSnap = resolvedParty?.stateCode || '19'
+      const stateNameSnap = resolvedParty?.stateName || (resolvedParty as any)?.state || 'West Bengal'
 
-      const builtItems: InvoiceItem[] = (v.inventory || []).map((inv, iIdx) => {
+      const charges: AdditionalCharge[] = (v.additionalCharges || []).map((c, cIdx) => ({
+        id: c.id || `charge-${idx}-${cIdx}`,
+        name: c.name || c.chargeName || c.ledgerName || c.remarks || '',
+        chargeName: c.chargeName || c.name || c.ledgerName || c.remarks || '',
+        remarks: c.remarks || c.name || c.chargeName || c.ledgerName || '',
+        sacCode: c.sacCode || (c.name?.toLowerCase().includes('freight') || c.name?.toLowerCase().includes('transport') ? '996511' : undefined),
+        taxMode: c.taxMode || (c.gstRate && c.gstRate > 0 ? 'gst' : 'none'),
+        basicRate: c.basicRate ?? c.taxableAmount ?? 0,
+        taxableAmount: c.taxableAmount ?? c.basicRate ?? 0,
+        gstRate: c.gstRate ?? 18,
+        cgstAmount: c.cgstAmount || 0,
+        sgstAmount: c.sgstAmount || 0,
+        igstAmount: c.igstAmount || 0,
+        finalAmt: c.finalAmt || ((c.basicRate || 0) + (c.cgstAmount || 0) + (c.sgstAmount || 0) + (c.igstAmount || 0))
+      }))
+
+      const addCostFinal = charges.reduce((s, c) => s + (c.finalAmt || 0), 0)
+      const addCostBasic = charges.reduce((s, c) => s + (c.basicRate || 0), 0)
+      const addCostRemarks = charges.map(c => c.remarks || c.name || c.chargeName).filter(Boolean).join(', ')
+
+      const rawItems: InvoiceItem[] = (v.inventory || []).map((inv, iIdx) => {
         const normItem = inv.itemName.trim().toLowerCase()
         const lineOverrideId = itemOverrides[v.id]?.[iIdx]
-        const targetItemId = lineOverrideId || inv.matchedItemId || itemMappings[normItem] || newItemsMap.get(normItem)?.id || 'item-unmapped'
+        const matchedMaster = (lineOverrideId && lineOverrideId !== 'auto-create')
+          ? items.find(it => it.id === lineOverrideId) || itemMap.get(normItem)
+          : itemMap.get(normItem) || newItemsMap.get(normItem)
+
+        const itemId = matchedMaster?.id || newItemsMap.get(normItem)?.id || 'item-unmapped'
+        const itemName = matchedMaster?.name || inv.itemName
+        const itemUnit = matchedMaster?.unit || inv.unit || 'PCS'
+        const gstRate = typeof matchedMaster?.gstRate === 'number' ? matchedMaster.gstRate : 18
+        const qty = inv.quantity || 1
+        const basicRate = inv.rate || 0
+        const grossAmt = inv.amount || (qty * basicRate)
+
         return {
           id: `item-line-${Date.now()}-${idx}-${iIdx}`,
-          itemId: targetItemId,
-          quantity: inv.quantity || 1,
-          enteredQuantity: inv.quantity || 1,
-          baseQuantity: inv.quantity || 1,
-          enteredUnit: inv.unit || 'PCS',
-          unit: inv.unit || 'PCS',
-          rate: inv.rate || 0,
-          basicRate: inv.rate || 0,
-          salePrice: inv.rate || 0,
-          amount: inv.amount || ((inv.quantity || 1) * (inv.rate || 0)),
-          grossAmount: inv.amount || ((inv.quantity || 1) * (inv.rate || 0)),
-          taxableAmount: inv.amount || 0,
-          gstPercentage: 18,
-          finalAmount: inv.amount || 0
-        } as unknown as InvoiceItem
+          itemId,
+          baseQuantity: qty,
+          enteredQuantity: qty,
+          enteredUnit: itemUnit,
+          unit: itemUnit,
+          rate: basicRate,
+          basicRate,
+          baseRate: basicRate,
+          enteredRate: basicRate,
+          salePrice: basicRate,
+          amount: grossAmt,
+          grossAmount: grossAmt,
+          taxableAmount: grossAmt,
+          gstRate,
+          gstPercentage: gstRate,
+          itemNameSnapshot: itemName,
+          itemUnitSnapshot: itemUnit,
+          unitSnapshot: itemUnit,
+          hsnCodeSnapshot: matchedMaster?.hsnCode || '',
+          categorySnapshot: matchedMaster?.category || '',
+          gstRateSnapshot: gstRate
+        } as InvoiceItem
+      })
+
+      const taxBreakdown = calculateInvoiceTaxBreakdown({
+        items: rawItems,
+        itemsMaster: items,
+        additionalCharges: charges,
+        additionalCostBasicRate: addCostBasic,
+        additionalCostFinal: addCostFinal,
+        partyState: stateCodeSnap,
+        customRoundOff: v.roundOff,
+        defaultGstRate: 18
+      })
+
+      const finalItems: InvoiceItem[] = rawItems.map((rItem, rIdx) => {
+        const lineBreakdown = taxBreakdown.lineBreakdowns[rIdx]
+        return {
+          ...rItem,
+          taxableAmount: lineBreakdown ? lineBreakdown.taxableAmount : rItem.taxableAmount,
+          gstRate: lineBreakdown ? lineBreakdown.gstRate : rItem.gstRate,
+          gstPercentage: lineBreakdown ? lineBreakdown.gstRate : rItem.gstRate,
+          cgstRate: lineBreakdown?.cgstRate,
+          cgstAmount: lineBreakdown?.cgstAmount,
+          sgstRate: lineBreakdown?.sgstRate,
+          sgstAmount: lineBreakdown?.sgstAmount,
+          igstRate: lineBreakdown?.igstRate,
+          igstAmount: lineBreakdown?.igstAmount
+        }
       })
 
       if (v.effectiveType === 'sales') {
@@ -1006,11 +1130,32 @@ export function TallyIntegrationPage({
           invoiceDate: v.voucherDate,
           partyId: targetPartyId,
           customerId: targetPartyId,
-          partyNameSnapshot: v.partyName,
-          items: builtItems,
-          invoiceAmount: v.totalAmount,
-          totalAmount: v.totalAmount,
-          taxableAmount: builtItems.reduce((s, it) => s + (it.taxableAmount || 0), 0) || v.totalAmount,
+          items: finalItems,
+          additionalCharges: charges.length > 0 ? charges : undefined,
+          invoiceAmount: taxBreakdown.totalAmount,
+          totalAmount: taxBreakdown.totalAmount,
+          additionalCost: addCostFinal > 0 ? addCostFinal : undefined,
+          additionalCostBasicRate: addCostBasic > 0 ? addCostBasic : undefined,
+          additionalCostRemarks: addCostRemarks || undefined,
+          roundOff: taxBreakdown.roundOff || undefined,
+          roundOffAdjustment: taxBreakdown.roundOff || undefined,
+          partyNameSnapshot: partyNameSnap,
+          customerNameSnapshot: partyNameSnap,
+          partyGstinSnapshot: partyGstinSnap,
+          partyPhoneSnapshot: partyPhoneSnap,
+          partyAddressSnapshot: partyAddressSnap,
+          billingAddressSnapshot: billingAddressSnap,
+          shippingAddressSnapshot: shippingAddressSnap,
+          stateCodeSnapshot: stateCodeSnap,
+          stateNameSnapshot: stateNameSnap,
+          taxableAmount: taxBreakdown.taxableAmount,
+          cgstRate: taxBreakdown.cgstRate,
+          cgstAmount: taxBreakdown.cgstAmount,
+          sgstRate: taxBreakdown.sgstRate,
+          sgstAmount: taxBreakdown.sgstAmount,
+          igstRate: taxBreakdown.igstRate,
+          igstAmount: taxBreakdown.igstAmount,
+          isInterState: taxBreakdown.isInterState,
           status: 'Confirmed',
           fy: currentFY,
           remarks: v.narration || `Imported from Tally (${v.rawVoucherType})`
@@ -1022,38 +1167,99 @@ export function TallyIntegrationPage({
           invoiceDate: v.voucherDate,
           partyId: targetPartyId,
           supplierId: targetPartyId,
-          partyNameSnapshot: v.partyName,
-          items: builtItems,
-          invoiceAmount: v.totalAmount,
-          totalAmount: v.totalAmount,
-          taxableAmount: builtItems.reduce((s, it) => s + (it.taxableAmount || 0), 0) || v.totalAmount,
+          items: finalItems,
+          additionalCharges: charges.length > 0 ? charges : undefined,
+          invoiceAmount: taxBreakdown.totalAmount,
+          totalAmount: taxBreakdown.totalAmount,
+          additionalCost: addCostFinal > 0 ? addCostFinal : undefined,
+          additionalCostBasicRate: addCostBasic > 0 ? addCostBasic : undefined,
+          additionalCostRemarks: addCostRemarks || undefined,
+          roundOff: taxBreakdown.roundOff || undefined,
+          roundOffAdjustment: taxBreakdown.roundOff || undefined,
+          partyNameSnapshot: partyNameSnap,
+          supplierNameSnapshot: partyNameSnap,
+          partyGstinSnapshot: partyGstinSnap,
+          partyPhoneSnapshot: partyPhoneSnap,
+          partyAddressSnapshot: partyAddressSnap,
+          billingAddressSnapshot: billingAddressSnap,
+          shippingAddressSnapshot: shippingAddressSnap,
+          stateCodeSnapshot: stateCodeSnap,
+          stateNameSnapshot: stateNameSnap,
+          taxableAmount: taxBreakdown.taxableAmount,
+          cgstRate: taxBreakdown.cgstRate,
+          cgstAmount: taxBreakdown.cgstAmount,
+          sgstRate: taxBreakdown.sgstRate,
+          sgstAmount: taxBreakdown.sgstAmount,
+          igstRate: taxBreakdown.igstRate,
+          igstAmount: taxBreakdown.igstAmount,
+          isInterState: taxBreakdown.isInterState,
           fy: currentFY,
           remarks: v.narration || `Imported from Tally (${v.rawVoucherType})`
         } as unknown as PurchaseInvoice)
       } else if (v.effectiveType === 'receipt') {
+        const bankLeg = v.legs.find(l => l.drCr === 'Dr') || v.legs.find(l => l.ledgerName.trim().toLowerCase() !== normParty)
+        const resolvedCtr = resolveCounterObj(bankLeg?.ledgerName)
+        const receiptId = `cpay-tally-${Date.now()}-${idx}`
+
         newCustomerPayments.push({
-          id: `cpay-tally-${Date.now()}-${idx}`,
+          id: receiptId,
           partyId: targetPartyId,
           customerId: targetPartyId,
           paymentDate: v.voucherDate,
           amount: v.totalAmount,
-          paymentMode: 'bank_transfer',
+          paymentMode: resolvedCtr.isCash ? 'cash' : 'bank_transfer',
+          counterId: resolvedCtr.id,
+          counterName: resolvedCtr.name,
+          partyNameSnapshot: v.partyName,
+          counterNameSnapshot: resolvedCtr.name,
           referenceNo: v.voucherNumber,
+          notes: v.narration || `Tally Receipt: ${v.voucherNumber}`,
           remarks: v.narration || `Tally Receipt: ${v.voucherNumber}`,
-          fy: currentFY
+          fy: currentFY,
+          createdAt: Date.now()
         } as unknown as CustomerPayment)
+
+        newCashBankTransactions.push({
+          id: `txn-cp-${receiptId}`,
+          date: v.voucherDate,
+          type: 'In',
+          counterId: resolvedCtr.id,
+          counterName: resolvedCtr.name,
+          amount: v.totalAmount,
+          narration: `Customer Receipt: ${v.partyName} (${v.voucherNumber})`
+        } as unknown as CashBankTransaction)
       } else if (v.effectiveType === 'payment') {
+        const bankLeg = v.legs.find(l => l.drCr === 'Cr') || v.legs.find(l => l.ledgerName.trim().toLowerCase() !== normParty)
+        const resolvedCtr = resolveCounterObj(bankLeg?.ledgerName)
+        const paymentId = `pay-tally-${Date.now()}-${idx}`
+
         newPayments.push({
-          id: `pay-tally-${Date.now()}-${idx}`,
+          id: paymentId,
           partyId: targetPartyId,
           supplierId: targetPartyId,
           paymentDate: v.voucherDate,
           amount: v.totalAmount,
-          paymentMode: 'bank_transfer',
+          paymentMode: resolvedCtr.isCash ? 'cash' : 'bank_transfer',
+          counterId: resolvedCtr.id,
+          counterName: resolvedCtr.name,
+          partyNameSnapshot: v.partyName,
+          counterNameSnapshot: resolvedCtr.name,
           referenceNo: v.voucherNumber,
+          notes: v.narration || `Tally Payment: ${v.voucherNumber}`,
           remarks: v.narration || `Tally Payment: ${v.voucherNumber}`,
-          fy: currentFY
+          fy: currentFY,
+          createdAt: Date.now()
         } as unknown as Payment)
+
+        newCashBankTransactions.push({
+          id: `txn-sp-${paymentId}`,
+          date: v.voucherDate,
+          type: 'Out',
+          counterId: resolvedCtr.id,
+          counterName: resolvedCtr.name,
+          amount: v.totalAmount,
+          narration: `Supplier Payment: ${v.partyName} (${v.voucherNumber})`
+        } as unknown as CashBankTransaction)
       } else if (v.effectiveType === 'credit_note') {
         newCreditNotes.push({
           id: `cn-tally-${Date.now()}-${idx}`,
@@ -1063,8 +1269,18 @@ export function TallyIntegrationPage({
           customerId: targetPartyId,
           supplierId: targetPartyId,
           partyNameSnapshot: v.partyName,
+          customerNameSnapshot: v.partyName,
+          partyGstinSnapshot: partyGstinSnap,
+          billingAddressSnapshot: billingAddressSnap,
+          stateCodeSnapshot: stateCodeSnap,
+          stateNameSnapshot: stateNameSnap,
           amount: v.totalAmount,
           totalAmount: v.totalAmount,
+          taxableAmount: taxBreakdown.taxableAmount || v.totalAmount,
+          cgstAmount: taxBreakdown.cgstAmount,
+          sgstAmount: taxBreakdown.sgstAmount,
+          igstAmount: taxBreakdown.igstAmount,
+          items: finalItems,
           reason: '01 - Sales / Goods Return',
           fy: currentFY,
           remarks: v.narration || `Tally Credit Note: ${v.voucherNumber}`
@@ -1078,33 +1294,66 @@ export function TallyIntegrationPage({
           supplierId: targetPartyId,
           customerId: targetPartyId,
           partyNameSnapshot: v.partyName,
+          supplierNameSnapshot: v.partyName,
+          partyGstinSnapshot: partyGstinSnap,
+          billingAddressSnapshot: billingAddressSnap,
+          stateCodeSnapshot: stateCodeSnap,
+          stateNameSnapshot: stateNameSnap,
           amount: v.totalAmount,
           totalAmount: v.totalAmount,
+          taxableAmount: taxBreakdown.taxableAmount || v.totalAmount,
+          cgstAmount: taxBreakdown.cgstAmount,
+          sgstAmount: taxBreakdown.sgstAmount,
+          igstAmount: taxBreakdown.igstAmount,
+          items: finalItems,
           reason: '01 - Purchase Return / Goods Rejected',
           fy: currentFY,
           remarks: v.narration || `Tally Debit Note: ${v.voucherNumber}`
         } as unknown as SupplierDebitNote)
       } else if (v.effectiveType === 'expense') {
+        const crLeg = v.legs.find(l => l.drCr === 'Cr')
+        const resolvedCtr = resolveCounterObj(crLeg?.ledgerName)
+        const expId = `exp-tally-${Date.now()}-${idx}`
+
         newExpenseEntries.push({
-          id: `exp-tally-${Date.now()}-${idx}`,
+          id: expId,
           expenseDate: v.voucherDate,
+          date: v.voucherDate,
           expenseTypeId: targetExpId || 'exp-unmapped',
+          categoryId: targetExpId || 'exp-unmapped',
+          categoryName: v.partyName,
           amount: v.totalAmount,
           description: v.narration || `Tally Expense: ${v.partyName}`,
-          paymentMode: 'bank_transfer',
+          notes: v.narration || `Tally Expense: ${v.partyName}`,
+          paymentAccountId: resolvedCtr.id,
+          paymentAccountName: resolvedCtr.name,
+          paymentMode: resolvedCtr.isCash ? 'cash' : 'bank_transfer',
           fy: currentFY,
           createdAt: Date.now()
         } as unknown as ExpenseEntry)
+
+        newCashBankTransactions.push({
+          id: `txn-exp-${expId}`,
+          date: v.voucherDate,
+          type: 'Out',
+          counterId: resolvedCtr.id,
+          counterName: resolvedCtr.name,
+          amount: v.totalAmount,
+          narration: `Expense: ${v.partyName} (${v.voucherNumber})`
+        } as unknown as CashBankTransaction)
       } else if (v.effectiveType === 'contra') {
+        const fromCtr = resolveCounterObj(v.contraDetails?.fromCounterName)
+        const toCtr = resolveCounterObj(v.contraDetails?.toCounterName)
+
         newCashBankTransactions.push({
           id: `cbt-tally-${Date.now()}-${idx}`,
           date: v.voucherDate,
           type: 'Transfer',
-          counterId: contraFromId,
-          counterName: v.contraDetails?.fromCounterName || 'Source Counter',
+          counterId: fromCtr.id,
+          counterName: fromCtr.name,
           amount: v.totalAmount,
-          toCounterId: contraToId,
-          toCounterName: v.contraDetails?.toCounterName || 'Destination Counter',
+          toCounterId: toCtr.id,
+          toCounterName: toCtr.name,
           narration: v.narration || `Tally Contra: ${v.voucherNumber}`
         } as unknown as CashBankTransaction)
       }

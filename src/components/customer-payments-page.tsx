@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
-import { Plus, CurrencyInr, Trash, Info, PencilSimple, FunnelSimple, Warning, CaretUpDown, Check } from '@phosphor-icons/react'
+import { Plus, CurrencyInr, Trash, Info, PencilSimple, FunnelSimple, Warning, CaretUpDown, Check, CaretLeft, CaretRight } from '@phosphor-icons/react'
 import { formatCurrency, getFYMonths, getFYFromDate } from '@/lib/calculations'
 import { startOfMonth, endOfMonth, isWithinInterval, parseISO, format } from 'date-fns'
 import { toast } from 'sonner'
@@ -52,35 +52,60 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
   const calculateCustomerOutstanding = (customerId: string): number => {
     const fySalesInvoices = salesInvoices.filter(inv => inv.customerId === customerId)
     const fyCustomerPayments = customerPayments.filter(p => p.customerId === customerId)
-    
+
     const totalReceivables = fySalesInvoices.reduce((sum, inv) => sum + inv.invoiceAmount, 0)
     const totalPaymentsReceived = fyCustomerPayments.reduce((sum, p) => sum + p.amount, 0)
-    
+
     return totalReceivables - totalPaymentsReceived
   }
-  
+
   const filteredPayments = useMemo(() => {
     let result = customerPayments.filter(p => isRecordInPeriod(p.paymentDate, p.fy, periodFilter, currentFY))
-    
+
     if (selectedCustomer !== 'all') {
       result = result.filter(p => p.customerId === selectedCustomer)
     }
-    
+
     return result
   }, [customerPayments, periodFilter, currentFY, selectedCustomer])
-  
+
+  const customerMap = useMemo(() => {
+    return new Map(customers.map(c => [c.id, c]))
+  }, [customers])
+
+  const getCustomerName = (customerId: string) => {
+    return customerMap.get(customerId)?.name || 'Unknown'
+  }
+
+  const sortedFilteredPayments = useMemo(() => {
+    return [...filteredPayments].sort((a, b) => b.paymentDate.localeCompare(a.paymentDate))
+  }, [filteredPayments])
+
+  const [currentPage, setCurrentPage] = useState(1)
+  const pageSize = 50
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [selectedCustomer, periodFilter, currentFY])
+
+  const totalPages = Math.max(1, Math.ceil(sortedFilteredPayments.length / pageSize))
+  const paginatedPayments = useMemo(() => {
+    const start = (currentPage - 1) * pageSize
+    return sortedFilteredPayments.slice(start, start + pageSize)
+  }, [sortedFilteredPayments, currentPage, pageSize])
+
   const totalReceived = filteredPayments.reduce((sum, p) => sum + p.amount, 0)
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    
+
     if (isLocked) {
       toast.error('Cannot save in locked mode', {
         description: 'Unlock the data in Settings to make changes'
       })
       return
     }
-    
+
     const formData = new FormData(e.currentTarget)
     const paymentDate = formData.get('paymentDate') as string
     const counterId = formData.get('counterId') as string
@@ -135,24 +160,24 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
       if (activeCompanyId) {
         void saveCustomerPayment(activeCompanyId, updatedPayment)
       }
-      
+
       let newCounters = [...counters]
       let newTransactions = [...transactions]
-      
+
       const oldCounterId = editingPayment.counterId
       if (oldCounterId) {
-        newCounters = newCounters.map(c => 
+        newCounters = newCounters.map(c =>
           c.id === oldCounterId ? { ...c, currentBalance: c.currentBalance - editingPayment.amount } : c
         )
       }
-      newCounters = newCounters.map(c => 
+      newCounters = newCounters.map(c =>
         c.id === counterId ? { ...c, currentBalance: c.currentBalance + paymentAmount } : c
       )
-      
+
       const txnId = `txn-cp-${editingPayment.id}`
       const existingTxn = newTransactions.find(t => t.id === txnId)
       if (existingTxn) {
-        newTransactions = newTransactions.map(t => 
+        newTransactions = newTransactions.map(t =>
           t.id === txnId ? {
             ...t,
             date: paymentDate,
@@ -204,11 +229,11 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
       if (activeCompanyId) {
         void saveCustomerPayment(activeCompanyId, payment)
       }
-      
-      const newCounters = counters.map(c => 
+
+      const newCounters = counters.map(c =>
         c.id === counterId ? { ...c, currentBalance: c.currentBalance + paymentAmount } : c
       )
-      
+
       const newTransactions = [...transactions, {
         id: `txn-cp-${paymentId}`,
         date: paymentDate,
@@ -218,7 +243,7 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
         amount: paymentAmount,
         narration: `Customer Payment: ${customerName} ${notes ? `(${notes})` : ''}`.trim()
       } as CashBankTransaction]
-      
+
       onUpdateCashBank(newCounters, newTransactions)
     }
 
@@ -254,16 +279,16 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
   const confirmDelete = () => {
     if (paymentToDelete) {
       setCustomerPayments((prev) => prev.filter((p) => p.id !== paymentToDelete.id))
-      
+
       let newCounters = counters
       if (paymentToDelete.counterId) {
-        newCounters = newCounters.map(c => 
+        newCounters = newCounters.map(c =>
           c.id === paymentToDelete.counterId ? { ...c, currentBalance: c.currentBalance - paymentToDelete.amount } : c
         )
       }
       const newTransactions = transactions.filter(t => t.id !== `txn-cp-${paymentToDelete.id}`)
       onUpdateCashBank(newCounters, newTransactions)
-      
+
       toast.success('Customer payment deleted successfully')
       setDeleteDialogOpen(false)
       setPaymentToDelete(null)
@@ -291,9 +316,7 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
     }
   }
 
-  const getCustomerName = (customerId: string) => {
-    return customers.find(c => c.id === customerId)?.name || 'Unknown'
-  }
+
 
 
 
@@ -397,104 +420,104 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
                     />
                   </div>
 
-                    {selectedCustomerInForm && (
-                      <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-muted-foreground">Current Outstanding:</span>
-                          <span className="text-base font-bold text-primary">
-                            {formatCurrency(calculateCustomerOutstanding(selectedCustomerInForm))}
-                          </span>
-                        </div>
+                  {selectedCustomerInForm && (
+                    <div className="p-3 rounded-lg bg-primary/5 border border-primary/20">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-muted-foreground">Current Outstanding:</span>
+                        <span className="text-base font-bold text-primary">
+                          {formatCurrency(calculateCustomerOutstanding(selectedCustomerInForm))}
+                        </span>
                       </div>
-                    )}
+                    </div>
+                  )}
 
+                  <div className="space-y-2">
+                    <Label htmlFor="counterId">Account/Counter *</Label>
+                    <Select
+                      value={selectedCounterId}
+                      onValueChange={setSelectedCounterId}
+                      required
+                    >
+                      <SelectTrigger id="counterId" className={cn(!selectedCounterId && "text-muted-foreground")}>
+                        <SelectValue placeholder="Select payment account..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {counters.length === 0 ? (
+                          <div className="p-2 text-sm text-muted-foreground text-center">
+                            No counters available. Please add a counter in Cash & Bank Master.
+                          </div>
+                        ) : (
+                          counters.map((counter) => (
+                            <SelectItem key={counter.id} value={counter.id}>
+                              <div className="flex items-center gap-2">
+                                <Badge variant={counter.type === 'Cash' ? 'default' : 'secondary'} className="text-xs">
+                                  {counter.type}
+                                </Badge>
+                                <span>{counter.name}</span>
+                                <span className="text-xs text-muted-foreground ml-auto">
+                                  {formatCurrency(counter.currentBalance)}
+                                </span>
+                              </div>
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                    <input type="hidden" name="counterId" value={selectedCounterId} required />
+                    <p className="text-xs text-muted-foreground">Select where the payment is being received</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="counterId">Account/Counter *</Label>
-                      <Select 
-                        value={selectedCounterId} 
-                        onValueChange={setSelectedCounterId}
+                      <Label htmlFor="paymentDate">Payment Date *</Label>
+                      <Input
+                        id="paymentDate"
+                        name="paymentDate"
+                        type="date"
+                        defaultValue={editingPayment?.paymentDate || format(new Date(), 'yyyy-MM-dd')}
+
                         required
-                      >
-                        <SelectTrigger id="counterId" className={cn(!selectedCounterId && "text-muted-foreground")}>
-                          <SelectValue placeholder="Select payment account..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {counters.length === 0 ? (
-                            <div className="p-2 text-sm text-muted-foreground text-center">
-                              No counters available. Please add a counter in Cash & Bank Master.
-                            </div>
-                          ) : (
-                            counters.map((counter) => (
-                              <SelectItem key={counter.id} value={counter.id}>
-                                <div className="flex items-center gap-2">
-                                  <Badge variant={counter.type === 'Cash' ? 'default' : 'secondary'} className="text-xs">
-                                    {counter.type}
-                                  </Badge>
-                                  <span>{counter.name}</span>
-                                  <span className="text-xs text-muted-foreground ml-auto">
-                                    {formatCurrency(counter.currentBalance)}
-                                  </span>
-                                </div>
-                              </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
-                      <input type="hidden" name="counterId" value={selectedCounterId} required />
-                      <p className="text-xs text-muted-foreground">Select where the payment is being received</p>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="paymentDate">Payment Date *</Label>
-                        <Input
-                          id="paymentDate"
-                          name="paymentDate"
-                          type="date"
-                          defaultValue={editingPayment?.paymentDate || format(new Date(), 'yyyy-MM-dd')}
-
-                          required
-                        />
-                        <p className="text-xs text-muted-foreground">For reports, ageing, and scheme eligibility</p>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="amount">Amount (₹) *</Label>
-                        <Input
-                          id="amount"
-                          name="amount"
-                          type="number"
-                          step="0.01"
-                          min="0.01"
-                          placeholder="0.00"
-                          defaultValue={editingPayment?.amount}
-                          required
-                        />
-                      </div>
+                      />
+                      <p className="text-xs text-muted-foreground">For reports, ageing, and scheme eligibility</p>
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="notes">Notes</Label>
-                      <Textarea
-                        id="notes"
-                        name="notes"
-                        placeholder="Add any payment notes or reference"
-                        rows={3}
-                        defaultValue={editingPayment?.notes}
+                      <Label htmlFor="amount">Amount (₹) *</Label>
+                      <Input
+                        id="amount"
+                        name="amount"
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        placeholder="0.00"
+                        defaultValue={editingPayment?.amount}
+                        required
                       />
                     </div>
+                  </div>
 
-                    <div className="flex gap-3 justify-end pt-4">
-                      <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
-                        Cancel
-                      </Button>
-                      <Button type="submit">{editingPayment ? 'Update Payment' : 'Record Payment'}</Button>
-                    </div>
-                  </form>
-                </DialogContent>
-              </Dialog>
+                  <div className="space-y-2">
+                    <Label htmlFor="notes">Notes</Label>
+                    <Textarea
+                      id="notes"
+                      name="notes"
+                      placeholder="Add any payment notes or reference"
+                      rows={3}
+                      defaultValue={editingPayment?.notes}
+                    />
+                  </div>
+
+                  <div className="flex gap-3 justify-end pt-4">
+                    <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
+                      Cancel
+                    </Button>
+                    <Button type="submit">{editingPayment ? 'Update Payment' : 'Record Payment'}</Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
           </div>
-          
+
           <div className="flex items-center gap-4 flex-wrap mb-4">
             <div className="flex items-center gap-2">
               <FunnelSimple size={18} className="text-muted-foreground" />
@@ -513,9 +536,9 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
                 </SelectContent>
               </Select>
             </div>
-            
+
             <PeriodDateFilter currentFY={currentFY} value={periodFilter} onChange={setPeriodFilter} />
-            
+
             <Badge variant="secondary" className="gap-1.5 ml-auto">
               {filteredPayments.length} payment{filteredPayments.length !== 1 ? 's' : ''}
             </Badge>
@@ -542,43 +565,73 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
                 <TableBody>
                   {customerPayments.length === 0 ? (
                     <TableRow>
+                      <TableCell colSpan={6} className="text-center py-6 text-muted-foreground">
                         No customer payments recorded for FY {currentFY}.
-                        No customer payments recorded for FY {currentFY}.
+                      </TableCell>
                     </TableRow>
                   ) : (
-                    filteredPayments
-                      .sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime())
-                      .map((payment) => (
-                        <TableRow key={payment.id}>
-                          <TableCell>{new Date(payment.paymentDate).toLocaleDateString('en-IN')}</TableCell>
-                          <TableCell className="font-medium">
-                            {getCustomerName(payment.customerId)}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="text-xs">
-                              {payment.counterName || 'Not Set'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right font-mono font-medium text-success">
-                            {formatCurrency(payment.amount)}
-                          </TableCell>
-                          <TableCell className="max-w-xs truncate text-sm text-muted-foreground">
-                            {payment.notes || '-'}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <ThreeDotDropdown
-                              onEdit={() => handleEdit(payment)}
-                              onDelete={() => handleDeleteClick(payment)}
-                              history={payment.history}
-                              entityType="Customer Payment"
-                              isLocked={isLocked}
-                            />
-                          </TableCell>
-                        </TableRow>
-                      ))
+                    paginatedPayments.map((payment) => (
+                      <TableRow key={payment.id}>
+                        <TableCell>{new Date(payment.paymentDate).toLocaleDateString('en-IN')}</TableCell>
+                        <TableCell className="font-medium">
+                          {getCustomerName(payment.customerId)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs">
+                            {payment.counterName || 'Not Set'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-mono font-medium text-success">
+                          {formatCurrency(payment.amount)}
+                        </TableCell>
+                        <TableCell className="max-w-xs truncate text-sm text-muted-foreground">
+                          {payment.notes || '-'}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <ThreeDotDropdown
+                            onEdit={() => handleEdit(payment)}
+                            onDelete={() => handleDeleteClick(payment)}
+                            history={payment.history}
+                            entityType="Customer Payment"
+                            isLocked={isLocked}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    ))
                   )}
                 </TableBody>
               </Table>
+
+              {sortedFilteredPayments.length > pageSize && (
+                <div className="flex items-center justify-between p-4 border-t border-border text-xs text-muted-foreground bg-card">
+                  <div>
+                    Showing {Math.min((currentPage - 1) * pageSize + 1, sortedFilteredPayments.length)} to {Math.min(currentPage * pageSize, sortedFilteredPayments.length)} of {sortedFilteredPayments.length} payments
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="h-8 gap-1"
+                    >
+                      <CaretLeft size={14} />
+                      Previous
+                    </Button>
+                    <span className="font-medium text-foreground px-2">Page {currentPage} of {totalPages}</span>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      className="h-8 gap-1"
+                    >
+                      Next
+                      <CaretRight size={14} />
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
@@ -592,7 +645,7 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
               Delete Customer Payment
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this payment of <strong>{formatCurrency(paymentToDelete?.amount || 0)}</strong> from <strong>{getCustomerName(paymentToDelete?.customerId || '')}</strong>? 
+              Are you sure you want to delete this payment of <strong>{formatCurrency(paymentToDelete?.amount || 0)}</strong> from <strong>{getCustomerName(paymentToDelete?.customerId || '')}</strong>?
               <br /><br />
               This action cannot be undone and will affect all related calculations and reports.
             </AlertDialogDescription>

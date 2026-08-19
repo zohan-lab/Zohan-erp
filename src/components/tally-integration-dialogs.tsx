@@ -61,7 +61,7 @@ import {
   AdditionalCharge,
   ExpenseType
 } from '@/lib/types'
-import { formatCurrency, roundCurrency } from '@/lib/calculations'
+import { formatCurrency, roundCurrency, calculateInvoiceTaxBreakdown } from '@/lib/calculations'
 import {
   TallyLedgerMapping,
   DEFAULT_TALLY_LEDGER_MAPPING,
@@ -1384,10 +1384,10 @@ export function TallyImportDialog({
       return true
     })
 
-    if (autoCreateMasters) {
-      const timestamp = Date.now()
-      let custSeq = 0, suppSeq = 0, expSeq = 0, cntrSeq = 0, itemSeq = 0
+    const timestamp = Date.now()
+    let custSeq = 0, suppSeq = 0, expSeq = 0, cntrSeq = 0, itemSeq = 0
 
+    if (autoCreateMasters) {
       activeModuleVouchers.forEach(v => {
         if (!v.isIncluded || v.effectiveType === 'skipped') return
         const norm = v.partyName.trim().toLowerCase()
@@ -1456,38 +1456,68 @@ export function TallyImportDialog({
           }
         })
 
-        // Check Contra Counters
+        // Check Bank/Cash counters for Contra, Receipt, Payment, and Expense
+        const counterNamesToCheck: string[] = []
         if (v.effectiveType === 'contra') {
-          const fromName = (v.contraDetails?.fromCounterName || '').trim()
-          const toName = (v.contraDetails?.toCounterName || '').trim()
-
-          if (fromName && !counterMap.has(fromName.toLowerCase()) && !autoCntrMap.has(fromName.toLowerCase())) {
-            cntrSeq++
-            const newId = `cntr-auto-${timestamp}-${cntrSeq}`
-            autoCntrMap.set(fromName.toLowerCase(), newId)
-            generatedCounters.push({
-              id: newId,
-              name: fromName,
-              type: fromName.toLowerCase().includes('cash') ? 'Cash' : 'Bank',
-              openingBalance: 0,
-              currentBalance: 0
-            } as Counter)
-          }
-
-          if (toName && !counterMap.has(toName.toLowerCase()) && !autoCntrMap.has(toName.toLowerCase())) {
-            cntrSeq++
-            const newId = `cntr-auto-${timestamp}-${cntrSeq}`
-            autoCntrMap.set(toName.toLowerCase(), newId)
-            generatedCounters.push({
-              id: newId,
-              name: toName,
-              type: toName.toLowerCase().includes('cash') ? 'Cash' : 'Bank',
-              openingBalance: 0,
-              currentBalance: 0
-            } as Counter)
-          }
+          if (v.contraDetails?.fromCounterName) counterNamesToCheck.push(v.contraDetails.fromCounterName)
+          if (v.contraDetails?.toCounterName) counterNamesToCheck.push(v.contraDetails.toCounterName)
+        } else if (v.effectiveType === 'payment' || v.effectiveType === 'receipt' || v.effectiveType === 'expense') {
+          const bankLeg = v.legs.find(l => l.drCr === (v.effectiveType === 'receipt' ? 'Dr' : 'Cr')) || v.legs.find(l => l.ledgerName.trim().toLowerCase() !== v.partyName.trim().toLowerCase())
+          if (bankLeg?.ledgerName) counterNamesToCheck.push(bankLeg.ledgerName)
         }
+
+        counterNamesToCheck.forEach(rawName => {
+          const raw = rawName.trim()
+          if (!raw) return
+          const norm = raw.toLowerCase()
+          if (!counterMap.has(norm) && !autoCntrMap.has(norm)) {
+            cntrSeq++
+            const newId = `cntr-auto-${timestamp}-${cntrSeq}`
+            autoCntrMap.set(norm, newId)
+            generatedCounters.push({
+              id: newId,
+              name: raw,
+              type: raw.toLowerCase().includes('cash') ? 'Cash' : 'Bank',
+              openingBalance: 0,
+              currentBalance: 0
+            } as Counter)
+          }
+        })
       })
+    }
+
+    const resolveCounter = (rawName: string | undefined): { id: string, name: string, isCash: boolean } => {
+      const raw = (rawName || '').trim()
+      const norm = raw.toLowerCase()
+      if (!norm) {
+        const defaultCtr = counters.find(c => (c as any).isDefault) || counters[0]
+        return {
+          id: defaultCtr?.id || 'counter-1',
+          name: defaultCtr?.name || 'Cash in Hand',
+          isCash: true
+        }
+      }
+      const existing = counterMap.get(norm)
+      if (existing) return { id: existing.id, name: existing.name, isCash: existing.type === 'Cash' || (existing.type as any) === 'cash' }
+      const autoId = autoCntrMap.get(norm)
+      if (autoId) {
+        const gen = generatedCounters.find(c => c.id === autoId)
+        return { id: autoId, name: gen?.name || raw, isCash: gen?.type === 'Cash' || raw.toLowerCase().includes('cash') }
+      }
+      // On the fly auto-create
+      cntrSeq++
+      const newId = `cntr-auto-${timestamp}-${cntrSeq}`
+      autoCntrMap.set(norm, newId)
+      const isCash = norm.includes('cash')
+      const newCtr: Counter = {
+        id: newId,
+        name: raw,
+        type: isCash ? 'Cash' : 'Bank',
+        openingBalance: 0,
+        currentBalance: 0
+      }
+      generatedCounters.push(newCtr)
+      return { id: newId, name: raw, isCash }
     }
 
     let skipped = 0
@@ -1503,133 +1533,222 @@ export function TallyImportDialog({
       if (v.effectiveType === 'payment' && v.matchedEntityType === 'supplier') {
         const suppId = v.matchedEntityId || autoSuppMap.get(normParty) || supplierMap.get(normParty)?.id
         if (suppId) {
+          const bankLeg = v.legs.find(l => l.drCr === 'Cr') || v.legs.find(l => l.ledgerName.trim().toLowerCase() !== normParty)
+          const resolvedCtr = resolveCounter(bankLeg?.ledgerName)
+          const paymentId = `tally-pay-${Date.now()}-${idx}`
+          const resolvedSupplier = suppliers.find(s => s.id === suppId) || generatedSuppliers.find(s => s.id === suppId)
+
           newPayments.push({
-            id: `tally-pay-${Date.now()}-${idx}`,
+            id: paymentId,
             supplierId: suppId,
+            partyId: suppId,
             amount: v.totalAmount,
             paymentDate: v.voucherDate || new Date().toISOString().split('T')[0],
-            paymentMode: 'Bank',
-            counterName: v.legs.find(l => l.ledgerName !== v.partyName)?.ledgerName || 'Bank Account',
-            notes: `Imported from Tally Voucher #${v.voucherNumber}`,
+            paymentMode: resolvedCtr.isCash ? 'Cash' : 'Bank',
+            counterId: resolvedCtr.id,
+            counterName: resolvedCtr.name,
+            counterNameSnapshot: resolvedCtr.name,
+            partyNameSnapshot: resolvedSupplier?.name || v.partyName,
+            notes: v.narration || `Imported from Tally Voucher #${v.voucherNumber}`,
+            remarks: v.narration || `Imported from Tally Voucher #${v.voucherNumber}`,
             fy: '2025-2026',
             createdAt: Date.now()
           } as any)
+
+          newCashBankTransactions.push({
+            id: `txn-sp-${paymentId}`,
+            date: v.voucherDate || new Date().toISOString().split('T')[0],
+            type: 'Out',
+            counterId: resolvedCtr.id,
+            counterName: resolvedCtr.name,
+            amount: v.totalAmount,
+            narration: `Supplier Payment: ${v.partyName} (#${v.voucherNumber})`
+          })
         } else {
           skipped++
         }
       } else if (v.effectiveType === 'expense') {
         const crLeg = v.legs.find(l => l.drCr === 'Cr')
+        const resolvedCtr = resolveCounter(crLeg?.ledgerName)
         const expCatId = v.expenseDetails?.categoryId || v.matchedEntityId || autoExpMap.get(normParty) || expenseTypeMap.get(normParty)?.id || 'exp-cat-general'
+        const expId = `tally-exp-${Date.now()}-${idx}`
+
         newExpenseEntries.push({
-          id: `tally-exp-${Date.now()}-${idx}`,
+          id: expId,
           date: v.voucherDate || new Date().toISOString().split('T')[0],
           expenseDate: v.voucherDate || new Date().toISOString().split('T')[0],
           categoryId: expCatId,
           categoryName: v.expenseDetails?.categoryName || v.partyName,
           expenseTypeId: expCatId,
           amount: v.totalAmount,
-          paymentAccountId: crLeg?.ledgerName,
-          paymentAccountName: crLeg?.ledgerName || 'Bank Account',
-          paymentMode: 'Bank',
+          paymentAccountId: resolvedCtr.id,
+          paymentAccountName: resolvedCtr.name,
+          paymentMode: resolvedCtr.isCash ? 'Cash' : 'Bank',
           notes: v.narration || `Imported from Tally Expense Voucher #${v.voucherNumber}`,
           fy: '2025-2026',
           createdAt: Date.now()
         } as any)
+
+        newCashBankTransactions.push({
+          id: `txn-exp-${expId}`,
+          date: v.voucherDate || new Date().toISOString().split('T')[0],
+          type: 'Out',
+          counterId: resolvedCtr.id,
+          counterName: resolvedCtr.name,
+          amount: v.totalAmount,
+          narration: `Expense: ${v.partyName} (#${v.voucherNumber})`
+        })
       } else if (v.effectiveType === 'contra') {
         const fromName = v.contraDetails?.fromCounterName || 'Source Counter'
         const toName = v.contraDetails?.toCounterName || 'Destination Counter'
-        const fromId = v.contraDetails?.fromCounterId || autoCntrMap.get(fromName.toLowerCase()) || counterMap.get(fromName.trim().toLowerCase())?.id || 'counter-src'
-        const toId = v.contraDetails?.toCounterId || autoCntrMap.get(toName.toLowerCase()) || counterMap.get(toName.trim().toLowerCase())?.id || 'counter-dst'
+        const fromCtr = resolveCounter(fromName)
+        const toCtr = resolveCounter(toName)
 
         newCashBankTransactions.push({
           id: `tally-contra-${Date.now()}-${idx}`,
           date: v.voucherDate || new Date().toISOString().split('T')[0],
-          counterId: fromId,
-          counterName: fromName,
+          counterId: fromCtr.id,
+          counterName: fromCtr.name,
           type: 'Transfer',
           amount: v.totalAmount,
-          toCounterId: toId,
-          toCounterName: toName,
+          toCounterId: toCtr.id,
+          toCounterName: toCtr.name,
           narration: v.narration || `Tally Contra Transfer #${v.voucherNumber}`
         })
       } else if (v.effectiveType === 'receipt' && v.matchedEntityType === 'customer') {
         const custId = v.matchedEntityId || autoCustMap.get(normParty) || customerMap.get(normParty)?.id
         if (custId) {
+          const bankLeg = v.legs.find(l => l.drCr === 'Dr') || v.legs.find(l => l.ledgerName.trim().toLowerCase() !== normParty)
+          const resolvedCtr = resolveCounter(bankLeg?.ledgerName)
+          const receiptId = `tally-rec-${Date.now()}-${idx}`
+          const resolvedCustomer = customers.find(c => c.id === custId) || generatedCustomers.find(c => c.id === custId)
+
           newCustomerPayments.push({
-            id: `tally-rec-${Date.now()}-${idx}`,
+            id: receiptId,
             customerId: custId,
+            partyId: custId,
             amount: v.totalAmount,
             paymentDate: v.voucherDate || new Date().toISOString().split('T')[0],
-            paymentMode: 'Bank',
-            counterName: v.legs.find(l => l.ledgerName !== v.partyName)?.ledgerName || 'Bank Account',
-            notes: `Imported from Tally Voucher #${v.voucherNumber}`,
+            paymentMode: resolvedCtr.isCash ? 'Cash' : 'Bank',
+            counterId: resolvedCtr.id,
+            counterName: resolvedCtr.name,
+            counterNameSnapshot: resolvedCtr.name,
+            partyNameSnapshot: resolvedCustomer?.name || v.partyName,
+            notes: v.narration || `Imported from Tally Voucher #${v.voucherNumber}`,
+            remarks: v.narration || `Imported from Tally Voucher #${v.voucherNumber}`,
             fy: '2025-2026',
             createdAt: Date.now()
           } as any)
+
+          newCashBankTransactions.push({
+            id: `txn-cp-${receiptId}`,
+            date: v.voucherDate || new Date().toISOString().split('T')[0],
+            type: 'In',
+            counterId: resolvedCtr.id,
+            counterName: resolvedCtr.name,
+            amount: v.totalAmount,
+            narration: `Customer Receipt: ${v.partyName} (#${v.voucherNumber})`
+          })
         } else {
           skipped++
         }
       } else if (v.effectiveType === 'sales' && v.matchedEntityType === 'customer') {
         const custId = v.matchedEntityId || autoCustMap.get(normParty) || customerMap.get(normParty)?.id || 'cust-cash'
-        const charges: AdditionalCharge[] = (v.additionalCharges || []).map(c => ({
-          id: c.id,
+        const resolvedCust = customers.find(c => c.id === custId) || generatedCustomers.find(c => c.id === custId)
+
+        const partyNameSnap = resolvedCust?.name || v.partyName || 'Customer'
+        const partyGstinSnap = resolvedCust?.gstin || v.partyGstin || ''
+        const partyPhoneSnap = resolvedCust?.phone || ''
+        const partyAddressSnap = resolvedCust?.address || ''
+        const billingAddressSnap = resolvedCust?.address || ''
+        const shippingAddressSnap = (resolvedCust?.shippingSameAsBilling ? resolvedCust.address : resolvedCust?.shippingAddress) || billingAddressSnap
+        const stateCodeSnap = resolvedCust?.stateCode || '19'
+        const stateNameSnap = resolvedCust?.stateName || (resolvedCust as any)?.state || 'West Bengal'
+
+        const charges: AdditionalCharge[] = (v.additionalCharges || []).map((c, cIdx) => ({
+          id: c.id || `charge-${idx}-${cIdx}`,
           name: c.name || c.chargeName || c.ledgerName || c.remarks || '',
           chargeName: c.chargeName || c.name || c.ledgerName || c.remarks || '',
           remarks: c.remarks || c.name || c.chargeName || c.ledgerName || '',
-          sacCode: c.sacCode,
-          taxMode: c.taxMode || 'gst',
-          basicRate: c.basicRate,
-          taxableAmount: c.taxableAmount,
-          gstRate: c.gstRate,
-          cgstAmount: c.cgstAmount,
-          sgstAmount: c.sgstAmount,
-          igstAmount: c.igstAmount,
-          finalAmt: c.finalAmt
+          sacCode: c.sacCode || (c.name?.toLowerCase().includes('freight') || c.name?.toLowerCase().includes('transport') ? '996511' : undefined),
+          taxMode: c.taxMode || (c.gstRate && c.gstRate > 0 ? 'gst' : 'none'),
+          basicRate: c.basicRate ?? c.taxableAmount ?? 0,
+          taxableAmount: c.taxableAmount ?? c.basicRate ?? 0,
+          gstRate: c.gstRate ?? 18,
+          cgstAmount: c.cgstAmount || 0,
+          sgstAmount: c.sgstAmount || 0,
+          igstAmount: c.igstAmount || 0,
+          finalAmt: c.finalAmt || ((c.basicRate || 0) + (c.cgstAmount || 0) + (c.sgstAmount || 0) + (c.igstAmount || 0))
         }))
         const addCost = charges.reduce((s, c) => s + c.finalAmt, 0)
         const addCostBasic = charges.reduce((s, c) => s + c.basicRate, 0)
         const addCostRemarks = charges.map(c => c.remarks || c.name || c.chargeName).filter(Boolean).join(', ')
 
-        const sanitizedItems: InvoiceItem[] = (v.inventory || []).map((inv, iIdx) => {
+        const rawItems: InvoiceItem[] = (v.inventory || []).map((inv, iIdx) => {
           const norm = inv.itemName.trim().toLowerCase()
           const customMappedId = itemOverrides[v.id]?.[iIdx] || itemMappings[norm]
           const resolvedItem = (customMappedId && customMappedId !== 'auto-create')
             ? items.find(it => it.id === customMappedId) || itemMap.get(norm)
-            : itemMap.get(norm)
+            : itemMap.get(norm) || generatedItems.find(it => it.name.trim().toLowerCase() === norm)
 
           const itemId = resolvedItem?.id || autoItemMap.get(norm) || 'item-gen'
           const itemName = resolvedItem?.name || inv.itemName
           const itemUnit = resolvedItem?.unit || inv.unit || 'PCS'
           const gstRate = resolvedItem?.gstRate ?? 18
-          const halfGst = gstRate / 2
-          const rawRate = inv.rate
-          const rawAmount = inv.amount
-          const lineTaxable = rawAmount
-          const lineCgst = roundCurrency(lineTaxable * (halfGst / 100))
-          const lineSgst = roundCurrency(lineTaxable * (halfGst / 100))
-          const grossAmount = roundCurrency(rawAmount * (1 + gstRate / 100))
-          const inclusiveRate = roundCurrency(rawRate * (1 + gstRate / 100))
+          const qty = inv.quantity || 1
+          const rawRate = inv.rate || 0
+          const rawAmount = inv.amount || (qty * rawRate)
 
           return {
+            id: `item-line-${Date.now()}-${idx}-${iIdx}`,
             itemId,
-            baseQuantity: inv.quantity,
-            enteredQuantity: inv.quantity,
+            baseQuantity: qty,
+            enteredQuantity: qty,
             enteredUnit: itemUnit,
+            unit: itemUnit,
+            rate: rawRate,
             basicRate: rawRate,
-            baseRate: inclusiveRate,
-            enteredRate: inclusiveRate,
-            rate: inclusiveRate,
-            amount: grossAmount,
-            taxableAmount: lineTaxable,
+            baseRate: rawRate,
+            enteredRate: rawRate,
+            salePrice: rawRate,
+            amount: rawAmount,
+            grossAmount: rawAmount,
+            taxableAmount: rawAmount,
             gstRate,
-            cgstRate: halfGst,
-            cgstAmount: lineCgst,
-            sgstRate: halfGst,
-            sgstAmount: lineSgst,
-            igstRate: 0,
-            igstAmount: 0,
+            gstPercentage: gstRate,
             itemNameSnapshot: itemName,
-            itemUnitSnapshot: itemUnit
+            itemUnitSnapshot: itemUnit,
+            unitSnapshot: itemUnit,
+            hsnCodeSnapshot: resolvedItem?.hsnCode || '',
+            categorySnapshot: resolvedItem?.category || '',
+            gstRateSnapshot: gstRate
+          } as InvoiceItem
+        })
+
+        const taxBreakdown = calculateInvoiceTaxBreakdown({
+          items: rawItems,
+          itemsMaster: items,
+          additionalCharges: charges,
+          additionalCostBasicRate: addCostBasic,
+          additionalCostFinal: addCost,
+          partyState: stateCodeSnap,
+          customRoundOff: v.roundOff,
+          defaultGstRate: 18
+        })
+
+        const finalItems: InvoiceItem[] = rawItems.map((rItem, rIdx) => {
+          const lineBreakdown = taxBreakdown.lineBreakdowns[rIdx]
+          return {
+            ...rItem,
+            taxableAmount: lineBreakdown ? lineBreakdown.taxableAmount : rItem.taxableAmount,
+            gstRate: lineBreakdown ? lineBreakdown.gstRate : rItem.gstRate,
+            gstPercentage: lineBreakdown ? lineBreakdown.gstRate : rItem.gstRate,
+            cgstRate: lineBreakdown?.cgstRate,
+            cgstAmount: lineBreakdown?.cgstAmount,
+            sgstRate: lineBreakdown?.sgstRate,
+            sgstAmount: lineBreakdown?.sgstAmount,
+            igstRate: lineBreakdown?.igstRate,
+            igstAmount: lineBreakdown?.igstAmount
           }
         })
 
@@ -1637,85 +1756,137 @@ export function TallyImportDialog({
           id: `inv-tally-${Date.now()}-${idx}`,
           invoiceNo: v.voucherNumber,
           customerId: custId,
+          partyId: custId,
           invoiceDate: v.voucherDate || new Date().toISOString().split('T')[0],
-          invoiceAmount: v.totalAmount,
-          totalAmount: v.totalAmount,
+          invoiceAmount: taxBreakdown.totalAmount,
+          totalAmount: taxBreakdown.totalAmount,
           additionalCharges: charges.length > 0 ? charges : undefined,
           additionalCost: addCost > 0 ? addCost : undefined,
           additionalCostBasicRate: addCostBasic > 0 ? addCostBasic : undefined,
           additionalCostRemarks: addCostRemarks || undefined,
-          roundOff: v.roundOff || undefined,
-          roundOffAdjustment: v.roundOff || undefined,
-          taxableAmount: v.taxableAmount,
-          cgstAmount: v.cgstAmount,
-          sgstAmount: v.sgstAmount,
-          igstAmount: v.igstAmount,
-          items: sanitizedItems,
+          roundOff: taxBreakdown.roundOff || undefined,
+          roundOffAdjustment: taxBreakdown.roundOff || undefined,
+          partyNameSnapshot: partyNameSnap,
+          customerNameSnapshot: partyNameSnap,
+          partyGstinSnapshot: partyGstinSnap,
+          partyPhoneSnapshot: partyPhoneSnap,
+          partyAddressSnapshot: partyAddressSnap,
+          billingAddressSnapshot: billingAddressSnap,
+          shippingAddressSnapshot: shippingAddressSnap,
+          stateCodeSnapshot: stateCodeSnap,
+          stateNameSnapshot: stateNameSnap,
+          taxableAmount: taxBreakdown.taxableAmount,
+          cgstRate: taxBreakdown.cgstRate,
+          cgstAmount: taxBreakdown.cgstAmount,
+          sgstRate: taxBreakdown.sgstRate,
+          sgstAmount: taxBreakdown.sgstAmount,
+          igstRate: taxBreakdown.igstRate,
+          igstAmount: taxBreakdown.igstAmount,
+          isInterState: taxBreakdown.isInterState,
+          items: finalItems,
+          status: 'Confirmed',
           fy: '2025-2026',
+          remarks: v.narration || `Imported from Tally (${v.rawVoucherType})`,
           history: []
         } as any)
       } else if (v.effectiveType === 'purchase' && v.matchedEntityType === 'supplier') {
         const suppId = v.matchedEntityId || autoSuppMap.get(normParty) || supplierMap.get(normParty)?.id
         if (suppId) {
-          const charges: AdditionalCharge[] = (v.additionalCharges || []).map(c => ({
-            id: c.id,
+          const resolvedSupp = suppliers.find(s => s.id === suppId) || generatedSuppliers.find(s => s.id === suppId)
+
+          const partyNameSnap = resolvedSupp?.name || v.partyName || 'Supplier'
+          const partyGstinSnap = resolvedSupp?.gstin || v.partyGstin || ''
+          const partyPhoneSnap = resolvedSupp?.phone || ''
+          const partyAddressSnap = resolvedSupp?.address || ''
+          const billingAddressSnap = resolvedSupp?.address || ''
+          const shippingAddressSnap = (resolvedSupp?.shippingSameAsBilling ? resolvedSupp.address : resolvedSupp?.shippingAddress) || billingAddressSnap
+          const stateCodeSnap = resolvedSupp?.stateCode || '19'
+          const stateNameSnap = resolvedSupp?.stateName || (resolvedSupp as any)?.state || 'West Bengal'
+
+          const charges: AdditionalCharge[] = (v.additionalCharges || []).map((c, cIdx) => ({
+            id: c.id || `charge-${idx}-${cIdx}`,
             name: c.name || c.chargeName || c.ledgerName || c.remarks || '',
             chargeName: c.chargeName || c.name || c.ledgerName || c.remarks || '',
             remarks: c.remarks || c.name || c.chargeName || c.ledgerName || '',
-            sacCode: c.sacCode,
-            taxMode: c.taxMode || 'gst',
-            basicRate: c.basicRate,
-            taxableAmount: c.taxableAmount,
-            gstRate: c.gstRate,
-            cgstAmount: c.cgstAmount,
-            sgstAmount: c.sgstAmount,
-            igstAmount: c.igstAmount,
-            finalAmt: c.finalAmt
+            sacCode: c.sacCode || (c.name?.toLowerCase().includes('freight') || c.name?.toLowerCase().includes('transport') ? '996511' : undefined),
+            taxMode: c.taxMode || (c.gstRate && c.gstRate > 0 ? 'gst' : 'none'),
+            basicRate: c.basicRate ?? c.taxableAmount ?? 0,
+            taxableAmount: c.taxableAmount ?? c.basicRate ?? 0,
+            gstRate: c.gstRate ?? 18,
+            cgstAmount: c.cgstAmount || 0,
+            sgstAmount: c.sgstAmount || 0,
+            igstAmount: c.igstAmount || 0,
+            finalAmt: c.finalAmt || ((c.basicRate || 0) + (c.cgstAmount || 0) + (c.sgstAmount || 0) + (c.igstAmount || 0))
           }))
           const addCost = charges.reduce((s, c) => s + c.finalAmt, 0)
           const addCostBasic = charges.reduce((s, c) => s + c.basicRate, 0)
           const addCostRemarks = charges.map(c => c.remarks || c.name || c.chargeName).filter(Boolean).join(', ')
 
-          const sanitizedItems: InvoiceItem[] = (v.inventory || []).map((inv, iIdx) => {
+          const rawItems: InvoiceItem[] = (v.inventory || []).map((inv, iIdx) => {
             const norm = inv.itemName.trim().toLowerCase()
             const customMappedId = itemOverrides[v.id]?.[iIdx] || itemMappings[norm]
             const resolvedItem = (customMappedId && customMappedId !== 'auto-create')
               ? items.find(it => it.id === customMappedId) || itemMap.get(norm)
-              : itemMap.get(norm)
+              : itemMap.get(norm) || generatedItems.find(it => it.name.trim().toLowerCase() === norm)
 
             const itemId = resolvedItem?.id || autoItemMap.get(norm) || 'item-gen'
             const itemName = resolvedItem?.name || inv.itemName
             const itemUnit = resolvedItem?.unit || inv.unit || 'PCS'
             const gstRate = resolvedItem?.gstRate ?? 18
-            const halfGst = gstRate / 2
-            const rawRate = inv.rate
-            const rawAmount = inv.amount
-            const lineTaxable = rawAmount
-            const lineCgst = roundCurrency(lineTaxable * (halfGst / 100))
-            const lineSgst = roundCurrency(lineTaxable * (halfGst / 100))
-            const grossAmount = roundCurrency(rawAmount * (1 + gstRate / 100))
-            const inclusiveRate = roundCurrency(rawRate * (1 + gstRate / 100))
+            const qty = inv.quantity || 1
+            const rawRate = inv.rate || 0
+            const rawAmount = inv.amount || (qty * rawRate)
 
             return {
+              id: `item-line-${Date.now()}-${idx}-${iIdx}`,
               itemId,
-              baseQuantity: inv.quantity,
-              enteredQuantity: inv.quantity,
+              baseQuantity: qty,
+              enteredQuantity: qty,
               enteredUnit: itemUnit,
+              unit: itemUnit,
+              rate: rawRate,
               basicRate: rawRate,
-              baseRate: inclusiveRate,
-              enteredRate: inclusiveRate,
-              rate: inclusiveRate,
-              amount: grossAmount,
-              taxableAmount: lineTaxable,
+              baseRate: rawRate,
+              enteredRate: rawRate,
+              salePrice: rawRate,
+              amount: rawAmount,
+              grossAmount: rawAmount,
+              taxableAmount: rawAmount,
               gstRate,
-              cgstRate: halfGst,
-              cgstAmount: lineCgst,
-              sgstRate: halfGst,
-              sgstAmount: lineSgst,
-              igstRate: 0,
-              igstAmount: 0,
+              gstPercentage: gstRate,
               itemNameSnapshot: itemName,
-              itemUnitSnapshot: itemUnit
+              itemUnitSnapshot: itemUnit,
+              unitSnapshot: itemUnit,
+              hsnCodeSnapshot: resolvedItem?.hsnCode || '',
+              categorySnapshot: resolvedItem?.category || '',
+              gstRateSnapshot: gstRate
+            } as InvoiceItem
+          })
+
+          const taxBreakdown = calculateInvoiceTaxBreakdown({
+            items: rawItems,
+            itemsMaster: items,
+            additionalCharges: charges,
+            additionalCostBasicRate: addCostBasic,
+            additionalCostFinal: addCost,
+            partyState: stateCodeSnap,
+            customRoundOff: v.roundOff,
+            defaultGstRate: 18
+          })
+
+          const finalItems: InvoiceItem[] = rawItems.map((rItem, rIdx) => {
+            const lineBreakdown = taxBreakdown.lineBreakdowns[rIdx]
+            return {
+              ...rItem,
+              taxableAmount: lineBreakdown ? lineBreakdown.taxableAmount : rItem.taxableAmount,
+              gstRate: lineBreakdown ? lineBreakdown.gstRate : rItem.gstRate,
+              gstPercentage: lineBreakdown ? lineBreakdown.gstRate : rItem.gstRate,
+              cgstRate: lineBreakdown?.cgstRate,
+              cgstAmount: lineBreakdown?.cgstAmount,
+              sgstRate: lineBreakdown?.sgstRate,
+              sgstAmount: lineBreakdown?.sgstAmount,
+              igstRate: lineBreakdown?.igstRate,
+              igstAmount: lineBreakdown?.igstAmount
             }
           })
 
@@ -1723,21 +1894,36 @@ export function TallyImportDialog({
             id: `pur-tally-${Date.now()}-${idx}`,
             invoiceNo: v.voucherNumber,
             supplierId: suppId,
+            partyId: suppId,
             invoiceDate: v.voucherDate || new Date().toISOString().split('T')[0],
-            invoiceAmount: v.totalAmount,
-            totalAmount: v.totalAmount,
+            invoiceAmount: taxBreakdown.totalAmount,
+            totalAmount: taxBreakdown.totalAmount,
             additionalCharges: charges.length > 0 ? charges : undefined,
             additionalCost: addCost > 0 ? addCost : undefined,
             additionalCostBasicRate: addCostBasic > 0 ? addCostBasic : undefined,
             additionalCostRemarks: addCostRemarks || undefined,
-            roundOff: v.roundOff || undefined,
-            roundOffAdjustment: v.roundOff || undefined,
-            taxableAmount: v.taxableAmount,
-            cgstAmount: v.cgstAmount,
-            sgstAmount: v.sgstAmount,
-            igstAmount: v.igstAmount,
-            items: sanitizedItems,
+            roundOff: taxBreakdown.roundOff || undefined,
+            roundOffAdjustment: taxBreakdown.roundOff || undefined,
+            partyNameSnapshot: partyNameSnap,
+            supplierNameSnapshot: partyNameSnap,
+            partyGstinSnapshot: partyGstinSnap,
+            partyPhoneSnapshot: partyPhoneSnap,
+            partyAddressSnapshot: partyAddressSnap,
+            billingAddressSnapshot: billingAddressSnap,
+            shippingAddressSnapshot: shippingAddressSnap,
+            stateCodeSnapshot: stateCodeSnap,
+            stateNameSnapshot: stateNameSnap,
+            taxableAmount: taxBreakdown.taxableAmount,
+            cgstRate: taxBreakdown.cgstRate,
+            cgstAmount: taxBreakdown.cgstAmount,
+            sgstRate: taxBreakdown.sgstRate,
+            sgstAmount: taxBreakdown.sgstAmount,
+            igstRate: taxBreakdown.igstRate,
+            igstAmount: taxBreakdown.igstAmount,
+            isInterState: taxBreakdown.isInterState,
+            items: finalItems,
             fy: '2025-2026',
+            remarks: v.narration || `Imported from Tally (${v.rawVoucherType})`,
             createdAt: Date.now(),
             history: []
           } as any)
@@ -1747,13 +1933,28 @@ export function TallyImportDialog({
       } else if (v.effectiveType === 'credit_note' && v.matchedEntityType === 'customer') {
         const custId = v.matchedEntityId || autoCustMap.get(normParty) || customerMap.get(normParty)?.id
         if (custId) {
+          const resolvedCust = customers.find(c => c.id === custId) || generatedCustomers.find(c => c.id === custId)
           newCreditNotes.push({
             id: `tally-cn-${Date.now()}-${idx}`,
             creditNoteNumber: v.voucherNumber,
+            noteNo: v.voucherNumber,
             customerId: custId,
+            partyId: custId,
+            partyNameSnapshot: resolvedCust?.name || v.partyName,
+            customerNameSnapshot: resolvedCust?.name || v.partyName,
+            partyGstinSnapshot: resolvedCust?.gstin || v.partyGstin || '',
+            billingAddressSnapshot: resolvedCust?.address || '',
+            stateCodeSnapshot: resolvedCust?.stateCode || '19',
+            stateNameSnapshot: resolvedCust?.stateName || (resolvedCust as any)?.state || 'West Bengal',
             date: v.voucherDate || new Date().toISOString().split('T')[0],
             amount: v.totalAmount,
-            reason: v.narration || 'Imported from Tally Credit Note',
+            totalAmount: v.totalAmount,
+            taxableAmount: v.taxableAmount || v.totalAmount,
+            cgstAmount: v.cgstAmount || 0,
+            sgstAmount: v.sgstAmount || 0,
+            igstAmount: v.igstAmount || 0,
+            reason: v.narration || '01 - Sales / Goods Return',
+            fy: '2025-2026',
             createdAt: Date.now()
           } as any)
         } else {
@@ -1762,13 +1963,28 @@ export function TallyImportDialog({
       } else if (v.effectiveType === 'debit_note' && v.matchedEntityType === 'supplier') {
         const suppId = v.matchedEntityId || autoSuppMap.get(normParty) || supplierMap.get(normParty)?.id
         if (suppId) {
+          const resolvedSupp = suppliers.find(s => s.id === suppId) || generatedSuppliers.find(s => s.id === suppId)
           newDebitNotes.push({
             id: `tally-dn-${Date.now()}-${idx}`,
             debitNoteNumber: v.voucherNumber,
+            noteNo: v.voucherNumber,
             supplierId: suppId,
+            partyId: suppId,
+            partyNameSnapshot: resolvedSupp?.name || v.partyName,
+            supplierNameSnapshot: resolvedSupp?.name || v.partyName,
+            partyGstinSnapshot: resolvedSupp?.gstin || v.partyGstin || '',
+            billingAddressSnapshot: resolvedSupp?.address || '',
+            stateCodeSnapshot: resolvedSupp?.stateCode || '19',
+            stateNameSnapshot: resolvedSupp?.stateName || (resolvedSupp as any)?.state || 'West Bengal',
             date: v.voucherDate || new Date().toISOString().split('T')[0],
             amount: v.totalAmount,
-            reason: v.narration || 'Imported from Tally Debit Note',
+            totalAmount: v.totalAmount,
+            taxableAmount: v.taxableAmount || v.totalAmount,
+            cgstAmount: v.cgstAmount || 0,
+            sgstAmount: v.sgstAmount || 0,
+            igstAmount: v.igstAmount || 0,
+            reason: v.narration || '01 - Purchase Return / Goods Rejected',
+            fy: '2025-2026',
             createdAt: Date.now()
           } as any)
         } else {

@@ -1,5 +1,5 @@
 import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { PeriodDateFilter, PeriodFilterState, defaultPeriodFilterState, isRecordInPeriod } from '@/components/period-date-filter'
 import { SalesInvoice, Customer, Item, InvoiceItem, CustomerPayment, PurchaseInvoice, PurchaseReturn, SalesReturn, AdditionalCharge } from '@/lib/types'
 import { buildPurchaseLayers, allocateSalesFIFO } from '@/lib/fifo-engine'
@@ -171,6 +171,23 @@ export default function SalesInvoicesPage({
     }
     return result
   }, [salesInvoices, periodFilter, currentFY, selectedCustomer])
+
+  const sortedFilteredInvoices = useMemo(() => {
+    return [...filteredInvoices].sort((a, b) => b.invoiceDate.localeCompare(a.invoiceDate))
+  }, [filteredInvoices])
+
+  const [currentPage, setCurrentPage] = useState(1)
+  const pageSize = 50
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [selectedCustomer, periodFilter, currentFY])
+
+  const totalPages = Math.max(1, Math.ceil(sortedFilteredInvoices.length / pageSize))
+  const paginatedInvoices = useMemo(() => {
+    const start = (currentPage - 1) * pageSize
+    return sortedFilteredInvoices.slice(start, start + pageSize)
+  }, [sortedFilteredInvoices, currentPage, pageSize])
 
   const totalMT = filteredInvoices.reduce((sum, inv) => sum + getInvoiceQtyForUnit(inv, 'MT', items), 0)
   const totalAmount = filteredInvoices.reduce((sum, inv) => sum + inv.invoiceAmount, 0)
@@ -2063,7 +2080,7 @@ export default function SalesInvoicesPage({
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredInvoices.map((invoice) => {
+                  paginatedInvoices.map((invoice) => {
                     const totals = calculateInvoiceTotals(invoice, items)
 
                     return (
@@ -2112,12 +2129,32 @@ export default function SalesInvoicesPage({
 
             {/* Table Footer */}
             <div className="p-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium bg-white">
-              <div>Showing 0 to {filteredInvoices.length} of {filteredInvoices.length} entries</div>
-              <div className="flex items-center gap-1">
-                <button className="h-7 w-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 disabled:opacity-50" disabled>‹</button>
-                <button className="h-7 w-7 rounded-lg bg-[#0256e8] text-white font-bold flex items-center justify-center">1</button>
-                <button className="h-7 w-7 rounded-lg border border-slate-200 flex items-center justify-center text-slate-400 disabled:opacity-50" disabled>›</button>
+              <div>
+                Showing {sortedFilteredInvoices.length === 0 ? 0 : (currentPage - 1) * pageSize + 1} to {Math.min(currentPage * pageSize, sortedFilteredInvoices.length)} of {sortedFilteredInvoices.length} entries
               </div>
+              {sortedFilteredInvoices.length > pageSize && (
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="h-7 px-2 text-xs"
+                  >
+                    ‹ Prev
+                  </Button>
+                  <span className="font-semibold px-2">Page {currentPage} of {totalPages}</span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="h-7 px-2 text-xs"
+                  >
+                    Next ›
+                  </Button>
+                </div>
+              )}
             </div>
           </>
         )}
