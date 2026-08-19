@@ -596,6 +596,14 @@ function App() {
               void saveEntityRemote(companyId, collectionKey, item)
             }
           })
+
+          prev.forEach((prevItem) => {
+            if (!prevItem || !prevItem.id) return
+            const existsInNext = next.some((n) => n.id === prevItem.id)
+            if (!existsInNext) {
+              void deleteEntityRemote(companyId, collectionKey, prevItem.id)
+            }
+          })
         }
 
         return next
@@ -621,6 +629,14 @@ function App() {
           const prevItem = prev.find((p) => p.id === item.id)
           if (!prevItem || !areObjectsSemanticallyEqual(item, prevItem)) {
             void saveParty(companyId, item)
+          }
+        })
+
+        prev.forEach((prevItem) => {
+          if (!prevItem || !prevItem.id) return
+          const existsInNext = next.some((n) => n.id === prevItem.id)
+          if (!existsInNext) {
+            void deleteParty(companyId, prevItem.id)
           }
         })
       }
@@ -922,17 +938,15 @@ function App() {
       }))
       .filter((group) => group.items.length > 0)
   }, [isMasterAdmin, permissionLevelFor])
-  // Filter Cash & Bank Counters for Agents
+  // Filter Cash & Bank Counters for Agents (Only filter if agent has explicit restricted counter list)
   const agentAllowedCounters = currentUser?.role === 'agent' ? (currentUser.allowedCounters || []) : []
   const visibleCashBankCounters = useMemo(() => {
-    if (currentUser?.role !== 'agent') return cashBankCounters
-    if (agentAllowedCounters.length === 0) return []
+    if (currentUser?.role !== 'agent' || agentAllowedCounters.length === 0) return cashBankCounters
     return cashBankCounters.filter(c => agentAllowedCounters.includes(c.id))
   }, [cashBankCounters, currentUser, agentAllowedCounters])
 
   const visibleCashBankTransactions = useMemo(() => {
-    if (currentUser?.role !== 'agent') return cashBankTransactions
-    if (agentAllowedCounters.length === 0) return []
+    if (currentUser?.role !== 'agent' || agentAllowedCounters.length === 0) return cashBankTransactions
     return cashBankTransactions.filter(t => {
       if (t.type === 'Transfer') {
         return agentAllowedCounters.includes(t.counterId) || agentAllowedCounters.includes(t.toCounterId || '')
@@ -2508,8 +2522,16 @@ function App() {
               counters={visibleCashBankCounters}
               transactions={visibleCashBankTransactions}
               onUpdateAll={(c, t) => {
-                syncSetCashBankCounters(c)
-                syncSetCashBankTransactions(t)
+                syncSetCashBankCounters(prev => {
+                  const currentVisibleIds = new Set(visibleCashBankCounters.map(v => v.id))
+                  const hidden = prev.filter(p => !currentVisibleIds.has(p.id))
+                  return [...hidden, ...c]
+                })
+                syncSetCashBankTransactions(prev => {
+                  const currentVisibleTxIds = new Set(visibleCashBankTransactions.map(v => v.id))
+                  const hidden = prev.filter(p => !currentVisibleTxIds.has(p.id))
+                  return [...hidden, ...t]
+                })
               }}
               isLocked={isViewReadOnly('cash-bank-master')}
               activeCompanyId={metadata.activeCompanyId}
