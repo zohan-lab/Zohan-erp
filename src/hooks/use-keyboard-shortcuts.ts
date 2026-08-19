@@ -16,6 +16,7 @@ export type ShortcutAction =
   | 'credit-notes'
   | 'debit-notes'
   | 'expense-entries'
+  | 'gst-reports'
   | 'cd-profit-report'
   | 'customer-aging'
   | 'inventory'
@@ -67,6 +68,7 @@ export const keyBindings: KeyBinding[] = [
   { key: 'e', ctrlKey: true, action: 'expense-entries', description: 'Expense Entries', category: 'Navigation' },
   
   { key: 'g', ctrlKey: true, action: 'parties', description: 'Parties & Ledger', category: 'Reports' },
+  { key: 't', ctrlKey: true, shiftKey: true, action: 'gst-reports', description: 'GST Reports (GSTR-1/3B)', category: 'Reports' },
   { key: 'u', ctrlKey: true, action: 'inventory', description: 'Inventory Report', category: 'Reports' },
   { key: 'c', ctrlKey: true, shiftKey: true, action: 'cd-risk', description: 'CD at Risk', category: 'Reports' },
   { key: 'w', ctrlKey: true, shiftKey: true, action: 'wallet', description: 'Discount Wallet', category: 'Reports' },

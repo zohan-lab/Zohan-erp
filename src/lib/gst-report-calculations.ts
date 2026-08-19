@@ -91,6 +91,19 @@ export interface Gstr1B2CSummary {
   count: number
 }
 
+export interface Gstr1B2CLargeItem {
+  id: string
+  invoiceNo: string
+  invoiceDate: string
+  partyName: string
+  pos: string
+  posName: string
+  taxableValue: number
+  gstRate: number
+  igst: number
+  totalInvoiceValue: number
+}
+
 export interface Gstr1NoteItem {
   id: string
   partyId: string
@@ -165,11 +178,17 @@ export interface MonthlyGstReport {
   gstr1: {
     b2b: Gstr1B2BInvoice[]
     b2c: Gstr1B2CSummary[]
+    b2cLarge: Gstr1B2CLargeItem[]
+    b2cSmall: Gstr1B2CSummary[]
     notes: Gstr1NoteItem[]
     hsn: Gstr1HsnItem[]
     totals: {
       b2bTaxable: number
       b2bTax: number
+      b2cLargeTaxable: number
+      b2cLargeTax: number
+      b2cSmallTaxable: number
+      b2cSmallTax: number
       b2cTaxable: number
       b2cTax: number
       notesTaxable: number
@@ -260,6 +279,8 @@ export function computeMonthlyGstReport(
   // A. BUILD GSTR-1 REGISTERS
   // ==========================================
   const gstr1B2B: Gstr1B2BInvoice[] = []
+  const gstr1B2CLarge: Gstr1B2CLargeItem[] = []
+  const b2cSmallMap = new Map<string, Gstr1B2CSummary>()
   const b2cMap = new Map<string, Gstr1B2CSummary>()
   const hsnMap = new Map<string, Gstr1HsnItem>()
 
@@ -268,7 +289,7 @@ export function computeMonthlyGstReport(
     const partyState = cust?.stateCode || (cust?.gstin ? cust.gstin.slice(0, 2) : (cust?.stateName ? getStateCode(cust.stateName) : companyState))
     const isInterState = isInterStateTransaction(partyState, companyState)
     const gstin = (cust?.gstin || '').trim().toUpperCase()
-    const isB2B = gstin.length === 15
+    const isB2B = cust?.gstRegistrationType === 'Registered' || (gstin.length === 15)
 
     const taxableAmount = inv.taxableAmount ?? (inv.items ? inv.items.reduce((s, it) => s + (it.taxableAmount || it.amount || 0), 0) : inv.invoiceAmount)
     const igst = inv.igstAmount ?? 0
@@ -295,9 +316,51 @@ export function computeMonthlyGstReport(
         sgst: roundCurrency(sgst)
       })
     } else {
-      // Group for B2C
-      const key = `${partyState}_${effectiveRate}`
-      const existing = b2cMap.get(key)
+      // Check B2C Large vs B2C Small (CBIC Notification 12/2024: Interstate > ₹1,00,000)
+      const isB2CLarge = isInterState && inv.invoiceAmount > 100000
+
+      if (isB2CLarge) {
+        gstr1B2CLarge.push({
+          id: inv.id,
+          invoiceNo: inv.invoiceNo,
+          invoiceDate: inv.invoiceDate,
+          partyName: cust?.name || 'Unregistered Customer',
+          pos: partyState,
+          posName: getStateName(partyState),
+          taxableValue: roundCurrency(taxableAmount),
+          gstRate: effectiveRate,
+          igst: roundCurrency(igst),
+          totalInvoiceValue: roundCurrency(inv.invoiceAmount)
+        })
+      } else {
+        // Table 7: B2C Small
+        const key = `${partyState}_${effectiveRate}`
+        const existingSmall = b2cSmallMap.get(key)
+        if (existingSmall) {
+          existingSmall.taxableValue = roundCurrency(existingSmall.taxableValue + taxableAmount)
+          existingSmall.igst = roundCurrency(existingSmall.igst + igst)
+          existingSmall.cgst = roundCurrency(existingSmall.cgst + cgst)
+          existingSmall.sgst = roundCurrency(existingSmall.sgst + sgst)
+          existingSmall.totalInvoiceValue = roundCurrency(existingSmall.totalInvoiceValue + inv.invoiceAmount)
+          existingSmall.count += 1
+        } else {
+          b2cSmallMap.set(key, {
+            pos: partyState,
+            posName: getStateName(partyState),
+            gstRate: effectiveRate,
+            taxableValue: roundCurrency(taxableAmount),
+            igst: roundCurrency(igst),
+            cgst: roundCurrency(cgst),
+            sgst: roundCurrency(sgst),
+            totalInvoiceValue: roundCurrency(inv.invoiceAmount),
+            count: 1
+          })
+        }
+      }
+
+      // Maintain combined b2cMap for backward compatibility
+      const combinedKey = `${partyState}_${effectiveRate}`
+      const existing = b2cMap.get(combinedKey)
       if (existing) {
         existing.taxableValue = roundCurrency(existing.taxableValue + taxableAmount)
         existing.igst = roundCurrency(existing.igst + igst)
@@ -306,7 +369,7 @@ export function computeMonthlyGstReport(
         existing.totalInvoiceValue = roundCurrency(existing.totalInvoiceValue + inv.invoiceAmount)
         existing.count += 1
       } else {
-        b2cMap.set(key, {
+        b2cMap.set(combinedKey, {
           pos: partyState,
           posName: getStateName(partyState),
           gstRate: effectiveRate,
@@ -717,10 +780,15 @@ export function computeMonthlyGstReport(
   // D. SUMMARIES & KPI TOTALS
   // ==========================================
   const b2cList = Array.from(b2cMap.values())
+  const b2cSmallList = Array.from(b2cSmallMap.values())
   const hsnList = Array.from(hsnMap.values())
 
   const b2bTaxableTotal = gstr1B2B.reduce((s, b) => s + b.taxableValue, 0)
   const b2bTaxTotal = gstr1B2B.reduce((s, b) => s + b.igst + b.cgst + b.sgst, 0)
+  const b2cLargeTaxableTotal = gstr1B2CLarge.reduce((s, b) => s + b.taxableValue, 0)
+  const b2cLargeTaxTotal = gstr1B2CLarge.reduce((s, b) => s + b.igst, 0)
+  const b2cSmallTaxableTotal = b2cSmallList.reduce((s, b) => s + b.taxableValue, 0)
+  const b2cSmallTaxTotal = b2cSmallList.reduce((s, b) => s + b.igst + b.cgst + b.sgst, 0)
   const b2cTaxableTotal = b2cList.reduce((s, b) => s + b.taxableValue, 0)
   const b2cTaxTotal = b2cList.reduce((s, b) => s + b.igst + b.cgst + b.sgst, 0)
   const notesTaxableTotal = gstr1Notes.reduce((s, n) => s + n.taxableValue, 0)
@@ -757,11 +825,17 @@ export function computeMonthlyGstReport(
     gstr1: {
       b2b: gstr1B2B,
       b2c: b2cList,
+      b2cLarge: gstr1B2CLarge,
+      b2cSmall: b2cSmallList,
       notes: gstr1Notes,
       hsn: hsnList,
       totals: {
         b2bTaxable: roundCurrency(b2bTaxableTotal),
         b2bTax: roundCurrency(b2bTaxTotal),
+        b2cLargeTaxable: roundCurrency(b2cLargeTaxableTotal),
+        b2cLargeTax: roundCurrency(b2cLargeTaxTotal),
+        b2cSmallTaxable: roundCurrency(b2cSmallTaxableTotal),
+        b2cSmallTax: roundCurrency(b2cSmallTaxTotal),
         b2cTaxable: roundCurrency(b2cTaxableTotal),
         b2cTax: roundCurrency(b2cTaxTotal),
         notesTaxable: roundCurrency(notesTaxableTotal),

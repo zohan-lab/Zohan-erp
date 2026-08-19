@@ -113,6 +113,9 @@ export function normalizeParty(party: Partial<Party> & { name?: string }, fallba
 
   const gstin = party.gstin ? party.gstin.trim().toUpperCase() : undefined
   const stateCode = party.stateCode || (gstin && /^\d{2}/.test(gstin) ? gstin.slice(0, 2) : undefined)
+  const gstRegistrationType =
+    party.gstRegistrationType ||
+    (gstin && gstin.length === 15 ? 'Registered' : 'Unregistered')
 
   const now = new Date().toISOString()
   const createdAt = party.createdAt
@@ -128,6 +131,7 @@ export function normalizeParty(party: Partial<Party> & { name?: string }, fallba
     phone: party.phone || '',
     partyType: party.partyType || fallbackType,
     gstin,
+    gstRegistrationType,
     address: party.address ? party.address.trim() : undefined,
     openingBalance,
     creditLimit: typeof party.creditLimit === 'number' ? party.creditLimit : undefined,

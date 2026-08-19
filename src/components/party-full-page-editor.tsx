@@ -12,7 +12,8 @@ import {
   AnnualTarget,
   SupplierDebitNote,
   SupplierCreditNote,
-  PurchaseReturn
+  PurchaseReturn,
+  GstRegistrationType
 } from '@/lib/types'
 import { getStateFromGstin, getStateByCode, getStateByName } from '@/lib/constants/indian-states'
 import { StateSelector } from '@/components/state-selector'
@@ -102,6 +103,7 @@ export function PartyFullPageEditor({
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [gstin, setGstin] = useState('')
+  const [gstRegistrationType, setGstRegistrationType] = useState<GstRegistrationType>('Unregistered')
 
   // Form State: Billing Address
   const [address, setAddress] = useState('')
@@ -146,6 +148,7 @@ export function PartyFullPageEditor({
       setPhone('')
       setEmail('')
       setGstin('')
+      setGstRegistrationType('Unregistered')
       setAddress('')
       setState('West Bengal')
       setStateCode('19')
@@ -172,6 +175,10 @@ export function PartyFullPageEditor({
     setPhone(party.phone || '')
     setEmail(('email' in party ? party.email : '') || '')
     setGstin(party.gstin || '')
+    setGstRegistrationType(
+      party.gstRegistrationType ||
+      (party.gstin && party.gstin.trim().length === 15 ? 'Registered' : 'Unregistered')
+    )
 
     setAddress(party.address || '')
     const resolvedState = getStateByName(party.stateName || party.state) || getStateByCode(party.stateCode || party.state)
@@ -208,6 +215,13 @@ export function PartyFullPageEditor({
     const cleanGstin = value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15)
     setGstin(cleanGstin)
     
+    // Auto-detect and switch registration type
+    if (cleanGstin.length === 15) {
+      setGstRegistrationType('Registered')
+    } else if (cleanGstin.length === 0 && gstRegistrationType === 'Registered') {
+      setGstRegistrationType('Unregistered')
+    }
+
     // Auto-detect state from first 2 digits
     const detected = getStateFromGstin(cleanGstin)
     if (detected) {
@@ -329,6 +343,7 @@ export function PartyFullPageEditor({
       shippingCity: trimOrUndefined(cleanShippingCity),
       shippingPincode: trimOrUndefined(cleanShippingPincode),
       gstin: trimOrUndefined(gstin.toUpperCase()),
+      gstRegistrationType,
       openingBalance: opBal !== 0 ? opBal : undefined,
       openingBalanceDate: opBal !== 0 ? openingBalanceDate : undefined,
       balanceType,
@@ -423,6 +438,50 @@ export function PartyFullPageEditor({
               </div>
 
               <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="gstRegistrationType" className="text-xs font-bold text-slate-700">
+                    GST Registration Type
+                  </Label>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "text-[10px] px-2 py-0.5 font-bold uppercase tracking-wider",
+                      gstRegistrationType === 'Registered'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : gstRegistrationType === 'Composition'
+                        ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        : 'bg-blue-50 text-blue-700 border-blue-200'
+                    )}
+                  >
+                    {gstRegistrationType === 'Registered'
+                      ? 'B2B Registered'
+                      : gstRegistrationType === 'Composition'
+                      ? 'Composition Scheme'
+                      : 'B2C Retail / Consumer'}
+                  </Badge>
+                </div>
+                <Select
+                  value={gstRegistrationType}
+                  onValueChange={(val: GstRegistrationType) => setGstRegistrationType(val)}
+                >
+                  <SelectTrigger id="gstRegistrationType" className="h-10 text-xs bg-white font-medium">
+                    <SelectValue placeholder="Select Registration Type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Registered">Registered Regular (B2B Tax Invoices & ITC)</SelectItem>
+                    <SelectItem value="Unregistered">Unregistered / Retail (B2C Standard)</SelectItem>
+                    <SelectItem value="Composition">Composition Scheme (Quarterly GST)</SelectItem>
+                    <SelectItem value="Consumer">Consumer / End Customer (B2C Retail)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-slate-500">
+                  {gstRegistrationType === 'Registered'
+                    ? 'Identified as B2B for GSTR-1 Table 4 tax invoicing.'
+                    : 'Identified as B2C for GSTR-1 Table 5 / Table 7 retail summaries.'}
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
                 <Label htmlFor="partyGstin" className="text-xs font-bold text-slate-700">
                   GSTIN Number (15 Digits)
                 </Label>
@@ -436,7 +495,7 @@ export function PartyFullPageEditor({
                   className="h-10 text-xs bg-white font-mono tracking-wider text-slate-900 uppercase"
                 />
                 <p className="text-[10px] text-slate-500">
-                  First 2 digits will automatically auto-detect the matching State.
+                  First 2 digits will auto-detect matching State. Entering 15 digits auto-sets B2B Registered.
                 </p>
               </div>
 

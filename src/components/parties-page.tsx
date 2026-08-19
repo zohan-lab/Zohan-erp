@@ -91,6 +91,7 @@ export function PartiesPage({
   isLocked = false
 }: PartiesPageProps) {
   const [searchTerm, setSearchTerm] = useState('')
+  const [registrationTypeFilter, setRegistrationTypeFilter] = useState<'all' | 'registered' | 'unregistered' | 'composition'>('all')
   const [selectedPartyId, setSelectedPartyId] = useState<string | null>(
     parties.length > 0 ? parties[0].id : null
   )
@@ -107,16 +108,26 @@ export function PartiesPage({
 
   // Filtered Parties List
   const filteredParties = useMemo(() => {
-    if (!searchTerm.trim()) return parties
+    let result = parties
+
+    if (registrationTypeFilter === 'registered') {
+      result = result.filter(p => p.gstRegistrationType === 'Registered' || (p.gstin && p.gstin.trim().length === 15))
+    } else if (registrationTypeFilter === 'unregistered') {
+      result = result.filter(p => p.gstRegistrationType === 'Unregistered' || p.gstRegistrationType === 'Consumer' || (!p.gstin && p.gstRegistrationType !== 'Composition'))
+    } else if (registrationTypeFilter === 'composition') {
+      result = result.filter(p => p.gstRegistrationType === 'Composition')
+    }
+
+    if (!searchTerm.trim()) return result
     const term = searchTerm.toLowerCase().trim()
-    return parties.filter(p =>
+    return result.filter(p =>
       (p.name && p.name.toLowerCase().includes(term)) ||
       (p.phone && p.phone.toLowerCase().includes(term)) ||
       (p.gstin && p.gstin.toLowerCase().includes(term)) ||
       (p.city && p.city.toLowerCase().includes(term)) ||
       (p.state && p.state.toLowerCase().includes(term))
     )
-  }, [parties, searchTerm])
+  }, [parties, searchTerm, registrationTypeFilter])
 
   // Party summary stats map for fast listing badges
   const partyLedgerMap = useMemo(() => {
@@ -321,7 +332,7 @@ export function PartiesPage({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-0">
         {/* Left Column: Search & Party List (4 cols) */}
         <div className="lg:col-span-4 flex flex-col bg-card rounded-xl border shadow-sm overflow-hidden h-full">
-          <div className="p-3 border-b bg-muted/20">
+          <div className="p-3 border-b bg-muted/20 space-y-2">
             <div className="relative">
               <MagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
@@ -331,12 +342,60 @@ export function PartiesPage({
                 className="pl-9 h-9 text-xs bg-background"
               />
             </div>
+
+            {/* Quick B2B vs B2C Registration Filter Pills */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+              <button
+                type="button"
+                onClick={() => setRegistrationTypeFilter('all')}
+                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors shrink-0 ${
+                  registrationTypeFilter === 'all'
+                    ? 'bg-primary text-primary-foreground shadow-xs'
+                    : 'bg-muted/70 text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                All ({parties.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setRegistrationTypeFilter('registered')}
+                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors shrink-0 ${
+                  registrationTypeFilter === 'registered'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20'
+                }`}
+              >
+                B2B Registered
+              </button>
+              <button
+                type="button"
+                onClick={() => setRegistrationTypeFilter('unregistered')}
+                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors shrink-0 ${
+                  registrationTypeFilter === 'unregistered'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-blue-500/10 text-blue-700 dark:text-blue-400 hover:bg-blue-500/20'
+                }`}
+              >
+                B2C Retail
+              </button>
+              <button
+                type="button"
+                onClick={() => setRegistrationTypeFilter('composition')}
+                className={`px-2 py-1 rounded text-[11px] font-semibold transition-colors shrink-0 ${
+                  registrationTypeFilter === 'composition'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 hover:bg-amber-500/20'
+                }`}
+              >
+                Composition
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto divide-y divide-border">
             {filteredParties.length === 0 ? (
               <div className="p-8 text-center text-muted-foreground text-xs">
-                No parties found. Click "+ New Party" to create one.
+                No parties found matching filter.
               </div>
             ) : (
               filteredParties.map(party => {
@@ -344,6 +403,7 @@ export function PartiesPage({
                 const isSelected = selectedParty?.id === party.id
                 const isReceivable = summary?.closingBalanceType === 'Dr' && (summary?.closingBalance || 0) > 0
                 const isPayable = summary?.closingBalanceType === 'Cr' && (summary?.closingBalance || 0) > 0
+                const isB2B = party.gstRegistrationType === 'Registered' || (party.gstin && party.gstin.trim().length === 15)
 
                 return (
                   <div
@@ -354,8 +414,19 @@ export function PartiesPage({
                     }`}
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-semibold text-xs truncate">{party.name}</span>
+                        <span
+                          className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase ${
+                            isB2B
+                              ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400'
+                              : party.gstRegistrationType === 'Composition'
+                              ? 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
+                              : 'bg-blue-500/15 text-blue-700 dark:text-blue-400'
+                          }`}
+                        >
+                          {isB2B ? 'B2B' : party.gstRegistrationType === 'Composition' ? 'Comp' : 'B2C'}
+                        </span>
                       </div>
                       <div className="text-[11px] text-muted-foreground truncate mt-0.5">
                         {party.phone && <span>{party.phone} • </span>}
@@ -404,6 +475,22 @@ export function PartiesPage({
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <h2 className="text-lg font-bold">{selectedParty.name}</h2>
+                        <Badge
+                          variant="outline"
+                          className={
+                            selectedParty.gstRegistrationType === 'Registered' || (selectedParty.gstin && selectedParty.gstin.trim().length === 15)
+                              ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30'
+                              : selectedParty.gstRegistrationType === 'Composition'
+                              ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30'
+                              : 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/30'
+                          }
+                        >
+                          {selectedParty.gstRegistrationType === 'Registered' || (selectedParty.gstin && selectedParty.gstin.trim().length === 15)
+                            ? 'B2B Registered'
+                            : selectedParty.gstRegistrationType === 'Composition'
+                            ? 'Composition Scheme'
+                            : 'B2C Retail / Consumer'}
+                        </Badge>
                         {selectedParty.gstin && (
                           <Badge variant="outline" className="font-mono text-[10px] uppercase">
                             GSTIN: {selectedParty.gstin}

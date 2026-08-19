@@ -39,6 +39,8 @@ export interface Item {
 
 export type PartyType = 'CUSTOMER' | 'SUPPLIER' | string
 
+export type GstRegistrationType = 'Registered' | 'Unregistered' | 'Composition' | 'Consumer'
+
 export interface Party {
   id: string
   name: string
@@ -58,6 +60,7 @@ export interface Party {
   shippingPincode?: string
   shippingCity?: string
   gstin?: string
+  gstRegistrationType?: GstRegistrationType
   partyType?: PartyType
   
   // Balances
@@ -543,13 +546,15 @@ export interface MTBooking {
   manualSelection?: 'current' | 'previous'
 }
 
-export interface MTBookingConsumption {
-  bookingId: string
-  invoiceId: string
-  consumedMT: number
-  lockedCDRate: number
-  lockedSchemeName: string
-}
+export type NoteKind = 'GST Tax Invoice Note' | 'Financial / Commercial Note'
+export type GstNoteReasonCode =
+  | '01-Sales Return'
+  | '02-Post Sale Discount'
+  | '03-Deficiency in Services'
+  | '04-Correction in Invoice'
+  | '05-Change in POS'
+  | '06-Finalization of Provisional Assessment'
+  | '07-Others'
 
 export interface CreditNote {
   id: string
@@ -560,6 +565,8 @@ export interface CreditNote {
   date: string
   amount: number
   reason?: string
+  noteKind?: NoteKind
+  gstReasonCode?: GstNoteReasonCode | string
   originalInvoiceNo?: string
   originalInvoiceDate?: string
   invoiceRef?: string
@@ -607,6 +614,8 @@ export interface DebitNote {
   date: string
   amount: number
   reason?: string
+  noteKind?: NoteKind
+  gstReasonCode?: GstNoteReasonCode | string
   originalInvoiceNo?: string
   originalInvoiceDate?: string
   invoiceRef?: string

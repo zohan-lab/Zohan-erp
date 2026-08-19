@@ -111,7 +111,7 @@ export default function GstReportsPage({
   const [selectedYear, setSelectedYear] = useState<string>(String(currentCalYear))
 
   const [activeTab, setActiveTab] = useState<'gstr3b' | 'gstr1' | 'gstr2b'>('gstr3b')
-  const [gstr1SubTab, setGstr1SubTab] = useState<'b2b' | 'b2c' | 'notes' | 'hsn'>('b2b')
+  const [gstr1SubTab, setGstr1SubTab] = useState<'b2b' | 'b2clarge' | 'b2c' | 'notes' | 'hsn'>('b2b')
   const [gstr2bSourceFilter, setGstr2bSourceFilter] = useState<string>('all')
 
   const [searchTerm, setSearchTerm] = useState('')
@@ -171,6 +171,17 @@ export default function GstReportsPage({
       b.invoiceNo.toLowerCase().includes(q)
     )
   }, [report.gstr1.b2b, searchTerm])
+
+  const filteredB2CLarge = useMemo(() => {
+    const list = report.gstr1.b2cLarge || []
+    if (!searchTerm.trim()) return list
+    const q = searchTerm.toLowerCase()
+    return list.filter(b =>
+      b.partyName.toLowerCase().includes(q) ||
+      b.invoiceNo.toLowerCase().includes(q) ||
+      b.posName.toLowerCase().includes(q)
+    )
+  }, [report.gstr1.b2cLarge, searchTerm])
 
   const filteredNotes = useMemo(() => {
     if (!searchTerm.trim()) return report.gstr1.notes
@@ -750,7 +761,7 @@ export default function GstReportsPage({
         {/* ========================================================================= */}
         <TabsContent value="gstr1" className="space-y-5 animate-in fade-in duration-200">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Button
                 variant={gstr1SubTab === 'b2b' ? 'default' : 'outline'}
                 size="sm"
@@ -760,12 +771,20 @@ export default function GstReportsPage({
                 Table 4A - B2B Invoices ({report.gstr1.b2b.length})
               </Button>
               <Button
+                variant={gstr1SubTab === 'b2clarge' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setGstr1SubTab('b2clarge')}
+                className="text-xs font-bold h-8"
+              >
+                Table 5 - B2C Large ({report.gstr1.b2cLarge?.length || 0})
+              </Button>
+              <Button
                 variant={gstr1SubTab === 'b2c' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setGstr1SubTab('b2c')}
                 className="text-xs font-bold h-8"
               >
-                Table 7 - B2C Summary ({report.gstr1.b2c.length})
+                Table 7 - B2C Small ({report.gstr1.b2cSmall?.length || report.gstr1.b2c.length})
               </Button>
               <Button
                 variant={gstr1SubTab === 'notes' ? 'default' : 'outline'}
@@ -837,6 +856,50 @@ export default function GstReportsPage({
                           <TableCell className="text-xs text-right font-mono text-slate-600">{formatCurrency(b.cgst)}</TableCell>
                           <TableCell className="text-xs text-right font-mono text-slate-600">{formatCurrency(b.sgst)}</TableCell>
                           <TableCell className="text-xs text-right font-mono font-bold text-slate-900">{formatCurrency(b.invoiceValue)}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Sub-View: Table 5 B2C Large (Inter-state unregistered > ₹1 Lakh) */}
+          {gstr1SubTab === 'b2clarge' && (
+            <Card className="border-slate-200/80 shadow-sm overflow-hidden">
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader className="bg-slate-50/80">
+                    <TableRow>
+                      <TableHead className="text-xs font-bold text-slate-700">Invoice No</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-700">Invoice Date</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-700">Customer Name</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-700">Place of Supply (POS)</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-700 text-right">Taxable Value (₹)</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-700 text-right">Rate (%)</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-700 text-right">IGST (₹)</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-700 text-right">Invoice Value (₹)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredB2CLarge.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-8 text-xs text-slate-400">
+                          No B2C Large (Inter-state unregistered &gt; ₹1 Lakh) invoices found for this period.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      filteredB2CLarge.map(b => (
+                        <TableRow key={b.id} className="hover:bg-slate-50/50">
+                          <TableCell className="font-mono text-xs font-bold text-indigo-700">{b.invoiceNo}</TableCell>
+                          <TableCell className="text-xs text-slate-600">{b.invoiceDate}</TableCell>
+                          <TableCell className="font-semibold text-xs text-slate-800">{b.partyName}</TableCell>
+                          <TableCell className="text-xs text-slate-600">{b.pos} - {b.posName}</TableCell>
+                          <TableCell className="text-xs text-right font-mono font-bold text-slate-900">{formatCurrency(b.taxableValue)}</TableCell>
+                          <TableCell className="text-xs text-right font-mono">{b.gstRate}%</TableCell>
+                          <TableCell className="text-xs text-right font-mono text-slate-600">{formatCurrency(b.igst)}</TableCell>
+                          <TableCell className="text-xs text-right font-mono font-bold text-indigo-700">{formatCurrency(b.totalInvoiceValue)}</TableCell>
                         </TableRow>
                       ))
                     )}

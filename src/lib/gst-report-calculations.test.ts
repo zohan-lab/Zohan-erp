@@ -202,4 +202,81 @@ describe('GST Report Calculations Engine', () => {
     expect(report.gstr1.notes).toHaveLength(1)
     expect(report.gstr1.notes[0].noteNo).toBe('CN-001')
   })
+
+  it('correctly bifurcates B2C Large (> ₹1 Lakh Interstate) vs B2C Small (Table 7) and respects gstRegistrationType', () => {
+    const mixedCustomers: Customer[] = [
+      { id: 'c-b2b', name: 'Explicit B2B', gstRegistrationType: 'Registered', gstin: '19AAACB9999F1Z1', stateCode: '19' },
+      { id: 'c-inter-large', name: 'Bihar Retail High Value', gstRegistrationType: 'Unregistered', stateCode: '10' },
+      { id: 'c-intra-small', name: 'Local Retail Small', gstRegistrationType: 'Unregistered', stateCode: '19' },
+      { id: 'c-inter-small', name: 'Jharkhand Retail Low Value', gstRegistrationType: 'Unregistered', stateCode: '20' }
+    ]
+
+    const testInvoices: SalesInvoice[] = [
+      {
+        id: 'si-b2b',
+        customerId: 'c-b2b',
+        invoiceNo: 'INV-B2B',
+        invoiceDate: '2026-04-02',
+        invoiceAmount: 50000,
+        taxableAmount: 42372.88,
+        cgstAmount: 3813.56,
+        sgstAmount: 3813.56,
+        fy: '2026-2027'
+      },
+      {
+        id: 'si-large',
+        customerId: 'c-inter-large',
+        invoiceNo: 'INV-LARGE',
+        invoiceDate: '2026-04-03',
+        invoiceAmount: 150000, // > 1,00,000 Interstate
+        taxableAmount: 127118.64,
+        igstAmount: 22881.36,
+        igstRate: 18,
+        fy: '2026-2027'
+      },
+      {
+        id: 'si-small-local',
+        customerId: 'c-intra-small',
+        invoiceNo: 'INV-SMALL-1',
+        invoiceDate: '2026-04-04',
+        invoiceAmount: 250000, // Intra-state (even if > 1L, stays in Table 7 B2C Small)
+        taxableAmount: 211864.41,
+        cgstAmount: 19067.8,
+        sgstAmount: 19067.8,
+        fy: '2026-2027'
+      },
+      {
+        id: 'si-small-inter',
+        customerId: 'c-inter-small',
+        invoiceNo: 'INV-SMALL-2',
+        invoiceDate: '2026-04-05',
+        invoiceAmount: 45000, // <= 1,00,000 Interstate -> Table 7
+        taxableAmount: 38135.59,
+        igstAmount: 6864.41,
+        igstRate: 18,
+        fy: '2026-2027'
+      }
+    ]
+
+    const report = computeMonthlyGstReport({
+      ...sourceData,
+      salesInvoices: testInvoices,
+      customers: mixedCustomers,
+      customerCreditNotes: [],
+      expenseEntries: []
+    }, filter)
+
+    // 1 B2B invoice
+    expect(report.gstr1.b2b).toHaveLength(1)
+    expect(report.gstr1.b2b[0].invoiceNo).toBe('INV-B2B')
+
+    // 1 B2C Large (Table 5) invoice
+    expect(report.gstr1.b2cLarge).toHaveLength(1)
+    expect(report.gstr1.b2cLarge[0].invoiceNo).toBe('INV-LARGE')
+    expect(report.gstr1.b2cLarge[0].pos).toBe('10')
+    expect(report.gstr1.b2cLarge[0].totalInvoiceValue).toBe(150000)
+
+    // 2 B2C Small groups (Table 7)
+    expect(report.gstr1.b2cSmall.length).toBeGreaterThanOrEqual(2)
+  })
 })
