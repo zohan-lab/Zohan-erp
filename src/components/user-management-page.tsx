@@ -215,6 +215,18 @@ export default function UserManagementPage({
         base['parties'] = legacy
       }
     }
+    if (!base['credit-notes'] || base['credit-notes'] === 'none') {
+      const legacyCn = base['customer-credit-notes'] || base['supplier-credit-notes']
+      if (legacyCn && legacyCn !== 'none') {
+        base['credit-notes'] = legacyCn
+      }
+    }
+    if (!base['debit-notes'] || base['debit-notes'] === 'none') {
+      const legacyDn = base['customer-debit-notes'] || base['supplier-debit-notes']
+      if (legacyDn && legacyDn !== 'none') {
+        base['debit-notes'] = legacyDn
+      }
+    }
     setPermissions(base)
     setAllowedCounters((account as any).allowedCounters || [])
     setAllowedBusinesses((account as any).allowedBusinesses || [])
@@ -269,6 +281,13 @@ export default function UserManagementPage({
 
     const fullPermissions: PermissionMap = {
       ...permissions,
+      'credit-notes': permissions['credit-notes'] || permissions['customer-credit-notes'] || permissions['supplier-credit-notes'] || 'none',
+      'customer-credit-notes': permissions['credit-notes'] || permissions['customer-credit-notes'] || permissions['supplier-credit-notes'] || 'none',
+      'supplier-credit-notes': permissions['credit-notes'] || permissions['customer-credit-notes'] || permissions['supplier-credit-notes'] || 'none',
+      'debit-notes': permissions['debit-notes'] || permissions['customer-debit-notes'] || permissions['supplier-debit-notes'] || 'none',
+      'customer-debit-notes': permissions['debit-notes'] || permissions['customer-debit-notes'] || permissions['supplier-debit-notes'] || 'none',
+      'supplier-debit-notes': permissions['debit-notes'] || permissions['customer-debit-notes'] || permissions['supplier-debit-notes'] || 'none',
+      parties: permissions['parties'] || permissions['suppliers'] || permissions['customers'] || 'none',
       suppliers: permissions['parties'] || permissions['suppliers'] || 'none',
       customers: permissions['parties'] || permissions['customers'] || 'none',
       'customer-ledger': permissions['parties'] || permissions['customer-ledger'] || 'none',

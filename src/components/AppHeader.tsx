@@ -66,12 +66,18 @@ interface AppHeaderProps {
 // Map view IDs to human-readable titles
 const VIEW_TITLES: Record<string, { title: string; sub: string }> = {
   dashboard: { title: 'Dashboard', sub: 'Your business at a glance' },
-  sales: { title: 'Sales', sub: 'Invoices & revenue' },
-  purchases: { title: 'Purchases', sub: 'Bills & expenses' },
+  parties: { title: 'Parties', sub: 'Parties & 360° Ledger' },
+  'sales-invoices': { title: 'Sales Invoices', sub: 'Invoices & revenue' },
+  invoices: { title: 'Purchase Invoices', sub: 'Bills & procurement' },
+  'customer-payments': { title: 'Payment In', sub: 'Receipts & collections' },
+  payments: { title: 'Payment Out', sub: 'Payouts & settlements' },
+  'credit-notes': { title: 'Credit Notes', sub: 'Credit adjustments & returns' },
+  'debit-notes': { title: 'Debit Notes', sub: 'Debit adjustments & returns' },
+  'sales-returns': { title: 'Sales Returns', sub: 'Customer sales returns' },
+  'purchase-returns': { title: 'Purchase Returns', sub: 'Supplier purchase returns' },
   inventory: { title: 'Inventory', sub: 'Stock & items' },
-  customers: { title: 'Customers', sub: 'Customer ledger' },
-  suppliers: { title: 'Suppliers', sub: 'Supplier ledger' },
-  payments: { title: 'Payments', sub: 'Receipts & payouts' },
+  customers: { title: 'Parties', sub: 'Party ledger' },
+  suppliers: { title: 'Parties', sub: 'Party ledger' },
   expenses: { title: 'Expenses', sub: 'Operational expenses' },
   reports: { title: 'Reports', sub: 'Analytics & insights' },
 }

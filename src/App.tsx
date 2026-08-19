@@ -225,17 +225,13 @@ import { AppHeader } from '@/components/AppHeader'
 import { AppSidebar } from '@/components/AppSidebar'
 import { AppDialogs } from '@/components/AppDialogs'
 import { AddBusinessDialog } from '@/components/add-business-dialog'
-import SuppliersPage from '@/components/suppliers-page'
 import ItemsPage from '@/components/items-page'
 import InvoicesPage from '@/components/invoices-page'
 import PaymentsPage from '@/components/payments-page'
 import DiscountWalletPage from '@/components/discount-wallet-page'
 import AnnualDiscountPage from '@/components/annual-discount-page'
-import CustomersPage from '@/components/customers-page'
 import SalesInvoicesPage from '@/components/sales-invoices-page'
 import CustomerPaymentsPage from '@/components/customer-payments-page'
-import SupplierLedgerPage from '@/components/supplier-ledger-page'
-import CustomerLedgerPage from '@/components/customer-ledger-page'
 import ExpenseTypesPage from '@/components/expense-types-page'
 import ExpenseEntriesPage from '@/components/expense-entries-page'
 import FixedSchemesPage from '@/components/fixed-schemes-page'
@@ -252,10 +248,8 @@ import CashBankVoucherEntry from '@/components/cash-bank-voucher-entry'
 import CashBankBookReport from '@/components/cash-bank-book-report'
 import CashBankManagement from '@/components/cash-bank-management'
 import UserManagementPage, { PermissionOption } from '@/components/user-management-page'
-import CustomerCreditNotePage from '@/components/customer-credit-note-page'
-import CustomerDebitNotePage from '@/components/customer-debit-note-page'
-import SupplierDebitNotePage from '@/components/supplier-debit-note-page'
-import SupplierCreditNotePage from '@/components/supplier-credit-note-page'
+import CreditNotesPage from '@/components/credit-notes-page'
+import DebitNotesPage from '@/components/debit-notes-page'
 import SalesReturnPage from '@/components/sales-return-page'
 import PurchaseReturnPage from '@/components/purchase-return-page'
 import GstReportsPage from '@/components/gst-reports-page'
@@ -415,22 +409,15 @@ const navGroups: NavGroup[] = [
     ]
   },
   {
-    title: 'Sales',
+    title: 'Transactions',
     items: [
       { id: 'sales-invoices', label: 'Sales Invoice', icon: Receipt },
-      { id: 'customer-payments', label: 'Payment In', icon: CreditCard },
-      { id: 'customer-credit-notes', label: 'Credit Note', icon: FileText },
-      { id: 'customer-debit-notes', label: 'Debit Note', icon: FileText },
-      { id: 'sales-returns', label: 'Sales Return', icon: Receipt },
-    ]
-  },
-  {
-    title: 'Purchase',
-    items: [
       { id: 'invoices', label: 'Purchase Invoice', icon: Receipt },
+      { id: 'customer-payments', label: 'Payment In', icon: CreditCard },
       { id: 'payments', label: 'Payment Out', icon: CreditCard },
-      { id: 'supplier-debit-notes', label: 'Debit Note', icon: FileText },
-      { id: 'supplier-credit-notes', label: 'Credit Note', icon: FileText },
+      { id: 'credit-notes', label: 'Credit Note', icon: FileText },
+      { id: 'debit-notes', label: 'Debit Note', icon: FileText },
+      { id: 'sales-returns', label: 'Sales Return', icon: Receipt },
       { id: 'purchase-returns', label: 'Purchase Return', icon: Receipt },
     ]
   },
@@ -470,7 +457,7 @@ const navGroups: NavGroup[] = [
     ]
   },
   {
-    title: 'Discount Configuration',
+    title: 'Party CD & Schemes',
     items: [
       { id: 'supplier-cd-rules', label: 'Party CD Rules', icon: Percent },
       { id: 'fixed-schemes', label: 'Fixed Schemes', icon: CalendarBlank },
@@ -512,6 +499,14 @@ const viewNames: Record<string, string> = {
   'payments': 'Payment Out',
   'sales-invoices': 'Sales Invoices',
   'customer-payments': 'Payment In',
+  'credit-notes': 'Credit Notes',
+  'debit-notes': 'Debit Notes',
+  'customer-credit-notes': 'Credit Notes',
+  'customer-debit-notes': 'Debit Notes',
+  'supplier-debit-notes': 'Debit Notes',
+  'supplier-credit-notes': 'Credit Notes',
+  'sales-returns': 'Sales Return',
+  'purchase-returns': 'Purchase Return',
   'expense-entries': 'Expense Entries',
   'gst-reports': 'GST Reports (GSTR-1/2B/3B)',
   'drawing-power': 'Drawing Power Report (DP)',
@@ -532,13 +527,7 @@ const viewNames: Record<string, string> = {
   'cash-bank-voucher': 'Cash/Bank Voucher',
   'cash-bank-ledger': 'Cash & Bank Ledger',
   'user-management': 'Agent Access',
-  'tally-integration': 'Tally Import & Export',
-  'customer-credit-notes': 'Credit Note',
-  'customer-debit-notes': 'Debit Note',
-  'supplier-debit-notes': 'Debit Note',
-  'supplier-credit-notes': 'Credit Note',
-  'sales-returns': 'Sales Return',
-  'purchase-returns': 'Purchase Return'
+  'tally-integration': 'Tally Import & Export'
 }
 
 function App() {
@@ -853,6 +842,14 @@ function App() {
     }
 
     // 3. Credit & Debit notes aliases
+    if (viewId === 'credit-notes') {
+      const l = perms['credit-notes'] || perms['customer-credit-notes'] || perms['supplier-credit-notes'] || perms['parties']
+      if (l && l !== 'none') return l
+    }
+    if (viewId === 'debit-notes') {
+      const l = perms['debit-notes'] || perms['customer-debit-notes'] || perms['supplier-debit-notes'] || perms['parties']
+      if (l && l !== 'none') return l
+    }
     if (viewId === 'customer-credit-notes') {
       const l = perms['customer-credit-notes'] || perms['credit-notes'] || perms['sales-invoices'] || perms['parties'] || perms['customers']
       if (l && l !== 'none') return l
@@ -2037,6 +2034,8 @@ function App() {
       case 'cash-bank-master':
       case 'cash-bank-voucher':
       case 'cash-bank-ledger':
+      case 'credit-notes':
+      case 'debit-notes':
       case 'customer-credit-notes':
       case 'customer-debit-notes':
       case 'supplier-debit-notes':
@@ -2171,8 +2170,8 @@ function App() {
               onNewPurchaseInvoice={() => setActiveView('invoices')}
               onNewPaymentIn={() => setActiveView('customer-payments')}
               onNewPaymentOut={() => setActiveView('payments')}
-              onNewCreditNote={() => setActiveView('customer-credit-notes')}
-              onNewDebitNote={() => setActiveView('supplier-debit-notes')}
+              onNewCreditNote={() => setActiveView('credit-notes')}
+              onNewDebitNote={() => setActiveView('debit-notes')}
               isLocked={isViewReadOnly('parties')}
             />
           )
@@ -2503,14 +2502,42 @@ function App() {
               activeCompanyId={metadata.activeCompanyId}
             />
           )
+        case 'credit-notes':
         case 'customer-credit-notes':
-          return <CustomerCreditNotePage creditNotes={safeCreditNotes} setCreditNotes={syncSetCreditNotes} customers={safeCustomers} salesInvoices={safeSalesInvoices} currentFY={safeCurrentFY} isLocked={isViewReadOnly('customer-credit-notes')} activeCompanyId={metadata.activeCompanyId} />
-        case 'customer-debit-notes':
-          return <CustomerDebitNotePage customerDebitNotes={safeCustomerDebitNotes} setCustomerDebitNotes={syncSetCustomerDebitNotes} customers={safeCustomers} salesInvoices={safeSalesInvoices} currentFY={safeCurrentFY} isLocked={isViewReadOnly('customer-debit-notes')} activeCompanyId={metadata.activeCompanyId} />
-        case 'supplier-debit-notes':
-          return <SupplierDebitNotePage debitNotes={safeDebitNotes} setDebitNotes={syncSetDebitNotes} suppliers={safeSuppliers} invoices={safeInvoices} currentFY={safeCurrentFY} isLocked={isViewReadOnly('supplier-debit-notes')} activeCompanyId={metadata.activeCompanyId} />
         case 'supplier-credit-notes':
-          return <SupplierCreditNotePage supplierCreditNotes={safeSupplierCreditNotes} setSupplierCreditNotes={syncSetSupplierCreditNotes} suppliers={safeSuppliers} invoices={safeInvoices} currentFY={safeCurrentFY} isLocked={isViewReadOnly('supplier-credit-notes')} activeCompanyId={metadata.activeCompanyId} />
+          return (
+            <CreditNotesPage
+              creditNotes={[...safeCreditNotes, ...safeSupplierCreditNotes]}
+              setCreditNotes={syncSetCreditNotes}
+              parties={safeParties}
+              salesInvoices={safeSalesInvoices}
+              invoices={safeInvoices}
+              currentFY={safeCurrentFY}
+              isLocked={isViewReadOnly('credit-notes')}
+              activeCompanyId={metadata.activeCompanyId}
+              onNavigateToParty={() => {
+                setActiveView('parties')
+              }}
+            />
+          )
+        case 'debit-notes':
+        case 'customer-debit-notes':
+        case 'supplier-debit-notes':
+          return (
+            <DebitNotesPage
+              debitNotes={[...safeDebitNotes, ...safeCustomerDebitNotes]}
+              setDebitNotes={syncSetDebitNotes}
+              parties={safeParties}
+              salesInvoices={safeSalesInvoices}
+              invoices={safeInvoices}
+              currentFY={safeCurrentFY}
+              isLocked={isViewReadOnly('debit-notes')}
+              activeCompanyId={metadata.activeCompanyId}
+              onNavigateToParty={() => {
+                setActiveView('parties')
+              }}
+            />
+          )
         case 'sales-returns':
           return (
             <SalesReturnPage

@@ -54,6 +54,15 @@ const GROUP_THEMES: Record<string, ThemeConfig> = {
     badgeBg: 'bg-teal-100 text-teal-700',
     hoverBg: 'hover:bg-teal-50',
   },
+  Transactions: {
+    iconBg: 'bg-indigo-50',
+    iconColor: 'text-indigo-600',
+    activeBg: 'bg-indigo-600',
+    activeText: 'text-white',
+    dotColor: 'bg-indigo-500',
+    badgeBg: 'bg-indigo-100 text-indigo-700',
+    hoverBg: 'hover:bg-indigo-50',
+  },
   Sales: {
     iconBg: 'bg-blue-50',
     iconColor: 'text-blue-600',
@@ -109,6 +118,15 @@ const GROUP_THEMES: Record<string, ThemeConfig> = {
     hoverBg: 'hover:bg-rose-50',
   },
   'Discount Configuration': {
+    iconBg: 'bg-indigo-50',
+    iconColor: 'text-indigo-600',
+    activeBg: 'bg-indigo-600',
+    activeText: 'text-white',
+    dotColor: 'bg-indigo-500',
+    badgeBg: 'bg-indigo-100 text-indigo-700',
+    hoverBg: 'hover:bg-indigo-50',
+  },
+  'Party CD & Schemes': {
     iconBg: 'bg-indigo-50',
     iconColor: 'text-indigo-600',
     activeBg: 'bg-indigo-600',

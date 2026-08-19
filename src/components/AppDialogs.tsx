@@ -43,8 +43,9 @@ import { BusinessMetadata } from '@/lib/storage-utils'
 import { saveBusinessToCloud } from '@/lib/business-sync'
 
 interface DataCounts {
-  suppliers: number
-  customers: number
+  parties?: number
+  suppliers?: number
+  customers?: number
   items: number
   purchaseInvoices: number
   salesInvoices: number
@@ -475,12 +476,8 @@ export function AppDialogs({
                             </p>
                             <div className="text-xs bg-muted p-3 rounded-md space-y-1">
                               <div className="flex justify-between">
-                                <span>Suppliers:</span>
-                                <span className="font-mono font-semibold">{dataCounts.suppliers}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span>Customers:</span>
-                                <span className="font-mono font-semibold">{dataCounts.customers}</span>
+                                <span>Parties:</span>
+                                <span className="font-mono font-semibold">{dataCounts.parties ?? ((dataCounts.suppliers || 0) + (dataCounts.customers || 0))}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span>Items:</span>

@@ -5,6 +5,7 @@ export type ShortcutAction =
   | 'backup'
   | 'restore'
   | 'dashboard'
+  | 'parties'
   | 'suppliers'
   | 'customers'
   | 'items'
@@ -12,6 +13,8 @@ export type ShortcutAction =
   | 'payments'
   | 'sales-invoices'
   | 'customer-payments'
+  | 'credit-notes'
+  | 'debit-notes'
   | 'expense-entries'
   | 'cd-profit-report'
   | 'customer-aging'
@@ -60,18 +63,18 @@ export const keyBindings: KeyBinding[] = [
   
   { key: 'd', ctrlKey: true, action: 'dashboard', description: 'Go to Dashboard', category: 'Navigation' },
   { key: 'i', ctrlKey: true, action: 'invoices', description: 'Purchase Invoices', category: 'Navigation' },
-  { key: 'p', ctrlKey: true, action: 'payments', description: 'Supplier Payments', category: 'Navigation' },
+  { key: 'p', ctrlKey: true, action: 'payments', description: 'Payment Out', category: 'Navigation' },
   { key: 'e', ctrlKey: true, action: 'expense-entries', description: 'Expense Entries', category: 'Navigation' },
   
-  { key: 'g', ctrlKey: true, action: 'supplier-ledger', description: 'Supplier Ledger', category: 'Reports' },
+  { key: 'g', ctrlKey: true, action: 'parties', description: 'Parties & Ledger', category: 'Reports' },
   { key: 'u', ctrlKey: true, action: 'inventory', description: 'Inventory Report', category: 'Reports' },
   { key: 'c', ctrlKey: true, shiftKey: true, action: 'cd-risk', description: 'CD at Risk', category: 'Reports' },
   { key: 'w', ctrlKey: true, shiftKey: true, action: 'wallet', description: 'Discount Wallet', category: 'Reports' },
   
   { key: 'y', ctrlKey: true, action: 'annual', description: 'Annual Discount', category: 'Masters' },
   
-  { key: '1', altKey: true, action: 'suppliers', description: 'Suppliers Master', category: 'Masters' },
-  { key: '2', altKey: true, action: 'customers', description: 'Customers Master', category: 'Masters' },
+  { key: '1', altKey: true, action: 'parties', description: 'Parties Master', category: 'Masters' },
+  { key: '2', altKey: true, action: 'sales-invoices', description: 'Sales Invoices', category: 'Masters' },
   { key: '3', altKey: true, action: 'items', description: 'Items Master', category: 'Masters' },
   { key: '4', altKey: true, action: 'fixed-schemes', description: 'Fixed Schemes', category: 'Masters' },
   { key: '5', altKey: true, action: 'mt-bookings', description: 'MT Booking Master', category: 'Masters' },

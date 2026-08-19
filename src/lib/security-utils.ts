@@ -19,6 +19,8 @@ export const DEFAULT_AGENT_PERMISSIONS: PermissionMap = {
   'customer-payments': 'edit',
   'customer-credit-notes': 'edit',
   'customer-debit-notes': 'edit',
+  'credit-notes': 'edit',
+  'debit-notes': 'edit',
   'sales-returns': 'edit',
   invoices: 'edit',
   payments: 'edit',
