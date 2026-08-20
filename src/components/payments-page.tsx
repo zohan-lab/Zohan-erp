@@ -1,6 +1,6 @@
 import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
 import { useState, useMemo } from 'react'
-import { FixedScheme, Item, MTBooking, Payment, PurchaseInvoice, Supplier } from '@/lib/types'
+import { FixedScheme, Item, MTBooking, Payment, PurchaseInvoice, Party, Supplier } from '@/lib/types'
 import { Counter, CashBankTransaction } from '@/lib/cash-bank-types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -29,7 +29,9 @@ interface PaymentsPageProps {
   setMTBookings: (updater: (prev: MTBooking[]) => MTBooking[]) => void
   invoices: PurchaseInvoice[]
   items: Item[]
-  suppliers: Supplier[]
+  parties?: Party[]
+  setParties?: (updater: (prev: Party[]) => Party[]) => void
+  suppliers?: Supplier[]
   fixedSchemes: FixedScheme[]
   currentFY: string
   isLocked?: boolean
@@ -39,7 +41,8 @@ interface PaymentsPageProps {
   activeCompanyId?: string
 }
 
-export default function PaymentsPage({ payments, setPayments, setMTBookings, invoices, items, suppliers, fixedSchemes, currentFY, isLocked = false, counters, transactions, onUpdateCashBank, activeCompanyId }: PaymentsPageProps) {
+export default function PaymentsPage({ payments, setPayments, setMTBookings, invoices, items, parties, suppliers = [], fixedSchemes, currentFY, isLocked = false, counters, transactions, onUpdateCashBank, activeCompanyId }: PaymentsPageProps) {
+  const suppliersList = parties || suppliers || []
   const [open, setOpen] = useState(false)
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -50,7 +53,8 @@ export default function PaymentsPage({ payments, setPayments, setMTBookings, inv
   const [selectedCounterId, setSelectedCounterId] = useState('')
   const [paymentAmount, setPaymentAmount] = useState('')
 
-  const supplierMap = useMemo(() => new Map(suppliers.map(s => [s.id, s])), [suppliers])
+  const supplierMap = useMemo(() => new Map(suppliersList.map(s => [s.id, s])), [suppliersList])
+
   const invoiceMap = useMemo(() => new Map(invoices.map(inv => [inv.id, inv])), [invoices])
   const itemMap = useMemo(() => new Map(items.map(item => [item.id, item])), [items])
 

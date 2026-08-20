@@ -86,6 +86,7 @@ import {
   SupplierCreditNote,
   SupplierDebitNote,
   ExpenseEntry,
+  Party,
   Customer,
   Supplier,
   Payment,
@@ -105,6 +106,7 @@ interface TallyVoucherManagerProps {
   supplierDebitNotes?: SupplierDebitNote[]
   supplierCreditNotes?: SupplierCreditNote[]
   expenseEntries?: ExpenseEntry[]
+  parties?: Party[]
   customers?: Customer[]
   suppliers?: Supplier[]
   payments?: Payment[]
@@ -128,6 +130,7 @@ export function TallyVoucherManager({
   supplierDebitNotes = [],
   supplierCreditNotes = [],
   expenseEntries = [],
+  parties,
   customers = [],
   suppliers = [],
   payments = [],
@@ -140,6 +143,8 @@ export function TallyVoucherManager({
   className,
   defaultVouchers
 }: TallyVoucherManagerProps) {
+  const suppliersList = parties || (suppliers.length > 0 ? suppliers : customers)
+  const customersList = parties || (customers.length > 0 ? customers : suppliers)
   // Main Module Tab
   const [activeModule, setActiveModule] = useState<'payments' | 'sales' | 'purchases' | 'notes' | 'expenses'>('payments')
 

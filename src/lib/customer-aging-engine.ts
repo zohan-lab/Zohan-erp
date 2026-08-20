@@ -1,9 +1,9 @@
-import { Customer, SalesInvoice, CustomerPayment, CustomerCreditNote, CustomerDebitNote, SalesReturn } from './types'
+import { Party, Customer, SalesInvoice, CustomerPayment, CustomerCreditNote, CustomerDebitNote, SalesReturn } from './types'
 import { calculateInvoiceTotals } from './calculations'
 
 export type AgingBracketKey = '0_30' | '31_60' | '61_90' | '90_plus'
 
-export interface CustomerBillAging {
+export interface PartyBillAging {
   invoiceId: string
   invoiceNo: string
   invoiceDate: string
@@ -13,10 +13,14 @@ export interface CustomerBillAging {
   ageDays: number
   bracket: AgingBracketKey
 }
+export type CustomerBillAging = PartyBillAging
 
-export type CustomerPerformanceBadge = 'Best Payer' | 'Capital Blocker' | 'Heavy Lifter' | 'Standard'
+export type PartyPerformanceBadge = 'Best Payer' | 'Capital Blocker' | 'Heavy Lifter' | 'Standard'
+export type CustomerPerformanceBadge = PartyPerformanceBadge
 
-export interface CustomerAgingSummary {
+export interface PartyAgingSummary {
+  partyId: string
+  partyName: string
   customerId: string
   customerName: string
   gstin?: string
@@ -33,13 +37,15 @@ export interface CustomerAgingSummary {
   bracket90plus: number
   totalOverdue: number
   maxDaysOverdue: number
-  performanceBadge: CustomerPerformanceBadge
-  billAging: CustomerBillAging[]
+  performanceBadge: PartyPerformanceBadge
+  billAging: PartyBillAging[]
   unpaidBillCount: number
 }
+export type CustomerAgingSummary = PartyAgingSummary
 
-export interface CustomerAgingAggregate {
-  customers: CustomerAgingSummary[]
+export interface PartyAgingAggregate {
+  parties: PartyAgingSummary[]
+  customers: PartyAgingSummary[]
   totalOutstanding: number
   totalOverdue: number
   totalCritical90Plus: number
@@ -47,8 +53,10 @@ export interface CustomerAgingAggregate {
   capitalBlockerCount: number
   heavyLifterCount: number
   averageCollectionDays: number
+  totalPartiesWithBalance: number
   totalCustomersWithBalance: number
 }
+export type CustomerAgingAggregate = PartyAgingAggregate
 
 /**
  * Calculates the difference in days between a date string and reference date.
@@ -75,18 +83,18 @@ export function getAgingBracket(ageDays: number): AgingBracketKey {
 }
 
 /**
- * Core Customer Aging & Receivables Calculation Engine
+ * Core Party Aging & Receivables Calculation Engine
  */
-export function computeCustomerAging(
-  customers: Customer[] = [],
+export function computePartyAging(
+  parties: Party[] = [],
   salesInvoices: SalesInvoice[] = [],
   customerPayments: CustomerPayment[] = [],
   creditNotes: CustomerCreditNote[] = [],
   salesReturns: SalesReturn[] = [],
   asOfDate: Date = new Date(),
   customerDebitNotes: CustomerDebitNote[] = []
-): CustomerAgingAggregate {
-  const summaries: CustomerAgingSummary[] = []
+): PartyAgingAggregate {
+  const summaries: PartyAgingSummary[] = []
 
   let aggTotalOutstanding = 0
   let aggTotalOverdue = 0
@@ -97,13 +105,13 @@ export function computeCustomerAging(
   let totalAgeDaysSum = 0
   let totalUnpaidBillCount = 0
 
-  customers.forEach((customer) => {
-    // 1. Filter customer invoices, payments, credit notes, sales returns, debit notes
-    const custInvoices = salesInvoices.filter((inv) => inv.customerId === customer.id)
-    const custPayments = customerPayments.filter((p) => p.customerId === customer.id)
-    const custCreditNotes = creditNotes.filter((cn) => cn.customerId === customer.id)
-    const custSalesReturns = salesReturns.filter((sr) => sr.customerId === customer.id)
-    const custDebitNotes = customerDebitNotes.filter((dn) => dn.customerId === customer.id)
+  parties.forEach((party) => {
+    // 1. Filter party invoices, payments, credit notes, sales returns, debit notes
+    const partyInvoices = salesInvoices.filter((inv) => inv.partyId === party.id || inv.customerId === party.id)
+    const partyPayments = customerPayments.filter((p) => p.partyId === party.id || p.customerId === party.id)
+    const partyCreditNotes = creditNotes.filter((cn) => cn.partyId === party.id || cn.customerId === party.id)
+    const partySalesReturns = salesReturns.filter((sr) => sr.partyId === party.id || sr.customerId === party.id)
+    const partyDebitNotes = customerDebitNotes.filter((dn) => dn.partyId === party.id || dn.customerId === party.id)
 
     // 2. Build combined chronological debits queue (Opening Balance, Invoices, Debit Notes)
     type DebitItem = {
@@ -116,21 +124,21 @@ export function computeCustomerAging(
 
     const debitsQueue: DebitItem[] = []
 
-    const openingBal = Number(customer.openingBalance) || 0
-    const isOpeningDebit = customer.balanceType !== 'Credit' && openingBal > 0
-    const isOpeningCredit = customer.balanceType === 'Credit' && openingBal > 0
+    const openingBal = Number(party.openingBalance) || 0
+    const isOpeningDebit = party.balanceType !== 'Credit' && openingBal > 0
+    const isOpeningCredit = party.balanceType === 'Credit' && openingBal > 0
 
     if (isOpeningDebit) {
       debitsQueue.push({
-        id: `opening-bal-${customer.id}`,
+        id: `opening-bal-${party.id}`,
         no: 'Opening Balance',
-        date: customer.openingBalanceDate || '2025-04-01',
+        date: party.openingBalanceDate || '2025-04-01',
         amount: openingBal,
         isOpening: true
       })
     }
 
-    custInvoices.forEach(inv => {
+    partyInvoices.forEach(inv => {
       debitsQueue.push({
         id: inv.id,
         no: inv.invoiceNo,
@@ -139,7 +147,7 @@ export function computeCustomerAging(
       })
     })
 
-    custDebitNotes.forEach(dn => {
+    partyDebitNotes.forEach(dn => {
       debitsQueue.push({
         id: dn.id,
         no: dn.noteNo || dn.invoiceRef || 'Debit Note',
@@ -154,16 +162,16 @@ export function computeCustomerAging(
       return a.no.localeCompare(b.no)
     })
 
-    const totalSales = custInvoices.reduce((sum, inv) => sum + calculateInvoiceTotals(inv).totalAmount, 0)
-    const totalPayments = custPayments.reduce((sum, p) => sum + (p.amount || 0), 0)
-    const totalCreditNotes = custCreditNotes.reduce((sum, cn) => sum + (cn.totalAmount || cn.amount || 0), 0)
-    const totalSalesReturns = custSalesReturns.reduce((sum, sr) => sum + (sr.amount || 0), 0)
-    const totalDebitNotes = custDebitNotes.reduce((sum, dn) => sum + (dn.totalAmount || dn.amount || 0), 0)
+    const totalSales = partyInvoices.reduce((sum, inv) => sum + calculateInvoiceTotals(inv).totalAmount, 0)
+    const totalPayments = partyPayments.reduce((sum, p) => sum + (p.amount || 0), 0)
+    const totalCreditNotes = partyCreditNotes.reduce((sum, cn) => sum + (cn.totalAmount || cn.amount || 0), 0)
+    const totalSalesReturns = partySalesReturns.reduce((sum, sr) => sum + (sr.amount || 0), 0)
+    const totalDebitNotes = partyDebitNotes.reduce((sum, dn) => sum + (dn.totalAmount || dn.amount || 0), 0)
 
     const totalCredits = totalPayments + totalCreditNotes + totalSalesReturns + (isOpeningCredit ? openingBal : 0)
     let remainingCredit = totalCredits
 
-    const billAging: CustomerBillAging[] = []
+    const billAging: PartyBillAging[] = []
     let bracket0to30 = 0
     let bracket31to60 = 0
     let bracket61to90 = 0
@@ -219,7 +227,7 @@ export function computeCustomerAging(
     const totalOverdue = bracket31to60 + bracket61to90 + bracket90plus
 
     // 4. Performance Badge Assignment
-    let performanceBadge: CustomerPerformanceBadge = 'Standard'
+    let performanceBadge: PartyPerformanceBadge = 'Standard'
     if (totalOutstanding <= 0.01 || (maxDaysOverdue <= 30 && totalPayments >= totalSales * 0.7)) {
       performanceBadge = 'Best Payer'
       aggBestPayerCount++
@@ -236,11 +244,13 @@ export function computeCustomerAging(
     aggTotalCritical90Plus += bracket90plus
 
     summaries.push({
-      customerId: customer.id,
-      customerName: customer.name,
-      gstin: customer.gstin,
-      phone: customer.phone,
-      city: customer.city,
+      partyId: party.id,
+      partyName: party.name,
+      customerId: party.id,
+      customerName: party.name,
+      gstin: party.gstin,
+      phone: party.phone,
+      city: party.city,
       totalSales,
       totalPayments,
       totalCreditNotes: totalCreditNotes + totalSalesReturns,
@@ -261,9 +271,10 @@ export function computeCustomerAging(
   // Sort summaries by total outstanding descending
   summaries.sort((a, b) => b.totalOutstanding - a.totalOutstanding)
 
-  const customersWithBalance = summaries.filter((c) => c.totalOutstanding > 0.01)
+  const partiesWithBalance = summaries.filter((c) => c.totalOutstanding > 0.01)
 
   return {
+    parties: summaries,
     customers: summaries,
     totalOutstanding: aggTotalOutstanding,
     totalOverdue: aggTotalOverdue,
@@ -272,6 +283,10 @@ export function computeCustomerAging(
     capitalBlockerCount: aggCapitalBlockerCount,
     heavyLifterCount: aggHeavyLifterCount,
     averageCollectionDays: totalUnpaidBillCount > 0 ? Math.round(totalAgeDaysSum / totalUnpaidBillCount) : 0,
-    totalCustomersWithBalance: customersWithBalance.length
+    totalPartiesWithBalance: partiesWithBalance.length,
+    totalCustomersWithBalance: partiesWithBalance.length
   }
 }
+
+export const computeCustomerAging = computePartyAging
+

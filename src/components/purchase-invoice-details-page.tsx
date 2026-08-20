@@ -18,6 +18,7 @@ import {
   PurchaseInvoice, 
   Payment, 
   PaymentAllocation, 
+  Party,
   Supplier, 
   Item,
   FixedScheme,
@@ -36,7 +37,8 @@ import { cn } from '@/lib/utils'
 interface PurchaseInvoiceDetailsPageProps {
   invoices: PurchaseInvoice[]
   payments: Payment[]
-  suppliers: Supplier[]
+  parties?: Party[]
+  suppliers?: Supplier[]
   items: Item[]
   fixedSchemes: FixedScheme[]
   mtBookings?: MTBooking[]
@@ -52,6 +54,39 @@ interface DiscountBreakdown {
   invoiceCloseCDPerMT: number
   fixedSchemePerMT: number
   totalCDPerMT: number
+}
+
+interface InvoiceDetailedMetrics {
+  invoice: PurchaseInvoice
+  supplier?: Supplier
+  payments: Array<{
+    payment: Payment
+    allocatedAmount: number
+    paymentDate: string
+    days: number
+    isAdvance: boolean
+    advanceAllocatedAmount: number
+  }>
+  discounts: DiscountBreakdown[]
+  expenses: Array<{
+    entry: ExpenseEntry
+    allocatedAmount: number
+    effectiveUnitRate: number
+  }>
+  totals: {
+    grossAmount: number
+    taxableAmount: number
+    taxAmount: number
+    netAmount: number
+    totalPaid: number
+    totalDiscounts: number
+    totalExpenses: number
+    actualCostPerMT: number
+    effectiveCostPerMT: number
+    balancePending: number
+    advanceAmount: number
+    regularAmount: number
+  }
 }
 
 interface ItemCostBreakdown {
@@ -101,7 +136,8 @@ import { PeriodDateFilter, PeriodFilterState, defaultPeriodFilterState, isRecord
 export default function PurchaseInvoiceDetailsPage({
   invoices,
   payments,
-  suppliers,
+  parties,
+  suppliers = [],
   items,
   fixedSchemes,
   mtBookings = [],
@@ -111,6 +147,7 @@ export default function PurchaseInvoiceDetailsPage({
   currentFY,
   initialInvoiceNo = ''
 }: PurchaseInvoiceDetailsPageProps) {
+  const suppliersList = parties || suppliers || []
   const [selectedSupplier, setSelectedSupplier] = useState<string>('all')
   const [selectedStatus, setSelectedStatus] = useState<string>('all')
   const [searchInvoiceNo, setSearchInvoiceNo] = useState(initialInvoiceNo)
@@ -157,7 +194,7 @@ export default function PurchaseInvoiceDetailsPage({
     return false
   }
 
-  const supplierMap = useMemo(() => new Map(suppliers.map(s => [s.id, s])), [suppliers])
+  const supplierMap = useMemo(() => new Map(suppliersList.map(s => [s.id, s])), [suppliersList])
   const itemMap = useMemo(() => new Map(items.map(i => [i.id, i])), [items])
   const expenseTypeMap = useMemo(() => new Map(expenseTypes.map(e => [e.id, e])), [expenseTypes])
 
@@ -167,8 +204,8 @@ export default function PurchaseInvoiceDetailsPage({
   )
 
   const expectedDiscounts = useMemo(
-    () => calculateExpectedDiscounts(invoices, payments, paymentAllocations, paymentAdvanceInfo, suppliers, fixedSchemes, mtBookings, items),
-    [invoices, payments, paymentAllocations, paymentAdvanceInfo, suppliers, fixedSchemes, mtBookings, items]
+    () => calculateExpectedDiscounts(invoices, payments, paymentAllocations, paymentAdvanceInfo, suppliersList, fixedSchemes, mtBookings, items),
+    [invoices, payments, paymentAllocations, paymentAdvanceInfo, suppliersList, fixedSchemes, mtBookings, items]
   )
 
   const invoiceDetails = useMemo((): InvoiceDetails[] => {
@@ -220,7 +257,7 @@ export default function PurchaseInvoiceDetailsPage({
           annualDiscountPerMT
         }
       })
-  }, [invoices, payments, paymentAllocations, suppliers, expectedDiscounts, expenseEntries, expenseTypes, currentFY, supplierMap, expenseTypeMap, itemMap, receivedDiscounts, includeAnnualDiscount])
+  }, [invoices, payments, paymentAllocations, suppliersList, expectedDiscounts, expenseEntries, expenseTypes, currentFY, supplierMap, expenseTypeMap, itemMap, receivedDiscounts, includeAnnualDiscount])
 
   const filteredInvoiceDetails = useMemo(() => {
     return invoiceDetails.filter(detail => {
@@ -340,8 +377,8 @@ export default function PurchaseInvoiceDetailsPage({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Suppliers</SelectItem>
-                {suppliers.map(supplier => (
+                <SelectItem value="all">All Parties</SelectItem>
+                {suppliersList.map(supplier => (
                   <SelectItem key={supplier.id} value={supplier.id}>
                     {supplier.name}
                   </SelectItem>

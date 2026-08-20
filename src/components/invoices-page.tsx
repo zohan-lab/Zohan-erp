@@ -1,6 +1,6 @@
 import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
 import { useState, useMemo } from 'react'
-import { PurchaseInvoice, Supplier, Item, InvoiceItem, Payment, SalesInvoice, PurchaseReturn, SalesReturn, FixedScheme, ReceivedDiscount, ExpenseEntry, ExpenseType, MTBooking, AdditionalCharge } from '@/lib/types'
+import { PurchaseInvoice, Party, Supplier, Item, InvoiceItem, Payment, SalesInvoice, PurchaseReturn, SalesReturn, FixedScheme, ReceivedDiscount, ExpenseEntry, ExpenseType, MTBooking, AdditionalCharge } from '@/lib/types'
 import { calculateItemStockMap } from '@/lib/report-calculations'
 import { normalizeLineItem, getItemConversionFactor, getInvoiceQtyForUnit } from '@/lib/unit-conversion-service'
 import { Counter, CashBankTransaction } from '@/lib/cash-bank-types'
@@ -27,7 +27,7 @@ import { exportPurchaseInvoicePDF } from '@/lib/pdf-export'
 import { PartyFullPageEditor } from '@/components/party-full-page-editor'
 import { ItemEditorDialog } from '@/components/item-editor-dialog'
 
-import { deleteInvoice, deletePayment, saveInvoice, savePayment, saveSupplier } from '@/lib/firebase-storage'
+import { deleteInvoice, deletePayment, saveInvoice, savePayment, saveParty, saveSupplier } from '@/lib/firebase-storage'
 import { ThreeDotDropdown } from '@/components/ui/three-dot-dropdown'
 
 interface InvoicesPageProps {
@@ -36,8 +36,10 @@ interface InvoicesPageProps {
   salesInvoices?: SalesInvoice[]
   purchaseReturns?: PurchaseReturn[]
   salesReturns?: SalesReturn[]
-  suppliers: Supplier[]
-  setSuppliers: (updater: (prev: Supplier[]) => Supplier[]) => void
+  parties?: Party[]
+  setParties?: (updater: (prev: Party[]) => Party[]) => void
+  suppliers?: Supplier[]
+  setSuppliers?: (updater: (prev: Supplier[]) => Supplier[]) => void
   payments: Payment[]
   setPayments: (updater: (prev: Payment[]) => Payment[]) => void
   items: Item[]
@@ -67,7 +69,9 @@ export default function InvoicesPage({
   salesInvoices = [],
   purchaseReturns = [],
   salesReturns = [],
-  suppliers,
+  parties,
+  setParties,
+  suppliers = [],
   setSuppliers,
   payments,
   setPayments,
@@ -87,6 +91,9 @@ export default function InvoicesPage({
   expenseTypes = [],
   activeCompanyId
 }: InvoicesPageProps) {
+  const suppliersList = parties || suppliers || []
+  const setSuppliersHandler = setParties || setSuppliers || (() => {})
+
   const stockMap = useMemo(() => {
     return calculateItemStockMap(items, invoices, salesInvoices, purchaseReturns, salesReturns)
   }, [items, invoices, salesInvoices, purchaseReturns, salesReturns])
@@ -1090,17 +1097,16 @@ export default function InvoicesPage({
   if (showQuickSupplier) {
     return (
       <PartyFullPageEditor
-        type="supplier"
-        existingParties={suppliers}
+        type="party"
+        existingParties={suppliersList}
         onSave={(party) => {
-          const supplier = party as Supplier
-          setSuppliers((prev) => [supplier, ...prev])
+          setSuppliersHandler((prev) => [party, ...prev])
           if (activeCompanyId) {
-            void saveSupplier(activeCompanyId, supplier)
+            void saveParty(activeCompanyId, party)
           }
-          setSelectedSupplierId(supplier.id)
+          setSelectedSupplierId(party.id)
           setShowQuickSupplier(false)
-          toast.success(`Supplier "${supplier.name}" created`)
+          toast.success(`Party "${party.name}" created`)
         }}
         onCancel={() => setShowQuickSupplier(false)}
         invoices={invoices}

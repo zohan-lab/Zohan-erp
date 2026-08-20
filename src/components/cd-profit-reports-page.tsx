@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react'
 import {
   PurchaseInvoice,
   SalesInvoice,
+  Party,
   Supplier,
   Customer,
   Item,
@@ -50,8 +51,9 @@ import { exportGenericTableToCSV } from '@/lib/excel-export'
 interface CDProfitReportsPageProps {
   purchaseInvoices: PurchaseInvoice[]
   salesInvoices: SalesInvoice[]
-  suppliers: Supplier[]
-  customers: Customer[]
+  parties?: Party[]
+  suppliers?: Supplier[]
+  customers?: Customer[]
   items: Item[]
   payments?: Payment[]
   fixedSchemes?: FixedScheme[]
@@ -66,6 +68,7 @@ interface CDProfitReportsPageProps {
 export default function CDProfitReportsPage({
   purchaseInvoices = [],
   salesInvoices = [],
+  parties,
   suppliers = [],
   customers = [],
   items = [],
@@ -78,6 +81,9 @@ export default function CDProfitReportsPage({
   businessName,
   initialTab = 'profit-analysis'
 }: CDProfitReportsPageProps) {
+  const suppliersList = parties || (suppliers.length > 0 ? suppliers : customers)
+  const customersList = parties || (customers.length > 0 ? customers : suppliers)
+
   const [activeTab, setActiveTab] = useState(initialTab)
   const [period, setPeriod] = useState<PeriodFilter>('monthly')
   const [customRange, setCustomRange] = useState<DateFilterRange>({
@@ -91,8 +97,8 @@ export default function CDProfitReportsPage({
       return providedExpectedDiscounts
     }
     const { allocations, paymentAdvanceInfo } = calculatePaymentAllocations(payments, purchaseInvoices)
-    return calculateExpectedDiscounts(purchaseInvoices, payments, allocations, paymentAdvanceInfo, suppliers, fixedSchemes, mtBookings, items)
-  }, [providedExpectedDiscounts, purchaseInvoices, payments, suppliers, fixedSchemes, mtBookings, items])
+    return calculateExpectedDiscounts(purchaseInvoices, payments, allocations, paymentAdvanceInfo, suppliersList, fixedSchemes, mtBookings, items)
+  }, [providedExpectedDiscounts, purchaseInvoices, payments, suppliersList, fixedSchemes, mtBookings, items])
 
   const expectedDiscounts = computedExpectedDiscounts
 
@@ -122,19 +128,19 @@ export default function CDProfitReportsPage({
 
   // 1. Build Purchase Layers
   const purchaseLayers = useMemo(() => {
-    return buildPurchaseLayers(purchaseInvoices, suppliers, items, expectedDiscounts, expenseEntries)
-  }, [purchaseInvoices, suppliers, items, expectedDiscounts, expenseEntries])
+    return buildPurchaseLayers(purchaseInvoices, suppliersList, items, expectedDiscounts, expenseEntries)
+  }, [purchaseInvoices, suppliersList, items, expectedDiscounts, expenseEntries])
 
   // 2. Allocate Sales FIFO
   const { allocations, updatedLayers } = useMemo(() => {
-    return allocateSalesFIFO(salesInvoices, purchaseLayers, items, customers)
-  }, [salesInvoices, purchaseLayers, items, customers])
+    return allocateSalesFIFO(salesInvoices, purchaseLayers, items, customersList)
+  }, [salesInvoices, purchaseLayers, items, customersList])
 
   // 3. Payment CD Data
   const cdReportData = useMemo(() => {
     return calculatePaymentCDReport(
       purchaseInvoices,
-      suppliers,
+      suppliersList,
       items,
       expectedDiscounts,
       expenseEntries,
@@ -142,7 +148,7 @@ export default function CDProfitReportsPage({
       customRange,
       reportFilters
     )
-  }, [purchaseInvoices, suppliers, items, expectedDiscounts, expenseEntries, period, customRange, reportFilters])
+  }, [purchaseInvoices, suppliersList, items, expectedDiscounts, expenseEntries, period, customRange, reportFilters])
 
   // 4. Profit Analysis Data
   const profitAnalysisRows = useMemo(() => {
@@ -150,7 +156,7 @@ export default function CDProfitReportsPage({
       salesInvoices,
       allocations,
       items,
-      customers,
+      customersList,
       period,
       customRange,
       reportFilters
@@ -162,7 +168,7 @@ export default function CDProfitReportsPage({
       r.salesInvoiceNo.toLowerCase().includes(q) ||
       r.customerName.toLowerCase().includes(q)
     )
-  }, [salesInvoices, allocations, items, customers, period, customRange, reportFilters, searchQuery])
+  }, [salesInvoices, allocations, items, customersList, period, customRange, reportFilters, searchQuery])
 
   // 5. Active Stock Layers (Remaining Qty > 0)
   const activeStockLayers = useMemo(() => {
@@ -348,14 +354,14 @@ export default function CDProfitReportsPage({
           {/* Secondary Dropdown Filters */}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
             <div>
-              <Label className="text-[11px] font-semibold text-slate-500">Supplier</Label>
+              <Label className="text-[11px] font-semibold text-slate-500">Party</Label>
               <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
                 <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="All Suppliers" />
+                  <SelectValue placeholder="All Parties" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Suppliers</SelectItem>
-                  {suppliers.map(s => (
+                  <SelectItem value="all">All Parties</SelectItem>
+                  {suppliersList.map(s => (
                     <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                   ))}
                 </SelectContent>

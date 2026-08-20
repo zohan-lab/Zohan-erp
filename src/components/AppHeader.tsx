@@ -34,7 +34,7 @@ import {
   TallyImportResult,
 } from '@/lib/tally-payment-excel'
 import { parseTallyXmlVouchers, decodeXmlFileBuffer } from '@/lib/tally-xml-parser'
-import { Payment, CustomerPayment, Supplier, Customer, Item, ExpenseType } from '@/lib/types'
+import { Payment, CustomerPayment, Party, Supplier, Customer, Item, ExpenseType } from '@/lib/types'
 
 interface AppHeaderProps {
   sidebarExpanded: boolean
@@ -52,6 +52,7 @@ interface AppHeaderProps {
   setShortcutsDialogOpen: (open: boolean) => void
   onLogout?: () => void
   // Optional data props for Tally actions
+  parties?: Party[]
   payments?: Payment[]
   customerPayments?: CustomerPayment[]
   suppliers?: Supplier[]
@@ -105,6 +106,7 @@ export function AppHeader({
   currentUserRole,
   setShortcutsDialogOpen,
   onLogout,
+  parties,
   payments = [],
   customerPayments = [],
   suppliers = [],
@@ -115,6 +117,7 @@ export function AppHeader({
   onOpenTallyExport,
   onOpenTallyImport,
 }: AppHeaderProps) {
+  const partiesList = parties || [...(customers || []), ...(suppliers || [])]
   const viewMeta = VIEW_TITLES[activeView] ?? {
     title: activeView.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
     sub: safeBusinessName,
@@ -127,16 +130,16 @@ export function AppHeader({
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // 1. Handle Import Tally Excel / XML
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (!files || files.length === 0) return
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
 
-    const file = files[0]
-    const isXml = file.name.toLowerCase().endsWith('.xml')
-    const validExtensions = ['.xml', '.xlsx', '.xls', '.csv']
-    const hasValidExt = validExtensions.some(ext => file.name.toLowerCase().endsWith(ext))
+    const fileName = file.name.toLowerCase()
+    const isXml = fileName.endsWith('.xml')
+    const isExcel = fileName.endsWith('.xlsx') || fileName.endsWith('.xls')
+    const isCsv = fileName.endsWith('.csv')
 
-    if (!hasValidExt) {
+    if (!isXml && !isExcel && !isCsv) {
       toast.error('Invalid file format. Please upload an XML (.xml), Excel (.xlsx, .xls) or CSV file.')
       if (fileInputRef.current) fileInputRef.current.value = ''
       return
@@ -147,7 +150,7 @@ export function AppHeader({
       if (isXml) {
         const buffer = await file.arrayBuffer()
         const text = decodeXmlFileBuffer(buffer)
-        const xmlResult = parseTallyXmlVouchers(text, { customers, suppliers })
+        const xmlResult = parseTallyXmlVouchers(text, { parties: partiesList, customers, suppliers })
         if (xmlResult.success && xmlResult.vouchers.length > 0) {
           const paymentVouchers: PaymentVoucher[] = xmlResult.vouchers
             .filter(v => v.normalizedType === 'payment' || v.normalizedType === 'receipt')
@@ -175,7 +178,7 @@ export function AppHeader({
         }
       } else {
         const arrayBuffer = await file.arrayBuffer()
-        const excelResult = parseTallyAccountingVouchersExcel(arrayBuffer, { customers, suppliers })
+        const excelResult = parseTallyAccountingVouchersExcel(arrayBuffer, { parties: partiesList, customers, suppliers })
 
         if (excelResult.success && excelResult.vouchers.length > 0) {
           const paymentVouchers: PaymentVoucher[] = excelResult.vouchers
@@ -200,12 +203,11 @@ export function AppHeader({
             onImportTally?.(paymentVouchers)
           }
         } else {
-          toast.error(excelResult.errors[0] || 'No valid vouchers found in the uploaded Excel file')
+          toast.error(excelResult.errors[0] || 'No valid vouchers found in uploaded Excel file')
         }
       }
     } catch (err: any) {
-      console.error('Tally import error:', err)
-      toast.error(`Import failed: ${err?.message || 'Error processing file'}`)
+      toast.error('Import failed: ' + (err.message || 'Unknown error occurred'))
     } finally {
       setIsImporting(false)
       if (fileInputRef.current) {
@@ -214,8 +216,8 @@ export function AppHeader({
     }
   }
 
-  // 2. Handle Export Tally Excel
-  const handleExportTally = () => {
+  // 2. Handle Direct Export to Tally XML
+  const handleExportDirect = () => {
     if (onExportTally) {
       onExportTally()
       return
@@ -229,18 +231,17 @@ export function AppHeader({
       if (vouchers && vouchers.length > 0) {
         exportList = vouchers.filter(v => v.isValid !== false && v.status !== 'error')
       } else {
-        // Map ERP Payments (Suppliers) & CustomerPayments (Customers) into Tally vouchers
-        const supplierMap = new Map(suppliers.map(s => [s.id, s]))
-        const customerMap = new Map(customers.map(c => [c.id, c]))
+        // Map ERP Payments & CustomerPayments into Tally vouchers using partiesList
+        const partyMap = new Map(partiesList.map(p => [p.id, p]))
 
         const paymentVouchers: PaymentVoucher[] = (payments || []).map((p, idx) => {
-          const sup = supplierMap.get(p.supplierId)
+          const sup = partyMap.get(p.partyId || p.supplierId)
           return {
             id: p.id || `pay-${idx}`,
             voucherNumber: `PAY-${p.paymentDate?.replace(/-/g, '') || '000'}-${idx + 1}`,
             voucherDate: p.paymentDate || new Date().toISOString().split('T')[0],
             type: 'PAYMENT',
-            partyLedger: sup?.name || 'Supplier Account',
+            partyLedger: sup?.name || 'Party Account',
             bankCashLedger: p.counterName || 'Bank/Cash Account',
             amount: p.amount || 0,
             address: [sup?.address, sup?.city, sup?.state].filter(Boolean).join(', ') || undefined,
@@ -251,7 +252,7 @@ export function AppHeader({
         })
 
         const receiptVouchers: PaymentVoucher[] = (customerPayments || []).map((cp, idx) => {
-          const cust = customerMap.get(cp.customerId)
+          const cust = partyMap.get(cp.partyId || cp.customerId)
           return {
             id: cp.id || `rec-${idx}`,
             voucherNumber: `REC-${cp.paymentDate?.replace(/-/g, '') || '000'}-${idx + 1}`,
@@ -294,7 +295,7 @@ export function AppHeader({
         ref={fileInputRef}
         type="file"
         accept=".xml, .xlsx, .xls, .csv, text/xml, application/xml"
-        onChange={handleFileChange}
+        onChange={handleFileUpload}
         className="hidden"
       />
 
@@ -399,7 +400,7 @@ export function AppHeader({
               if (onOpenTallyExport) {
                 onOpenTallyExport()
               } else {
-                handleExportTally()
+                handleExportDirect()
               }
             }}
             disabled={isExporting}

@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { PurchaseInvoice, Payment, Supplier, Item } from '@/lib/types'
+import { PurchaseInvoice, Payment, Party, Supplier, Item } from '@/lib/types'
 import { calculateCDAtRisk, InvoiceCloseCDUnitBreakdown } from '@/lib/report-calculations'
 import { calculatePaymentAllocations, formatCurrency, formatMT } from '@/lib/calculations'
 import { Warning, Clock, TrendDown, CaretDown, FilePdf, Shield, CoinVertical, Receipt, Funnel, X } from '@phosphor-icons/react'
@@ -35,7 +35,8 @@ import { cn } from '@/lib/utils'
 interface CDAtRiskReportPageProps {
   purchaseInvoices: PurchaseInvoice[]
   payments: Payment[]
-  suppliers: Supplier[]
+  parties?: Party[]
+  suppliers?: Supplier[]
   items?: Item[]
   currentFY: string
   businessName?: string
@@ -44,11 +45,13 @@ interface CDAtRiskReportPageProps {
 export default function CDAtRiskReportPage({
   purchaseInvoices,
   payments,
-  suppliers,
+  parties,
+  suppliers = [],
   items = [],
   currentFY,
   businessName = 'Steel Trading ERP'
 }: CDAtRiskReportPageProps) {
+  const suppliersList = parties || suppliers || []
   const [ineligibleOpen, setIneligibleOpen] = useState(false)
   const [selectedSuppliers, setSelectedSuppliers] = useState<string[]>([])
   const [supplierFilterOpen, setSupplierFilterOpen] = useState(false)
@@ -58,14 +61,11 @@ export default function CDAtRiskReportPage({
   }, [payments, purchaseInvoices])
 
   const cdAtRiskData = useMemo(() => {
-    const allData = calculateCDAtRisk(purchaseInvoices, payments, paymentAllocations, suppliers, items)
-    
-    if (selectedSuppliers.length === 0) {
-      return allData
-    }
-    
-    return allData.filter(d => selectedSuppliers.includes(d.supplierId))
-  }, [purchaseInvoices, payments, paymentAllocations, suppliers, selectedSuppliers])
+    const allData = calculateCDAtRisk(purchaseInvoices, payments, paymentAllocations, suppliersList, items)
+    if (selectedSuppliers.length === 0) return allData
+
+    return allData.filter(item => selectedSuppliers.includes(item.supplierId))
+  }, [purchaseInvoices, payments, paymentAllocations, suppliersList, selectedSuppliers])
 
   const { eligibleInvoices, ineligibleInvoices } = useMemo(() => {
     const eligible = cdAtRiskData.filter(d => d.totalCDAtRisk > 0)
@@ -109,10 +109,10 @@ export default function CDAtRiskReportPage({
   }
 
   const handleSelectAllSuppliers = () => {
-    if (selectedSuppliers.length === suppliers.length) {
+    if (selectedSuppliers.length === suppliersList.length) {
       setSelectedSuppliers([])
     } else {
-      setSelectedSuppliers(suppliers.map(s => s.id))
+      setSelectedSuppliers(suppliersList.map(s => s.id))
     }
   }
 
@@ -177,40 +177,40 @@ export default function CDAtRiskReportPage({
                     <span className="truncate">
                       {selectedSuppliers.length === 0
                         ? "All Suppliers"
-                        : selectedSuppliers.length === suppliers.length
-                        ? "All Suppliers"
-                        : `${selectedSuppliers.length} Suppliers Selected`}
+                        : selectedSuppliers.length === suppliersList.length
+                        ? 'All parties selected'
+                        : `${selectedSuppliers.length} parties selected`}
                     </span>
                     <CaretDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[320px] p-0" align="start">
+                <PopoverContent className="w-[280px] p-0" align="start">
                   <Command>
-                    <CommandInput placeholder="Search supplier..." />
+                    <CommandInput placeholder="Search parties..." className="h-9" />
                     <CommandList>
-                      <CommandEmpty>No supplier found.</CommandEmpty>
+                      <CommandEmpty>No party found.</CommandEmpty>
                       <CommandGroup>
                         <CommandItem
                           onSelect={handleSelectAllSuppliers}
-                          className="font-semibold text-slate-800"
+                          className="cursor-pointer font-medium"
                         >
                           <Checkbox
-                            checked={selectedSuppliers.length === suppliers.length}
+                            checked={selectedSuppliers.length === suppliersList.length}
                             className="mr-2"
                           />
-                          Select All Suppliers
+                          <span>Select All</span>
                         </CommandItem>
-                        {suppliers.map((supplier) => (
+                        {suppliersList.map((supplier) => (
                           <CommandItem
                             key={supplier.id}
                             onSelect={() => handleToggleSupplier(supplier.id)}
-                            className="text-slate-700"
+                            className="cursor-pointer"
                           >
                             <Checkbox
                               checked={selectedSuppliers.includes(supplier.id)}
                               className="mr-2"
                             />
-                            {supplier.name}
+                            <span className="truncate">{supplier.name}</span>
                           </CommandItem>
                         ))}
                       </CommandGroup>
@@ -219,7 +219,7 @@ export default function CDAtRiskReportPage({
                 </PopoverContent>
               </Popover>
 
-              {selectedSuppliers.length > 0 && selectedSuppliers.length < suppliers.length && (
+              {selectedSuppliers.length > 0 && selectedSuppliers.length < suppliersList.length && (
                 <Button
                   variant="ghost"
                   size="sm"

@@ -1,6 +1,6 @@
 import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
 import { useState, useEffect } from 'react'
-import { Supplier, PaymentCDRule, InvoiceCloseCDRule } from '@/lib/types'
+import { Party, Supplier, PaymentCDRule, InvoiceCloseCDRule } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -15,13 +15,18 @@ import { getAvailableUnits } from '@/lib/custom-data-store'
 import { toast } from 'sonner'
 
 interface SupplierCDRulesPageProps {
-  suppliers: Supplier[]
-  setSuppliers: (updater: (prev: Supplier[]) => Supplier[]) => void
+  parties?: Party[]
+  setParties?: (updater: (prev: Party[]) => Party[]) => void
+  suppliers?: Supplier[]
+  setSuppliers?: (updater: (prev: Supplier[]) => Supplier[]) => void
   isLocked?: boolean
 }
 
-export default function SupplierCDRulesPage({ suppliers, setSuppliers, isLocked }: SupplierCDRulesPageProps) {
+export default function SupplierCDRulesPage({ parties, setParties, suppliers = [], setSuppliers, isLocked }: SupplierCDRulesPageProps) {
+  const suppliersList = parties || suppliers || []
+  const setSuppliersHandler = setParties || setSuppliers || (() => {})
   const [availableUnits, setAvailableUnits] = useState(() => getAvailableUnits())
+
 
   useEffect(() => {
     const syncUnits = () => setAvailableUnits(getAvailableUnits())
@@ -70,7 +75,7 @@ export default function SupplierCDRulesPage({ suppliers, setSuppliers, isLocked 
   const [draftTargetUnit, setDraftTargetUnit] = useState<string>('MT')
   const [targetChangeReason, setTargetChangeReason] = useState<string>('')
 
-  const selectedSupplier = suppliers.find((s) => s.id === selectedSupplierId)
+  const selectedSupplier = suppliersList.find((s) => s.id === selectedSupplierId)
 
   // Open FRESH Payment CD Rules Modal (Clean slate inputs & Current Date as default effective date)
   const openEditPaymentModal = () => {
@@ -190,7 +195,7 @@ export default function SupplierCDRulesPage({ suppliers, setSuppliers, isLocked 
       ]
     }
 
-    setSuppliers((prev) => prev.map((s) => (s.id === selectedSupplier.id ? updatedSupplier : s)))
+    setSuppliersHandler((prev) => prev.map((s) => (s.id === selectedSupplier.id ? updatedSupplier : s)))
     setEditPaymentModalOpen(false)
     toast.success(`Payment CD Rules updated for ${selectedSupplier.name}!`)
   }
@@ -269,7 +274,7 @@ export default function SupplierCDRulesPage({ suppliers, setSuppliers, isLocked 
       ]
     }
 
-    setSuppliers((prev) => prev.map((s) => (s.id === selectedSupplier.id ? updatedSupplier : s)))
+    setSuppliersHandler((prev) => prev.map((s) => (s.id === selectedSupplier.id ? updatedSupplier : s)))
     setEditCloseModalOpen(false)
     toast.success(`Invoice Closed CD Rules updated for ${selectedSupplier.name}!`)
   }
@@ -305,7 +310,7 @@ export default function SupplierCDRulesPage({ suppliers, setSuppliers, isLocked 
       cdRuleVersions: [historyEntry, ...currentVersions]
     }
 
-    setSuppliers((prev) => prev.map((s) => (s.id === selectedSupplier.id ? updatedSupplier : s)))
+    setSuppliersHandler((prev) => prev.map((s) => (s.id === selectedSupplier.id ? updatedSupplier : s)))
     setEditTargetModalOpen(false)
     toast.success(`Annual Target updated for ${selectedSupplier.name}!`)
   }
@@ -341,15 +346,15 @@ export default function SupplierCDRulesPage({ suppliers, setSuppliers, isLocked 
           </p>
         </div>
 
-        {/* Supplier Selection Dropdown */}
+        {/* Party Selection Dropdown */}
         <div className="w-full sm:w-80">
-          <Label className="text-xs font-bold text-slate-700">Select Supplier</Label>
+          <Label className="text-xs font-bold text-slate-700">Select Party</Label>
           <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
             <SelectTrigger className="h-10 text-xs bg-white font-semibold text-slate-900 border-slate-300 shadow-2xs">
-              <SelectValue placeholder="Choose supplier..." />
+              <SelectValue placeholder="Choose party..." />
             </SelectTrigger>
             <SelectContent>
-              {suppliers.map((s) => (
+              {suppliersList.map((s) => (
                 <SelectItem key={s.id} value={s.id} className="text-xs font-medium">
                   {s.name} {s.city ? `(${s.city})` : ''}
                 </SelectItem>
@@ -359,12 +364,14 @@ export default function SupplierCDRulesPage({ suppliers, setSuppliers, isLocked 
         </div>
       </div>
 
-      {/* When NO supplier is selected, display explicit clean placeholder */}
+      {/* When NO party is selected, display explicit clean placeholder */}
       {!selectedSupplier ? (
         <Card className="p-12 text-center border-dashed border-slate-300 bg-slate-50/50">
           <Info className="h-10 w-10 text-slate-400 mx-auto mb-2" />
-          <h3 className="text-sm font-bold text-slate-700">No Supplier Selected</h3>
-          <p className="text-xs text-slate-500 mt-1">Please select a supplier from the dropdown above to view or configure CD rules.</p>
+          <h3 className="text-sm font-bold text-slate-700 mb-1">No Party Selected</h3>
+          <p className="text-xs text-slate-500 max-w-sm mx-auto">
+            Please select a party from the dropdown above to view or configure their CD rules and annual targets.
+          </p>
         </Card>
       ) : (
         <div className="space-y-6">

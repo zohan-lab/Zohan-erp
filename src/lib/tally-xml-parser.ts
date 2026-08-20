@@ -1,4 +1,5 @@
 import {
+  Party,
   SalesInvoice,
   PurchaseInvoice,
   CustomerCreditNote,
@@ -573,6 +574,7 @@ function parseVouchersWithRegex(xmlContent: string): RawXmlVoucherData[] {
 export function parseTallyXmlVouchers(
   xmlInput: string | ArrayBuffer | Uint8Array,
   context?: {
+    parties?: Party[]
     customers?: Customer[]
     suppliers?: Supplier[]
     items?: Item[]
@@ -585,11 +587,13 @@ export function parseTallyXmlVouchers(
   const warnings: string[] = []
   const vouchers: TallyParsedXmlVoucher[] = []
 
-  const customers = context?.customers || []
-  const suppliers = context?.suppliers || []
+  const partiesList = context?.parties || []
+  const customers = context?.customers || partiesList
+  const suppliers = context?.suppliers || partiesList
   const items = context?.items || []
   const expenseTypes = context?.expenseTypes || []
   const counters = context?.counters || []
+
 
   const custMap = new Map(customers.map(c => [c.name.trim().toLowerCase(), c]))
   const suppMap = new Map(suppliers.map(s => [s.name.trim().toLowerCase(), s]))

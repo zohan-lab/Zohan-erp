@@ -1,6 +1,6 @@
 import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
 import { useState, useMemo } from 'react'
-import { PurchaseReturn, Supplier, Item, InvoiceItem, SupplierDebitNote } from '@/lib/types'
+import { PurchaseReturn, Party, Supplier, Item, InvoiceItem, SupplierDebitNote } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -24,7 +24,9 @@ import { ThreeDotDropdown } from '@/components/ui/three-dot-dropdown'
 interface PurchaseReturnPageProps {
   purchaseReturns: PurchaseReturn[]
   setPurchaseReturns: (updater: (prev: PurchaseReturn[]) => PurchaseReturn[]) => void
-  suppliers: Supplier[]
+  parties?: Party[]
+  setParties?: (updater: (prev: Party[]) => Party[]) => void
+  suppliers?: Supplier[]
   setSuppliers?: (updater: (prev: Supplier[]) => Supplier[]) => void
   items: Item[]
   setItems?: (updater: (prev: Item[]) => Item[]) => void
@@ -39,7 +41,9 @@ interface PurchaseReturnPageProps {
 export default function PurchaseReturnPage({
   purchaseReturns,
   setPurchaseReturns,
-  suppliers,
+  parties,
+  setParties,
+  suppliers = [],
   setSuppliers,
   items,
   setItems,
@@ -50,6 +54,9 @@ export default function PurchaseReturnPage({
   gstPercentage = 18,
   activeCompanyId
 }: PurchaseReturnPageProps) {
+  const suppliersList = parties || suppliers || []
+  const setSuppliersHandler = setParties || setSuppliers || (() => {})
+
   const [open, setOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<PurchaseReturn | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -113,10 +120,10 @@ export default function PurchaseReturnPage({
     return calculateInvoiceFinalAmount(itemsSubtotal, additionalCost, roundOffAdjustment)
   }, [itemsSubtotal, additionalCost, roundOffAdjustment])
 
-  const supplierMap = new Map(suppliers.map(s => [s.id, s]))
+  const supplierMap = new Map(suppliersList.map(s => [s.id, s]))
   const selectedSupplier = selectedSupplierId ? supplierMap.get(selectedSupplierId) : undefined
 
-  const filteredSuppliers = suppliers.filter((supplier) => {
+  const filteredSuppliers = suppliersList.filter((supplier) => {
     const query = supplierSearch.trim().toLowerCase()
     if (!query) return true
     return [supplier.name, supplier.phone, supplier.gstin]
@@ -489,20 +496,19 @@ export default function PurchaseReturnPage({
     toast.success('Purchase Return & associated Debit Note deleted')
   }
 
-  if (showQuickSupplier && setSuppliers) {
+  if (showQuickSupplier) {
     return (
       <PartyFullPageEditor
-        type="supplier"
-        existingParties={suppliers}
+        type="party"
+        existingParties={suppliersList}
         onSave={(party) => {
-          const supplier = party as Supplier
-          setSuppliers(prev => [...prev, supplier])
+          setSuppliersHandler(prev => [...prev, party])
           if (activeCompanyId) {
-            void saveEntityRemote(activeCompanyId, 'suppliers', supplier)
+            void saveEntityRemote(activeCompanyId, 'parties', party)
           }
-          setSelectedSupplierId(supplier.id)
+          setSelectedSupplierId(party.id)
           setShowQuickSupplier(false)
-          toast.success(`Supplier "${supplier.name}" added`)
+          toast.success(`Party "${party.name}" added`)
         }}
         onCancel={() => setShowQuickSupplier(false)}
       />

@@ -52,6 +52,7 @@ import {
   SupplierCreditNote,
   SupplierDebitNote,
   ExpenseEntry,
+  Party,
   Customer,
   Supplier,
   Payment,
@@ -76,13 +77,20 @@ import {
   downloadTallyXML
 } from '@/lib/tally-universal-engine'
 import {
-  parseTallyAccountingVouchersExcel,
   parseTallyPayments,
+  parseTallyAccountingVouchersExcel,
   exportPaymentsToTallyExcel,
   generateSampleTallyExcel,
   PaymentVoucher,
   TallyImportResult
 } from '@/lib/tally-payment-excel'
+import {
+  parseTallyXmlVouchers,
+  decodeXmlFileBuffer,
+  TallyParsedXmlVoucher,
+  TallyNewMasterCandidates
+} from '@/lib/tally-xml-parser'
+import { Counter, CashBankTransaction } from '@/lib/cash-bank-types'
 
 const STORAGE_KEY_TALLY_MAPPING = 'erp_tally_ledger_mapping'
 
@@ -114,6 +122,7 @@ export interface TallyExportDialogProps {
   expenseEntries?: ExpenseEntry[]
   payments?: Payment[]
   customerPayments?: CustomerPayment[]
+  parties?: Party[]
   customers?: Customer[]
   suppliers?: Supplier[]
   items?: Item[]
@@ -135,6 +144,7 @@ export function TallyExportDialog({
   expenseEntries = [],
   payments = [],
   customerPayments = [],
+  parties,
   customers = [],
   suppliers = [],
   items = [],
@@ -143,6 +153,8 @@ export function TallyExportDialog({
   companyStateCode = '19',
   currentFY = '2026-2027'
 }: TallyExportDialogProps) {
+  const suppliersList = parties || (suppliers.length > 0 ? suppliers : customers)
+  const customersList = parties || (customers.length > 0 ? customers : suppliers)
   // Period filter
   const currentMonthNum = new Date().getMonth() + 1
   const [selectedMonth, setSelectedMonth] = useState<string>(String(currentMonthNum))
@@ -655,14 +667,6 @@ export function TallyExportDialog({
   )
 }
 
-import {
-  parseTallyXmlVouchers,
-  decodeXmlFileBuffer,
-  TallyParsedXmlVoucher,
-  TallyNewMasterCandidates
-} from '@/lib/tally-xml-parser'
-import { Counter, CashBankTransaction } from '@/lib/cash-bank-types'
-
 export interface VoucherRowOverride {
   included: boolean
   typeOverride?: TallyParsedXmlVoucher['normalizedType']
@@ -677,6 +681,7 @@ export interface VoucherRowOverride {
 export interface TallyImportDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  parties?: Party[]
   customers?: Customer[]
   suppliers?: Supplier[]
   items?: Item[]
@@ -693,6 +698,7 @@ export interface TallyImportDialogProps {
       debitNotes?: SupplierDebitNote[]
       expenseEntries?: ExpenseEntry[]
       cashBankTransactions?: CashBankTransaction[]
+      newParties?: Party[]
       newCustomers?: Customer[]
       newSuppliers?: Supplier[]
       newExpenseTypes?: ExpenseType[]
@@ -705,6 +711,7 @@ export interface TallyImportDialogProps {
 export function TallyImportDialog({
   open,
   onOpenChange,
+  parties,
   customers = [],
   suppliers = [],
   items = [],
@@ -712,6 +719,8 @@ export function TallyImportDialog({
   counters = [],
   onCommitImport
 }: TallyImportDialogProps) {
+  const suppliersList = parties || (suppliers.length > 0 ? suppliers : customers)
+  const customersList = parties || (customers.length > 0 ? customers : suppliers)
   const [parsedVouchers, setParsedVouchers] = useState<TallyParsedXmlVoucher[]>([])
   const [candidateMasters, setCandidateMasters] = useState<TallyNewMasterCandidates | null>(null)
   const [autoCreateMasters, setAutoCreateMasters] = useState(true)

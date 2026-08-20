@@ -11,6 +11,7 @@ import {
   ExpenseEntry,
   Customer,
   Supplier,
+  Party,
   Item
 } from '@/lib/types'
 import {
@@ -60,8 +61,9 @@ interface GstReportsPageProps {
   supplierDebitNotes: SupplierDebitNote[]
   supplierCreditNotes: SupplierCreditNote[]
   expenseEntries: ExpenseEntry[]
-  customers: Customer[]
-  suppliers: Supplier[]
+  parties?: Party[]
+  customers?: Customer[]
+  suppliers?: Supplier[]
   items?: Item[]
   currentFY: string
   businessName?: string
@@ -95,6 +97,7 @@ export default function GstReportsPage({
   supplierDebitNotes = [],
   supplierCreditNotes = [],
   expenseEntries = [],
+  parties,
   customers = [],
   suppliers = [],
   items = [],
@@ -102,6 +105,9 @@ export default function GstReportsPage({
   businessName = 'SK TRADERS',
   companyStateCode = '19'
 }: GstReportsPageProps) {
+  const suppliersList = parties || (suppliers.length > 0 ? suppliers : customers)
+  const customersList = parties || (customers.length > 0 ? customers : suppliers)
+
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     const m = new Date().getMonth() + 1
     return String(m)
@@ -127,8 +133,8 @@ export default function GstReportsPage({
     supplierDebitNotes,
     supplierCreditNotes,
     expenseEntries,
-    customers,
-    suppliers,
+    customers: customersList,
+    suppliers: suppliersList,
     items,
     companyStateCode
   }), [
@@ -141,8 +147,8 @@ export default function GstReportsPage({
     supplierDebitNotes,
     supplierCreditNotes,
     expenseEntries,
-    customers,
-    suppliers,
+    customersList,
+    suppliersList,
     items,
     companyStateCode
   ])

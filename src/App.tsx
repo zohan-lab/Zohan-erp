@@ -2103,6 +2103,7 @@ function App() {
             <MasterDashboardPage
               currentUser={currentUser}
               cashBankCounters={visibleCashBankCounters}
+              parties={safeParties}
               suppliers={safeSuppliers}
               customers={safeCustomers}
               items={safeItems}
@@ -2223,6 +2224,8 @@ function App() {
               salesInvoices={safeSalesInvoices}
               purchaseReturns={safePurchaseReturns}
               salesReturns={safeSalesReturns}
+              parties={safeParties}
+              setParties={syncSetParties}
               suppliers={safeSuppliers}
               setSuppliers={syncSetSuppliers}
               payments={safePayments}
@@ -2255,6 +2258,8 @@ function App() {
               setMTBookings={syncSetMTBookings}
               invoices={safeInvoices}
               items={safeItems}
+              parties={safeParties}
+              setParties={syncSetParties}
               suppliers={safeSuppliers}
               fixedSchemes={safeFixedSchemes}
               currentFY={safeCurrentFY}
@@ -2275,6 +2280,8 @@ function App() {
               purchaseInvoices={safeInvoices}
               purchaseReturns={safePurchaseReturns}
               salesReturns={safeSalesReturns}
+              parties={safeParties}
+              setParties={syncSetParties}
               customers={safeCustomers}
               setCustomers={syncSetCustomers}
               customerPayments={safeCustomerPayments}
@@ -2297,6 +2304,8 @@ function App() {
             <CustomerPaymentsPage
               customerPayments={safeCustomerPayments}
               setCustomerPayments={syncSetCustomerPayments}
+              parties={safeParties}
+              setParties={syncSetParties}
               customers={safeCustomers}
               salesInvoices={safeSalesInvoices}
               currentFY={safeCurrentFY}
@@ -2314,6 +2323,8 @@ function App() {
         case 'supplier-cd-rules':
           return (
             <SupplierCDRulesPage
+              parties={safeParties}
+              setParties={syncSetParties}
               suppliers={safeSuppliers}
               setSuppliers={syncSetSuppliers}
               isLocked={isViewReadOnly('supplier-cd-rules')}
@@ -2324,6 +2335,7 @@ function App() {
             <FixedSchemesPage
               fixedSchemes={safeFixedSchemes}
               setFixedSchemes={syncSetFixedSchemes}
+              parties={safeParties}
               suppliers={safeSuppliers}
               currentFY={safeCurrentFY}
               isLocked={isViewReadOnly('fixed-schemes')}
@@ -2334,6 +2346,7 @@ function App() {
             <MTBookingsPage
               mtBookings={safeMTBookings}
               setMTBookings={syncSetMTBookings}
+              parties={safeParties}
               suppliers={safeSuppliers}
               fixedSchemes={safeFixedSchemes}
               invoices={safeInvoices}
@@ -2345,6 +2358,7 @@ function App() {
         case 'wallet':
           return (
             <DiscountWalletPage
+              parties={safeParties}
               suppliers={safeSuppliers}
               invoices={safeInvoices}
               payments={safePayments}
@@ -2364,6 +2378,7 @@ function App() {
         case 'annual':
           return (
             <AnnualDiscountPage
+              parties={safeParties}
               suppliers={safeSuppliers}
               invoices={safeInvoices}
               currentFY={safeCurrentFY}
@@ -2378,6 +2393,7 @@ function App() {
               setExpenseEntries={syncSetExpenseEntries}
               expenseTypes={safeExpenseTypes}
               setExpenseTypes={syncSetExpenseTypes}
+              parties={safeParties}
               suppliers={safeSuppliers}
               invoices={safeInvoices}
               currentFY={safeCurrentFY}
@@ -2396,6 +2412,7 @@ function App() {
             <CDProfitReportsPage
               purchaseInvoices={safeInvoices}
               salesInvoices={safeSalesInvoices}
+              parties={safeParties}
               suppliers={safeSuppliers}
               customers={safeCustomers}
               items={safeItems}
@@ -2410,6 +2427,7 @@ function App() {
         case 'customer-aging':
           return (
             <CustomerAgingReportPage
+              parties={safeParties}
               customers={safeCustomers}
               salesInvoices={safeSalesInvoices}
               customerPayments={safeCustomerPayments}
@@ -2444,6 +2462,7 @@ function App() {
               supplierDebitNotes={safeDebitNotes}
               supplierCreditNotes={safeSupplierCreditNotes}
               expenseEntries={safeExpenseEntries}
+              parties={safeParties}
               customers={safeCustomers}
               suppliers={safeSuppliers}
               items={safeItems}
@@ -2461,6 +2480,7 @@ function App() {
               salesInvoices={safeSalesInvoices}
               purchaseReturns={safePurchaseReturns}
               salesReturns={safeSalesReturns}
+              parties={safeParties}
               customers={safeCustomers}
               customerPayments={safeCustomerPayments}
               customerDebitNotes={safeCustomerDebitNotes}
@@ -2479,6 +2499,7 @@ function App() {
             <CDAtRiskReportPage
               purchaseInvoices={safeInvoices}
               payments={safePayments}
+              parties={safeParties}
               suppliers={safeSuppliers}
               items={safeItems}
               currentFY={safeCurrentFY}
@@ -2490,6 +2511,7 @@ function App() {
             <PurchaseInvoiceDetailsPage
               invoices={safeInvoices}
               payments={safePayments}
+              parties={safeParties}
               suppliers={safeSuppliers}
               items={safeItems}
               fixedSchemes={safeFixedSchemes}
@@ -2506,6 +2528,7 @@ function App() {
             <PaymentDetailsPage
               payments={safePayments}
               invoices={safeInvoices}
+              parties={safeParties}
               suppliers={safeSuppliers}
               fixedSchemes={safeFixedSchemes}
               mtBookings={mtBookings}
@@ -2578,6 +2601,8 @@ function App() {
             <SalesReturnPage
               salesReturns={safeSalesReturns}
               setSalesReturns={syncSetSalesReturns}
+              parties={safeParties}
+              setParties={syncSetParties}
               customers={safeCustomers}
               setCustomers={syncSetCustomers}
               items={safeItems}
@@ -2594,6 +2619,8 @@ function App() {
             <PurchaseReturnPage
               purchaseReturns={safePurchaseReturns}
               setPurchaseReturns={syncSetPurchaseReturns}
+              parties={safeParties}
+              setParties={syncSetParties}
               suppliers={safeSuppliers}
               setSuppliers={syncSetSuppliers}
               items={safeItems}
@@ -2972,6 +2999,7 @@ function App() {
             onLogout={handleLogout}
             payments={safePayments}
             customerPayments={safeCustomerPayments}
+            parties={safeParties}
             suppliers={safeSuppliers}
             customers={safeCustomers}
             onOpenTallyExport={() => setActiveView('tally-integration')}

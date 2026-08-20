@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import {
+  Party,
   Customer,
   SalesInvoice,
   CustomerPayment,
@@ -8,7 +9,9 @@ import {
   SalesReturn
 } from '@/lib/types'
 import {
+  computePartyAging,
   computeCustomerAging,
+  PartyAgingSummary,
   CustomerAgingSummary,
   CustomerBillAging
 } from '@/lib/customer-aging-engine'
@@ -56,7 +59,8 @@ import {
 } from '@phosphor-icons/react'
 
 interface CustomerAgingReportPageProps {
-  customers: Customer[]
+  parties?: Party[]
+  customers?: Customer[]
   salesInvoices: SalesInvoice[]
   customerPayments: CustomerPayment[]
   creditNotes?: CustomerCreditNote[]
@@ -71,6 +75,7 @@ type SortField = 'outstanding' | 'maxOverdue' | 'name' | 'bracket90plus'
 type SortOrder = 'asc' | 'desc'
 
 export default function CustomerAgingReportPage({
+  parties,
   customers = [],
   salesInvoices = [],
   customerPayments = [],
@@ -80,12 +85,14 @@ export default function CustomerAgingReportPage({
   currentFY,
   businessName = 'SK TRADERS'
 }: CustomerAgingReportPageProps) {
+  const partiesList = parties || customers || []
   const [periodFilter, setPeriodFilter] = useState<PeriodFilterState>(defaultPeriodFilterState)
   const [searchQuery, setSearchQuery] = useState('')
   const [activeTab, setActiveTab] = useState<FilterTab>('all')
   const [sortField, setSortField] = useState<SortField>('outstanding')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerAgingSummary | null>(null)
+
 
   // 1. Date Filter Logic
   const filteredSalesInvoices = useMemo(() => {
@@ -100,7 +107,7 @@ export default function CustomerAgingReportPage({
   // 2. Compute Aging Aggregate
   const agingAggregate = useMemo(() => {
     return computeCustomerAging(
-      customers,
+      partiesList,
       filteredSalesInvoices,
       customerPayments,
       creditNotes,
@@ -108,7 +115,7 @@ export default function CustomerAgingReportPage({
       new Date(),
       customerDebitNotes
     )
-  }, [customers, filteredSalesInvoices, customerPayments, creditNotes, salesReturns, customerDebitNotes])
+  }, [partiesList, filteredSalesInvoices, customerPayments, creditNotes, salesReturns, customerDebitNotes])
 
   // 3. Search & Tab Filtered Customers
   const processedCustomers = useMemo(() => {

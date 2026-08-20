@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Supplier, PurchaseInvoice } from '@/lib/types'
+import { Party, Supplier, PurchaseInvoice } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
@@ -15,25 +15,28 @@ import {
 import { exportAnnualDiscountPDF } from '@/lib/pdf-export'
 
 interface AnnualDiscountPageProps {
-  suppliers: Supplier[]
+  parties?: Party[]
+  suppliers?: Supplier[]
   invoices: PurchaseInvoice[]
   currentFY: string
   businessName?: string
 }
 
 export default function AnnualDiscountPage({
-  suppliers,
+  parties,
+  suppliers = [],
   invoices,
   currentFY,
   businessName
 }: AnnualDiscountPageProps) {
+  const suppliersList = parties || suppliers || []
   const [selectedSupplier, setSelectedSupplier] = useState<string>('all')
 
   const fyInvoices = useMemo(() => invoices.filter(inv => inv.fy === currentFY || (inv.invoiceDate && getFYFromDate(inv.invoiceDate) === currentFY)), [invoices, currentFY])
 
   const expectedAnnual = useMemo(() => 
-    calculateExpectedAnnualDiscounts(fyInvoices, suppliers),
-    [fyInvoices, suppliers]
+    calculateExpectedAnnualDiscounts(fyInvoices, suppliersList),
+    [fyInvoices, suppliersList]
   )
 
   const filteredExpected = expectedAnnual.filter(exp => {
@@ -41,7 +44,7 @@ export default function AnnualDiscountPage({
     return true
   })
 
-  const suppliersWithTargets = suppliers.filter(s => s.annualTarget)
+  const suppliersWithTargets = suppliersList.filter(s => s.annualTarget)
 
   const pendingForExport = useMemo(() => 
     filteredExpected.map(exp => ({
@@ -57,7 +60,7 @@ export default function AnnualDiscountPage({
     exportAnnualDiscountPDF(
       pendingForExport,
       [],
-      suppliers,
+      suppliersList,
       {
         title: 'Annual Target Progress Report',
         fy: currentFY,
@@ -99,13 +102,13 @@ export default function AnnualDiscountPage({
         </CardHeader>
         <CardContent>
           <div className="flex-1">
-            <Label className="text-xs mb-2 block">Supplier</Label>
+            <Label className="text-xs mb-2 block">Party</Label>
             <Select value={selectedSupplier} onValueChange={setSelectedSupplier}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Suppliers</SelectItem>
+                <SelectItem value="all">All Parties</SelectItem>
                 {suppliersWithTargets.map(supplier => (
                   <SelectItem key={supplier.id} value={supplier.id}>
                     {supplier.name}
@@ -122,7 +125,7 @@ export default function AnnualDiscountPage({
           <CardContent className="flex flex-col items-center justify-center py-12">
             <Target size={48} className="text-muted-foreground mb-4" />
             <p className="text-muted-foreground text-center">
-              No suppliers with annual targets configured. Add annual targets to suppliers first.
+              No parties with annual targets configured. Add annual targets to parties in CD Rules first.
             </p>
           </CardContent>
         </Card>
@@ -144,7 +147,7 @@ export default function AnnualDiscountPage({
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Supplier</TableHead>
+                      <TableHead>Party</TableHead>
                       <TableHead className="text-right">Target MT</TableHead>
                       <TableHead className="text-right">Achieved MT</TableHead>
                       <TableHead className="text-right">Progress %</TableHead>

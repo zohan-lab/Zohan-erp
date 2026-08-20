@@ -1,6 +1,6 @@
 import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
 import { useState, useMemo, useEffect } from 'react'
-import { FixedScheme, Supplier } from '@/lib/types'
+import { FixedScheme, Party, Supplier } from '@/lib/types'
 import { getAvailableUnits } from '@/lib/custom-data-store'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,7 +19,8 @@ import { toast } from 'sonner'
 interface FixedSchemesPageProps {
   fixedSchemes: FixedScheme[]
   setFixedSchemes: (updater: (prev: FixedScheme[]) => FixedScheme[]) => void
-  suppliers: Supplier[]
+  parties?: Party[]
+  suppliers?: Supplier[]
   currentFY: string
   isLocked?: boolean
 }
@@ -32,8 +33,10 @@ function addDays(date: string, days: number): string {
   return value.toISOString().split('T')[0]
 }
 
-export default function FixedSchemesPage({ fixedSchemes, setFixedSchemes, suppliers, currentFY, isLocked = false }: FixedSchemesPageProps) {
+export default function FixedSchemesPage({ fixedSchemes, setFixedSchemes, parties, suppliers = [], currentFY, isLocked = false }: FixedSchemesPageProps) {
+  const suppliersList = parties || suppliers || []
   const [availableUnits, setAvailableUnits] = useState(() => getAvailableUnits())
+
 
   useEffect(() => {
     const syncUnits = () => setAvailableUnits(getAvailableUnits())
@@ -187,7 +190,7 @@ export default function FixedSchemesPage({ fixedSchemes, setFixedSchemes, suppli
   }
 
   const getSupplierName = (supplierId: string) => {
-    return suppliers.find(s => s.id === supplierId)?.name || 'Unknown Supplier'
+    return suppliersList.find(s => s.id === supplierId)?.name || 'Unknown Party'
   }
 
   const getSchemeStatus = (scheme: FixedScheme): 'active' | 'expired' | 'upcoming' => {
@@ -279,13 +282,13 @@ export default function FixedSchemesPage({ fixedSchemes, setFixedSchemes, suppli
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="supplierId">Supplier *</Label>
+                <Label htmlFor="supplierId">Party *</Label>
                 <Select name="supplierId" defaultValue={editingScheme?.supplierId} required>
                   <SelectTrigger>
-                    <SelectValue placeholder="Select supplier" />
+                    <SelectValue placeholder="Select party" />
                   </SelectTrigger>
                   <SelectContent>
-                    {suppliers.map(supplier => (
+                    {suppliersList.map(supplier => (
                       <SelectItem key={supplier.id} value={supplier.id}>
                         {supplier.name}
                       </SelectItem>
@@ -426,14 +429,14 @@ export default function FixedSchemesPage({ fixedSchemes, setFixedSchemes, suppli
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="supplier-filter">Supplier</Label>
+              <Label htmlFor="supplier-filter">Party</Label>
               <Select value={supplierFilter} onValueChange={setSupplierFilter}>
                 <SelectTrigger id="supplier-filter">
-                  <SelectValue placeholder="All Suppliers" />
+                  <SelectValue placeholder="All Parties" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Suppliers</SelectItem>
-                  {suppliers.map(supplier => (
+                  <SelectItem value="all">All Parties</SelectItem>
+                  {suppliersList.map(supplier => (
                     <SelectItem key={supplier.id} value={supplier.id}>
                       {supplier.name}
                     </SelectItem>

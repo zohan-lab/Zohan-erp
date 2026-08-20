@@ -1,6 +1,6 @@
 import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
 import { useState, useMemo } from 'react'
-import { SalesReturn, Customer, Item, InvoiceItem, CustomerCreditNote } from '@/lib/types'
+import { SalesReturn, Party, Customer, Item, InvoiceItem, CustomerCreditNote } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -24,7 +24,9 @@ import { ThreeDotDropdown } from '@/components/ui/three-dot-dropdown'
 interface SalesReturnPageProps {
   salesReturns: SalesReturn[]
   setSalesReturns: (updater: (prev: SalesReturn[]) => SalesReturn[]) => void
-  customers: Customer[]
+  parties?: Party[]
+  setParties?: (updater: (prev: Party[]) => Party[]) => void
+  customers?: Customer[]
   setCustomers?: (updater: (prev: Customer[]) => Customer[]) => void
   items: Item[]
   setItems?: (updater: (prev: Item[]) => Item[]) => void
@@ -39,7 +41,9 @@ interface SalesReturnPageProps {
 export default function SalesReturnPage({
   salesReturns,
   setSalesReturns,
-  customers,
+  parties,
+  setParties,
+  customers = [],
   setCustomers,
   items,
   setItems,
@@ -50,6 +54,9 @@ export default function SalesReturnPage({
   gstPercentage = 18,
   activeCompanyId
 }: SalesReturnPageProps) {
+  const customersList = parties || customers || []
+  const setCustomersHandler = setParties || setCustomers || (() => {})
+
   const [open, setOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<SalesReturn | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -110,10 +117,10 @@ export default function SalesReturnPage({
     return calculateInvoiceFinalAmount(itemsSubtotal, additionalCost, roundOffAdjustment)
   }, [itemsSubtotal, additionalCost, roundOffAdjustment])
 
-  const customerMap = new Map(customers.map(c => [c.id, c]))
+  const customerMap = new Map(customersList.map(c => [c.id, c]))
   const selectedCustomer = selectedCustomerId ? customerMap.get(selectedCustomerId) : undefined
 
-  const filteredCustomers = customers.filter((customer) => {
+  const filteredCustomers = customersList.filter((customer) => {
     const query = customerSearch.trim().toLowerCase()
     if (!query) return true
     return [customer.name, customer.phone, customer.gstin]
@@ -485,20 +492,19 @@ export default function SalesReturnPage({
     toast.success('Sales Return & associated Credit Note deleted')
   }
 
-  if (showQuickCustomer && setCustomers) {
+  if (showQuickCustomer) {
     return (
       <PartyFullPageEditor
-        type="customer"
-        existingParties={customers}
+        type="party"
+        existingParties={customersList}
         onSave={(party) => {
-          const customer = party as Customer
-          setCustomers(prev => [...prev, customer])
+          setCustomersHandler(prev => [...prev, party])
           if (activeCompanyId) {
-            void saveEntityRemote(activeCompanyId, 'customers', customer)
+            void saveEntityRemote(activeCompanyId, 'parties', party)
           }
-          setSelectedCustomerId(customer.id)
+          setSelectedCustomerId(party.id)
           setShowQuickCustomer(false)
-          toast.success(`Customer "${customer.name}" added`)
+          toast.success(`Party "${party.name}" added`)
         }}
         onCancel={() => setShowQuickCustomer(false)}
       />

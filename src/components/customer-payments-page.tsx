@@ -1,6 +1,6 @@
 import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
 import { useState, useMemo, useEffect } from 'react'
-import { CustomerPayment, Customer, SalesInvoice } from '@/lib/types'
+import { CustomerPayment, Party, Customer, SalesInvoice } from '@/lib/types'
 import { Counter, CashBankTransaction } from '@/lib/cash-bank-types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -27,7 +27,9 @@ import { PeriodDateFilter, PeriodFilterState, defaultPeriodFilterState, isRecord
 interface CustomerPaymentsPageProps {
   customerPayments: CustomerPayment[]
   setCustomerPayments: (updater: (prev: CustomerPayment[]) => CustomerPayment[]) => void
-  customers: Customer[]
+  parties?: Party[]
+  setParties?: (updater: (prev: Party[]) => Party[]) => void
+  customers?: Customer[]
   salesInvoices: SalesInvoice[]
   currentFY: string
   isLocked?: boolean
@@ -38,7 +40,8 @@ interface CustomerPaymentsPageProps {
   onUpdateCashBank: (counters: Counter[], transactions: CashBankTransaction[]) => void
 }
 
-export default function CustomerPaymentsPage({ customerPayments, setCustomerPayments, customers, salesInvoices, currentFY, isLocked = false, activeCompanyId, activeFY, counters, transactions, onUpdateCashBank }: CustomerPaymentsPageProps) {
+export default function CustomerPaymentsPage({ customerPayments, setCustomerPayments, parties, customers = [], salesInvoices, currentFY, isLocked = false, activeCompanyId, activeFY, counters, transactions, onUpdateCashBank }: CustomerPaymentsPageProps) {
+  const customersList = parties || customers || []
   const [open, setOpen] = useState(false)
   const [editingPayment, setEditingPayment] = useState<CustomerPayment | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -50,8 +53,9 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
   const [selectedCounterId, setSelectedCounterId] = useState<string>('')
 
   const calculateCustomerOutstanding = (customerId: string): number => {
-    const fySalesInvoices = salesInvoices.filter(inv => inv.customerId === customerId)
-    const fyCustomerPayments = customerPayments.filter(p => p.customerId === customerId)
+    const fySalesInvoices = salesInvoices.filter(inv => inv.partyId === customerId || inv.customerId === customerId)
+    const fyCustomerPayments = customerPayments.filter(p => p.partyId === customerId || p.customerId === customerId)
+
 
     const totalReceivables = fySalesInvoices.reduce((sum, inv) => sum + inv.invoiceAmount, 0)
     const totalPaymentsReceived = fyCustomerPayments.reduce((sum, p) => sum + p.amount, 0)
@@ -70,8 +74,8 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
   }, [customerPayments, periodFilter, currentFY, selectedCustomer])
 
   const customerMap = useMemo(() => {
-    return new Map(customers.map(c => [c.id, c]))
-  }, [customers])
+    return new Map(customersList.map(c => [c.id, c]))
+  }, [customersList])
 
   const getCustomerName = (customerId: string) => {
     return customerMap.get(customerId)?.name || 'Unknown'
@@ -353,22 +357,22 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold flex items-center gap-2">
               <CurrencyInr size={22} weight="duotone" className="text-primary" />
-              Customer Payments Received
+              Payment In (Receipts)
             </h3>
             <Dialog open={open} onOpenChange={handleOpenChange}>
               <DialogTrigger asChild>
-                <Button onClick={handleAdd} disabled={customers.length === 0}>
+                <Button onClick={handleAdd} disabled={customersList.length === 0}>
                   <Plus size={18} weight="bold" />
                   Add Payment
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>{editingPayment ? 'Edit Customer Payment' : 'Record Customer Payment'}</DialogTitle>
+                  <DialogTitle>{editingPayment ? 'Edit Payment In' : 'Record Payment In'}</DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} key={editingPayment?.id || 'new-cust-payment'} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="customerId">Customer *</Label>
+                    <Label htmlFor="customerId">Party *</Label>
                     <Popover open={customerComboboxOpen} onOpenChange={setCustomerComboboxOpen}>
                       <PopoverTrigger asChild>
                         <Button
@@ -378,18 +382,18 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
                           className="w-full justify-between"
                         >
                           {selectedCustomerInForm
-                            ? customers.find((customer) => customer.id === selectedCustomerInForm)?.name
-                            : "Select customer..."}
+                            ? customersList.find((customer) => customer.id === selectedCustomerInForm)?.name
+                            : "Select party..."}
                           <CaretUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-full p-0" align="start">
                         <Command>
-                          <CommandInput placeholder="Search customer..." className="h-9" />
+                          <CommandInput placeholder="Search party..." className="h-9" />
                           <CommandList>
-                            <CommandEmpty>No customer found.</CommandEmpty>
+                            <CommandEmpty>No party found.</CommandEmpty>
                             <CommandGroup>
-                              {customers.map((customer) => (
+                              {customersList.map((customer) => (
                                 <CommandItem
                                   key={customer.id}
                                   value={customer.name}
@@ -521,14 +525,14 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
           <div className="flex items-center gap-4 flex-wrap mb-4">
             <div className="flex items-center gap-2">
               <FunnelSimple size={18} className="text-muted-foreground" />
-              <Label htmlFor="customer-filter" className="text-sm font-medium">Customer:</Label>
+              <Label htmlFor="customer-filter" className="text-sm font-medium">Party:</Label>
               <Select value={selectedCustomer} onValueChange={setSelectedCustomer}>
                 <SelectTrigger id="customer-filter" className="w-48 h-9">
-                  <SelectValue placeholder="All Customers" />
+                  <SelectValue placeholder="All Parties" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Customers</SelectItem>
-                  {customers.map(customer => (
+                  <SelectItem value="all">All Parties</SelectItem>
+                  {customersList.map(customer => (
                     <SelectItem key={customer.id} value={customer.id}>
                       {customer.name}
                     </SelectItem>
@@ -544,10 +548,10 @@ export default function CustomerPaymentsPage({ customerPayments, setCustomerPaym
             </Badge>
           </div>
 
-          {customers.length === 0 ? (
+          {customersList.length === 0 ? (
             <div className="border border-dashed border-warning rounded-lg p-8 text-center bg-warning/5">
               <Info size={32} weight="duotone" className="mx-auto mb-2 text-warning" />
-              <p className="text-muted-foreground">Please add customers first to record payments.</p>
+              <p className="text-muted-foreground">Please add parties first to record payments.</p>
             </div>
           ) : (
             <div className="rounded-lg border border-border">

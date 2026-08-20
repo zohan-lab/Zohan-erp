@@ -40,7 +40,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Plus, Pencil, Trash, BookBookmark, Lock, Funnel, X, FilePdf } from '@phosphor-icons/react'
 import { toast } from 'sonner'
-import { MTBooking, Supplier, FixedScheme, PurchaseInvoice, Item } from '@/lib/types'
+import { MTBooking, Party, Supplier, FixedScheme, PurchaseInvoice, Item } from '@/lib/types'
 import { formatCurrency, formatMT, calculateBookingConsumedMT, calculateBookingConsumption, getBookingNormalizedMT, roundQuantity } from '@/lib/calculations'
 import { getAvailableUnits } from '@/lib/custom-data-store'
 import { exportMTBookingsPDF } from '@/lib/pdf-export'
@@ -57,7 +57,8 @@ const formatDate = (dateStr: string): string => {
 interface MTBookingsPageProps {
   mtBookings: MTBooking[]
   setMTBookings: (updater: (prev: MTBooking[]) => MTBooking[]) => void
-  suppliers: Supplier[]
+  parties?: Party[]
+  suppliers?: Supplier[]
   fixedSchemes: FixedScheme[]
   invoices: PurchaseInvoice[]
   items?: Item[]
@@ -87,13 +88,15 @@ interface NewSchemeFormData {
 export default function MTBookingsPage({
   mtBookings,
   setMTBookings,
-  suppliers,
+  parties,
+  suppliers = [],
   fixedSchemes,
   invoices,
   items,
   currentFY,
   isLocked
 }: MTBookingsPageProps) {
+  const suppliersList = parties || suppliers || []
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingBooking, setEditingBooking] = useState<MTBooking | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -127,8 +130,8 @@ export default function MTBookingsPage({
   })
 
   const getSupplierName = (supplierId: string) => {
-    const supplier = suppliers.find(s => s.id === supplierId)
-    return supplier?.name || 'Unknown'
+    const supplier = suppliersList.find(s => s.id === supplierId)
+    return supplier ? supplier.name : 'Unknown Party'
   }
 
   const getActiveSchemesForDate = (supplierId: string, orderDate: string): { schemes: any[], totalRate: number } => {
@@ -440,8 +443,8 @@ export default function MTBookingsPage({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Suppliers</SelectItem>
-                {suppliers.map(supplier => (
+                <SelectItem value="all">All Parties</SelectItem>
+                {suppliersList.map(supplier => (
                   <SelectItem key={supplier.id} value={supplier.id}>
                     {supplier.name}
                   </SelectItem>
@@ -640,12 +643,12 @@ export default function MTBookingsPage({
                   <SelectValue placeholder="Select supplier" />
                 </SelectTrigger>
                 <SelectContent>
-                  {suppliers.length === 0 ? (
+                  {suppliersList.length === 0 ? (
                     <SelectItem value="no-suppliers" disabled>
-                      No suppliers available
+                      No parties available
                     </SelectItem>
                   ) : (
-                    suppliers.map((supplier) => (
+                    suppliersList.map((supplier) => (
                       <SelectItem key={supplier.id} value={supplier.id}>
                         {supplier.name}
                       </SelectItem>

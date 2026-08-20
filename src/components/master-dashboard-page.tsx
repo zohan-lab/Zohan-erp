@@ -11,6 +11,7 @@ import {
   SalesInvoice,
   Payment,
   CustomerPayment,
+  Party,
   Supplier,
   Customer,
   Item,
@@ -77,8 +78,9 @@ function formatUnitSummary(volumeMap: Record<string, number>, maxUnits: number =
 interface MasterDashboardPageProps {
   currentUser?: any
   cashBankCounters?: any[]
-  suppliers: Supplier[]
-  customers: Customer[]
+  parties?: Party[]
+  suppliers?: Supplier[]
+  customers?: Customer[]
   items: Item[]
   purchaseInvoices: PurchaseInvoice[]
   salesInvoices: SalesInvoice[]
@@ -117,8 +119,11 @@ function Sparkline({ color }: { color: string }) {
 }
 
 export default function MasterDashboardPage({
-  suppliers,
-  customers,
+  currentUser,
+  cashBankCounters = [],
+  parties,
+  suppliers = [],
+  customers = [],
   items,
   purchaseInvoices,
   salesInvoices,
@@ -134,6 +139,9 @@ export default function MasterDashboardPage({
   currentFY,
   onNavigateToReport
 }: MasterDashboardPageProps) {
+  const suppliersList = parties || (suppliers.length > 0 ? suppliers : customers)
+  const customersList = parties || (customers.length > 0 ? customers : suppliers)
+
   const { allocations: paymentAllocations, paymentAdvanceInfo } = useMemo(() => {
     return calculatePaymentAllocations(payments, purchaseInvoices)
   }, [payments, purchaseInvoices])
@@ -144,24 +152,24 @@ export default function MasterDashboardPage({
       payments,
       paymentAllocations,
       paymentAdvanceInfo,
-      suppliers,
+      suppliersList,
       fixedSchemes,
       mtBookings,
       items
     )
-  }, [purchaseInvoices, payments, paymentAllocations, paymentAdvanceInfo, suppliers, fixedSchemes, mtBookings, items])
+  }, [purchaseInvoices, payments, paymentAllocations, paymentAdvanceInfo, suppliersList, fixedSchemes, mtBookings, items])
 
   const expectedAnnual = useMemo(() => {
-    return calculateExpectedAnnualDiscounts(purchaseInvoices, suppliers)
-  }, [purchaseInvoices, suppliers])
+    return calculateExpectedAnnualDiscounts(purchaseInvoices, suppliersList)
+  }, [purchaseInvoices, suppliersList])
 
   const inventoryData = useMemo(() => {
     return calculateInventoryReport(items, purchaseInvoices, salesInvoices, purchaseReturns, salesReturns)
   }, [items, purchaseInvoices, salesInvoices, purchaseReturns, salesReturns])
 
   const cdAtRiskData = useMemo(() => {
-    return calculateCDAtRisk(purchaseInvoices, payments, paymentAllocations, suppliers, items)
-  }, [purchaseInvoices, payments, paymentAllocations, suppliers, items])
+    return calculateCDAtRisk(purchaseInvoices, payments, paymentAllocations, suppliersList, items)
+  }, [purchaseInvoices, payments, paymentAllocations, suppliersList, items])
 
   const totalPayables = useMemo(() => {
     const totalInvoiceAmount = purchaseInvoices.reduce((sum, inv) => sum + inv.invoiceAmount, 0)
@@ -341,7 +349,7 @@ export default function MasterDashboardPage({
     }> = []
 
     purchaseInvoices.forEach(inv => {
-      const supplier = suppliers.find(s => s.id === inv.supplierId)
+      const supplier = suppliersList.find(s => s.id === inv.supplierId)
       const d = new Date(inv.invoiceDate)
       allTransactions.push({
         rawDate: d,
@@ -355,7 +363,7 @@ export default function MasterDashboardPage({
     })
 
     salesInvoices.forEach(inv => {
-      const customer = customers.find(c => c.id === inv.customerId)
+      const customer = customersList.find(c => c.id === inv.customerId)
       const d = new Date(inv.invoiceDate)
       allTransactions.push({
         rawDate: d,
@@ -369,13 +377,13 @@ export default function MasterDashboardPage({
     })
 
     payments.forEach(payment => {
-      const supplier = suppliers.find(s => s.id === payment.supplierId)
+      const supplier = suppliersList.find(s => s.id === payment.supplierId)
       const d = new Date(payment.paymentDate)
       allTransactions.push({
         rawDate: d,
         dateFormatted: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ', 11:24 AM',
         type: 'Payment',
-        description: `Payment to ${supplier?.name || 'Supplier'}`,
+        description: `Payment to ${supplier?.name || 'Party'}`,
         module: 'Purchase',
         amount: payment.amount,
         status: 'Completed'
@@ -383,13 +391,13 @@ export default function MasterDashboardPage({
     })
 
     customerPayments.forEach(payment => {
-      const customer = customers.find(c => c.id === payment.customerId)
+      const customer = customersList.find(c => c.id === payment.customerId)
       const d = new Date(payment.paymentDate)
       allTransactions.push({
         rawDate: d,
         dateFormatted: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ', 04:45 PM',
         type: 'Payment',
-        description: `Payment from ${customer?.name || 'Customer'}`,
+        description: `Payment from ${customer?.name || 'Party'}`,
         module: 'Sales',
         amount: payment.amount,
         status: 'Completed'
@@ -399,7 +407,7 @@ export default function MasterDashboardPage({
     return allTransactions
       .sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime())
       .slice(0, 10)
-  }, [purchaseInvoices, salesInvoices, payments, customerPayments, suppliers, customers])
+  }, [purchaseInvoices, salesInvoices, payments, customerPayments, suppliersList, customersList])
 
   const totalExpenseVal = expenseDistribution.reduce((acc, curr) => acc + curr.value, 0)
 
@@ -409,7 +417,7 @@ export default function MasterDashboardPage({
   const topSuppliers = useMemo(() => {
     const supplierTotals: { [id: string]: { name: string; totalAmount: number; count: number } } = {}
     purchaseInvoices.forEach(inv => {
-      const s = suppliers.find(sup => sup.id === inv.supplierId)
+      const s = suppliersList.find(sup => sup.id === inv.supplierId)
       if (s) {
         if (!supplierTotals[s.id]) supplierTotals[s.id] = { name: s.name, totalAmount: 0, count: 0 }
         supplierTotals[s.id].totalAmount += inv.invoiceAmount
@@ -419,13 +427,13 @@ export default function MasterDashboardPage({
     return Object.values(supplierTotals)
       .sort((a, b) => b.totalAmount - a.totalAmount)
       .slice(0, 5)
-  }, [purchaseInvoices, suppliers])
+  }, [purchaseInvoices, suppliersList])
 
   // 2. Top Buyers (Customers) by Sales Value
   const topBuyers = useMemo(() => {
     const customerTotals: { [id: string]: { name: string; totalAmount: number; count: number } } = {}
     salesInvoices.forEach(inv => {
-      const c = customers.find(cust => cust.id === inv.customerId)
+      const c = customersList.find(cust => cust.id === inv.customerId)
       if (c) {
         if (!customerTotals[c.id]) customerTotals[c.id] = { name: c.name, totalAmount: 0, count: 0 }
         customerTotals[c.id].totalAmount += inv.invoiceAmount
@@ -672,7 +680,7 @@ export default function MasterDashboardPage({
       <CDExpiryAlert
         purchaseInvoices={purchaseInvoices}
         payments={payments}
-        suppliers={suppliers}
+        suppliers={suppliersList}
         onNavigateToReport={() => onNavigateToReport('cd-risk')}
       />
 

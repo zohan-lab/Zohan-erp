@@ -8,7 +8,7 @@ import {
   ImportSummary,
   ExportOptions
 } from './tally-payment-types'
-import { Customer, Supplier, Item, ExpenseType } from './types'
+import { Party, Customer, Supplier, Item, ExpenseType } from './types'
 import { Counter } from './cash-bank-types'
 import {
   TallyParsedXmlVoucher,
@@ -1005,6 +1005,7 @@ export function generateSampleTallyExcel(filename = 'AccountingVouchers_Sample.x
 export function parseTallyAccountingVouchersExcel(
   fileBuffer: ArrayBuffer | Uint8Array,
   context?: {
+    parties?: Party[]
     customers?: Customer[]
     suppliers?: Supplier[]
     items?: Item[]
@@ -1017,13 +1018,15 @@ export function parseTallyAccountingVouchersExcel(
   const warnings: string[] = []
   const vouchers: TallyParsedXmlVoucher[] = []
 
-  const customers = context?.customers || []
-  const suppliers = context?.suppliers || []
+  const partiesList = context?.parties || []
+  const customers = context?.customers || partiesList
+  const suppliers = context?.suppliers || partiesList
   const items = context?.items || []
   const expenseTypes = context?.expenseTypes || []
   const counters = context?.counters || []
   const custMap = new Map(customers.map(c => [c.name.trim().toLowerCase(), c]))
   const suppMap = new Map(suppliers.map(s => [s.name.trim().toLowerCase(), s]))
+
   const expMap = new Map(expenseTypes.map(e => [e.name.trim().toLowerCase(), e]))
   const counterMap = new Map(counters.map(cnt => [cnt.name.trim().toLowerCase(), cnt]))
   const itemMap = new Map(items.map(it => [it.name.trim().toLowerCase(), it]))

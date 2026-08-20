@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
-import { ExpenseEntry, ExpenseType, Supplier, PurchaseInvoice } from '@/lib/types'
+import { ExpenseEntry, ExpenseType, Party, Supplier, PurchaseInvoice } from '@/lib/types'
 import { Counter, CashBankTransaction, isBankType } from '@/lib/cash-bank-types'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
@@ -50,7 +50,8 @@ interface ExpenseEntriesPageProps {
   setExpenseEntries: (updater: (prev: ExpenseEntry[]) => ExpenseEntry[]) => void
   expenseTypes: ExpenseType[]
   setExpenseTypes?: (updater: (prev: ExpenseType[]) => ExpenseType[]) => void
-  suppliers: Supplier[]
+  parties?: Party[]
+  suppliers?: Supplier[]
   invoices: PurchaseInvoice[]
   currentFY: string
   isLocked?: boolean
@@ -65,6 +66,7 @@ export default function ExpenseEntriesPage({
   setExpenseEntries,
   expenseTypes = [],
   setExpenseTypes,
+  parties,
   suppliers = [],
   invoices = [],
   currentFY,
@@ -74,6 +76,7 @@ export default function ExpenseEntriesPage({
   onUpdateCashBank,
   activeCompanyId
 }: ExpenseEntriesPageProps) {
+  const suppliersList = parties || suppliers || []
   // Form State for Expense Entry
   const [editingExpense, setEditingExpense] = useState<ExpenseEntry | null>(null)
   const [expenseTypeId, setExpenseTypeId] = useState('')
@@ -182,7 +185,7 @@ export default function ExpenseEntriesPage({
     })
 
     // 2. Source A: Verified Supplier Master (Always takes precedence and overrides source tag to Supplier Master)
-    suppliers.forEach((s) => {
+    suppliersList.forEach((s) => {
       const rawName = (s.name || '').trim()
       if (!rawName) return
       const key = rawName.toLowerCase()
@@ -197,7 +200,7 @@ export default function ExpenseEntriesPage({
     })
 
     return Array.from(map.values())
-  }, [suppliers, expenseEntries])
+  }, [suppliersList, expenseEntries])
 
   // Matching payees when at least 1 character is typed
   const matchingPayees = useMemo(() => {
@@ -795,7 +798,7 @@ export default function ExpenseEntriesPage({
                   >
                     {linkedInvoiceId ? (() => {
                       const inv = invoices.find((i) => i.id === linkedInvoiceId)
-                      const supp = suppliers.find((s) => s.id === inv?.supplierId)
+                      const supp = suppliersList.find((s) => s.id === inv?.supplierId)
                       return inv ? (
                         <span className="font-semibold text-slate-900 truncate">
                           Invoice #{inv.invoiceNo} · {supp?.name || 'Supplier'} ({inv.invoiceDate}) · {formatCurrency(inv.invoiceAmount)}

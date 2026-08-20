@@ -13,6 +13,7 @@ import {
   PurchaseInvoice, 
   Payment, 
   PaymentAllocation, 
+  Party,
   Supplier,
   FixedScheme,
   ReceivedDiscount,
@@ -28,7 +29,8 @@ import { cn } from '@/lib/utils'
 interface PaymentDetailsPageProps {
   payments: Payment[]
   invoices: PurchaseInvoice[]
-  suppliers: Supplier[]
+  parties?: Party[]
+  suppliers?: Supplier[]
   fixedSchemes: FixedScheme[]
   mtBookings?: MTBooking[]
   items?: Item[]
@@ -69,19 +71,23 @@ interface PaymentDetails {
 export default function PaymentDetailsPage({
   payments,
   invoices,
-  suppliers,
+  parties,
+  suppliers = [],
   fixedSchemes,
   mtBookings = [],
   items = [],
   receivedDiscounts,
   currentFY
 }: PaymentDetailsPageProps) {
+  const suppliersList = parties || suppliers || []
   const [selectedSupplier, setSelectedSupplier] = useState<string>('all')
   const [selectedMode, setSelectedMode] = useState<string>('all')
   const [selectedType, setSelectedType] = useState<string>('all')
+  const [searchPaymentNo, setSearchPaymentNo] = useState('')
   const [periodFilter, setPeriodFilter] = useState<PeriodFilterState>(defaultPeriodFilterState)
+  const [collapsedCards, setCollapsedCards] = useState<Record<string, boolean>>({})
 
-  const supplierMap = useMemo(() => new Map(suppliers.map(s => [s.id, s])), [suppliers])
+  const supplierMap = useMemo(() => new Map(suppliersList.map(s => [s.id, s])), [suppliersList])
 
   const { allocations: paymentAllocations, paymentAdvanceInfo } = useMemo(
     () => calculatePaymentAllocations(payments, invoices),
@@ -89,8 +95,8 @@ export default function PaymentDetailsPage({
   )
 
   const expectedDiscounts = useMemo(
-    () => calculateExpectedDiscounts(invoices, payments, paymentAllocations, paymentAdvanceInfo, suppliers, fixedSchemes, mtBookings, items),
-    [invoices, payments, paymentAllocations, paymentAdvanceInfo, suppliers, fixedSchemes, mtBookings, items]
+    () => calculateExpectedDiscounts(invoices, payments, paymentAllocations, paymentAdvanceInfo, suppliersList, fixedSchemes, mtBookings, items),
+    [invoices, payments, paymentAllocations, paymentAdvanceInfo, suppliersList, fixedSchemes, mtBookings, items]
   )
 
   const paymentDetails = useMemo((): PaymentDetails[] => {
@@ -230,7 +236,7 @@ export default function PaymentDetailsPage({
       })
       .filter((detail): detail is NonNullable<typeof detail> => detail !== null)
       .sort((a, b) => new Date(b.payment.paymentDate).getTime() - new Date(a.payment.paymentDate).getTime())
-  }, [payments, invoices, paymentAllocations, paymentAdvanceInfo, suppliers, expectedDiscounts, currentFY, supplierMap])
+  }, [payments, invoices, paymentAllocations, paymentAdvanceInfo, suppliersList, expectedDiscounts, currentFY, supplierMap])
 
   const filteredPaymentDetails = useMemo(() => {
     return paymentDetails.filter(detail => {
@@ -288,8 +294,8 @@ export default function PaymentDetailsPage({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Suppliers</SelectItem>
-                  {suppliers.map(supplier => (
+                  <SelectItem value="all">All Parties</SelectItem>
+                  {suppliersList.map(supplier => (
                     <SelectItem key={supplier.id} value={supplier.id}>
                       {supplier.name}
                     </SelectItem>

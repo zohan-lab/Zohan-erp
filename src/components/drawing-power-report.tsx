@@ -5,6 +5,7 @@ import {
   SalesInvoice,
   PurchaseReturn,
   SalesReturn,
+  Party,
   Customer,
   CustomerPayment,
   CustomerCreditNote,
@@ -56,11 +57,12 @@ interface DrawingPowerReportProps {
   salesInvoices: SalesInvoice[]
   purchaseReturns?: PurchaseReturn[]
   salesReturns?: SalesReturn[]
-  customers: Customer[]
+  parties?: Party[]
+  customers?: Customer[]
   customerPayments: CustomerPayment[]
   customerDebitNotes?: CustomerDebitNote[]
   creditNotes?: CustomerCreditNote[]
-  suppliers: Supplier[]
+  suppliers?: Supplier[]
   payments: Payment[]
   debitNotes?: SupplierDebitNote[]
   supplierCreditNotes?: SupplierCreditNote[]
@@ -75,6 +77,7 @@ export default function DrawingPowerReport({
   salesInvoices = [],
   purchaseReturns = [],
   salesReturns = [],
+  parties,
   customers = [],
   customerPayments = [],
   customerDebitNotes = [],
@@ -87,6 +90,9 @@ export default function DrawingPowerReport({
   currentFY,
   activeCompany = 'SK TRADERS'
 }: DrawingPowerReportProps) {
+  const suppliersList = parties || (suppliers.length > 0 ? suppliers : customers)
+  const customersList = parties || (customers.length > 0 ? customers : suppliers)
+
   // As-On Date for statement (Defaults to current date)
   const [asOnDate, setAsOnDate] = useState<string>(() => new Date().toISOString().split('T')[0])
 
@@ -202,7 +208,7 @@ export default function DrawingPowerReport({
     const periodSalesReturns = salesReturns.filter((sr) => !asOnDate || (sr.returnDate || '') <= asOnDate)
 
     const agingAggregate = computeCustomerAging(
-      customers,
+      customersList,
       periodSales,
       periodPayments,
       periodCreditNotes,
@@ -239,7 +245,7 @@ export default function DrawingPowerReport({
       totalIneligibleDebtors,
       totalDebtorsOutstanding
     }
-  }, [customers, salesInvoices, customerPayments, creditNotes, customerDebitNotes, salesReturns, asOnDate])
+  }, [customersList, salesInvoices, customerPayments, creditNotes, customerDebitNotes, salesReturns, asOnDate])
 
   // ─────────────────────────────────────────────────────────────────────────────
   // 3. CREDITORS (TRADE PAYABLES) COMPONENT (As of As-On Date)
@@ -251,7 +257,7 @@ export default function DrawingPowerReport({
     const periodCreditNotes = supplierCreditNotes.filter((cn) => !asOnDate || cn.date <= asOnDate)
     const periodReturns = purchaseReturns.filter((pr) => !asOnDate || (pr.returnDate || '') <= asOnDate)
 
-    const list = suppliers.map((supplier) => {
+    const list = suppliersList.map((supplier) => {
       const { payableBalance, netBalance, totalInvoiced, totalPaid } = getSupplierBalanceDetails(
         supplier,
         periodPurchases,
@@ -278,7 +284,7 @@ export default function DrawingPowerReport({
       suppliers: list,
       totalCreditors
     }
-  }, [suppliers, purchaseInvoices, payments, debitNotes, supplierCreditNotes, purchaseReturns, asOnDate])
+  }, [suppliersList, purchaseInvoices, payments, debitNotes, supplierCreditNotes, purchaseReturns, asOnDate])
 
   // ─────────────────────────────────────────────────────────────────────────────
   // 4. DRAWING POWER (DP) CORE EQUATION & COMPARISON METRICS

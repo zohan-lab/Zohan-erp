@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { ReceivedDiscount, Supplier, PurchaseInvoice, Payment, DiscountCategory, FixedScheme, PendingDiscount, ExpectedAnnualDiscount, PendingAnnualDiscount, MTBooking, Item, SupplierDebitNote } from '@/lib/types'
+import { ReceivedDiscount, Party, Supplier, PurchaseInvoice, Payment, DiscountCategory, FixedScheme, PendingDiscount, ExpectedAnnualDiscount, PendingAnnualDiscount, MTBooking, Item, SupplierDebitNote } from '@/lib/types'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
@@ -48,7 +48,8 @@ export interface CDLedgerTransfer {
 }
 
 interface DiscountWalletPageProps {
-  suppliers: Supplier[]
+  parties?: Party[]
+  suppliers?: Supplier[]
   invoices: PurchaseInvoice[]
   payments: Payment[]
   receivedDiscounts: ReceivedDiscount[]
@@ -69,7 +70,8 @@ interface DiscountWalletPageProps {
 }
 
 export default function DiscountWalletPage({
-  suppliers,
+  parties,
+  suppliers = [],
   invoices,
   payments,
   receivedDiscounts,
@@ -88,8 +90,9 @@ export default function DiscountWalletPage({
   isLocked = false,
   activeCompanyId
 }: DiscountWalletPageProps) {
+  const suppliersList = parties || suppliers || []
   const [activeTab, setActiveTab] = useState<'pending' | 'received'>('pending')
-  const [selectedSupplier, setSelectedSupplier] = useState<string>(() => suppliers[0]?.id || '')
+  const [selectedSupplier, setSelectedSupplier] = useState<string>(() => suppliersList[0]?.id || '')
   const [discountTypeFilter, setDiscountTypeFilter] = useState<'all' | 'wallet' | 'cd'>('all')
   const [receivedTypeFilter, setReceivedTypeFilter] = useState<Set<'annual' | 'wallet'>>(() => 
     new Set(['annual', 'wallet'])
@@ -139,16 +142,18 @@ export default function DiscountWalletPage({
 
   // Ensure selectedSupplier defaults to first supplier if unset or invalid
   useEffect(() => {
-    if ((selectedSupplier === 'all' || !selectedSupplier) && suppliers.length > 0) {
-      setSelectedSupplier(suppliers[0].id)
+    if ((selectedSupplier === 'all' || !selectedSupplier) && suppliersList.length > 0) {
+      setSelectedSupplier(suppliersList[0].id)
     }
-  }, [suppliers, selectedSupplier])
+  }, [suppliersList, selectedSupplier])
 
   // Current supplier object & Claimable Pool metrics
   const currentSupplierObj = useMemo(() => 
-    suppliers.find(s => s.id === selectedSupplier), 
-    [suppliers, selectedSupplier]
+    suppliersList.find(s => s.id === selectedSupplier), 
+    [suppliersList, selectedSupplier]
   )
+
+  const supplierMap = useMemo(() => new Map(suppliersList.map(s => [s.id, s])), [suppliersList])
 
   const supplierReceivedDiscounts = useMemo(() => {
     if (!selectedSupplier) return []
@@ -294,13 +299,13 @@ export default function DiscountWalletPage({
   )
 
   const expectedDiscounts = useMemo(() => 
-    calculateExpectedDiscounts(fyInvoices, fyPayments, paymentAllocations, paymentAdvanceInfo, suppliers, fixedSchemes, mtBookings, items),
-    [fyInvoices, fyPayments, paymentAllocations, paymentAdvanceInfo, suppliers, fixedSchemes, mtBookings, items]
+    calculateExpectedDiscounts(fyInvoices, fyPayments, paymentAllocations, paymentAdvanceInfo, suppliersList, fixedSchemes, mtBookings, items),
+    [fyInvoices, fyPayments, paymentAllocations, paymentAdvanceInfo, suppliersList, fixedSchemes, mtBookings, items]
   )
 
   const expectedAnnual = useMemo(() => 
-    calculateExpectedAnnualDiscounts(fyInvoices, suppliers),
-    [fyInvoices, suppliers]
+    calculateExpectedAnnualDiscounts(fyInvoices, suppliersList),
+    [fyInvoices, suppliersList]
   )
 
   const { allocations: discountAllocations, receivedStatus } = useMemo(() => 
@@ -314,8 +319,8 @@ export default function DiscountWalletPage({
   )
 
   const pendingDiscounts = useMemo(() => 
-    calculatePendingDiscounts(expectedDiscounts, discountAllocations, suppliers),
-    [expectedDiscounts, discountAllocations, suppliers]
+    calculatePendingDiscounts(expectedDiscounts, discountAllocations, suppliersList),
+    [expectedDiscounts, discountAllocations, suppliersList]
   )
 
   const pendingAnnual = useMemo(() => 
@@ -429,8 +434,8 @@ export default function DiscountWalletPage({
 
     // 1. Process supplier versions directly for selected suppliers
     const targetSuppliers = selectedSupplier === 'all'
-      ? suppliers
-      : suppliers.filter((s) => s.id === selectedSupplier)
+      ? suppliersList
+      : suppliersList.filter((s) => s.id === selectedSupplier)
 
     for (const supplier of targetSuppliers) {
       const versions = supplier.cdRuleVersions && supplier.cdRuleVersions.length > 0
@@ -501,7 +506,7 @@ export default function DiscountWalletPage({
 
     // 2. Accumulate amounts from filteredExpected
     for (const expected of filteredExpected) {
-      const supplier = suppliers.find((item) => item.id === expected.supplierId)
+      const supplier = suppliersList.find((item) => item.id === expected.supplierId)
       const fixedScheme = expected.schemeId ? fixedSchemes.find((scheme) => scheme.id === expected.schemeId) : undefined
       const supplierVersion = expected.ruleVersionId
         ? supplier?.cdRuleVersions?.find((version) => version.id === expected.ruleVersionId)
@@ -541,7 +546,7 @@ export default function DiscountWalletPage({
 
     return Array.from(groups.values())
       .sort((a, b) => Number(a.isOld) - Number(b.isOld) || a.supplierName.localeCompare(b.supplierName) || a.ruleName.localeCompare(b.ruleName))
-  }, [filteredExpected, discountAllocations, suppliers, fixedSchemes, selectedSupplier])
+  }, [filteredExpected, discountAllocations, suppliersList, fixedSchemes, selectedSupplier])
 
   const allReceivedDiscounts = useMemo(() => {
     const wallet = fyReceivedDiscounts.map(rd => ({ ...rd, type: rd.type || 'wallet' as const }))
@@ -782,8 +787,6 @@ export default function DiscountWalletPage({
     setOpen(true)
   }
 
-  const supplierMap = new Map(suppliers.map(s => [s.id, s]))
-
   const groupedPendingByScheme = useMemo(() => {
     const groups = new Map<string, PendingDiscount & {
       invoiceCount: number
@@ -1005,7 +1008,7 @@ export default function DiscountWalletPage({
               const payment = fyPayments.find(p => p.id === pb.paymentId)
               if (payment) {
                 const allocations = paymentAllocations.filter(pa => pa.paymentId === pb.paymentId)
-                const supplier = supplierMap.get(payment.supplierId)
+                const supplier = suppliersList.find(s => s.id === payment.supplierId)
                 
                 if (supplier && allocations.length > 0) {
                   const paymentInfo = paymentAdvanceInfo.get(payment.id)
@@ -1065,7 +1068,7 @@ export default function DiscountWalletPage({
       if (aOrder !== bOrder) return aOrder - bOrder
       return new Date(a.earnedDate).getTime() - new Date(b.earnedDate).getTime()
     })
-  }, [filteredPending, selectedMonths, expectedDiscounts, fyPayments])
+  }, [filteredPending, selectedMonths, expectedDiscounts, fyPayments, paymentAllocations, paymentAdvanceInfo, fyInvoices, suppliersList])
 
   const isMonthFilterActive = !selectedMonths.has('all')
 
@@ -1086,7 +1089,7 @@ export default function DiscountWalletPage({
     exportPendingStatementPDF(
       'wallet',
       groupedPendingByScheme,
-      suppliers,
+      suppliersList,
       {
         title: 'Earned Discounts Statement (Scheme Wise)',
         fy: currentFY,
@@ -1167,15 +1170,15 @@ export default function DiscountWalletPage({
             }
           }}>
             <DialogTrigger asChild>
-              <Button size="sm" onClick={() => handleAdd('wallet')} disabled={suppliers.length === 0}>
-                <Plus className="mr-2" size={16} />
-                Receive Other Discounts
+              <Button size="sm" onClick={() => handleAdd('wallet')} disabled={suppliersList.length === 0}>
+                <Plus className="mr-1.5" size={16} />
+                Add Direct CD Received
               </Button>
             </DialogTrigger>
             <DialogTrigger asChild>
-              <Button size="sm" variant="secondary" onClick={() => handleAdd('annual')} disabled={suppliers.length === 0}>
-                <Plus className="mr-2" size={16} />
-                Receive Annual Discount
+              <Button size="sm" variant="secondary" onClick={() => handleAdd('annual')} disabled={suppliersList.length === 0}>
+                <Plus className="mr-1.5" size={16} />
+                Add Direct Annual Received
               </Button>
             </DialogTrigger>
           <DialogContent>
@@ -1209,7 +1212,7 @@ export default function DiscountWalletPage({
                     <SelectValue placeholder="Select supplier" />
                   </SelectTrigger>
                   <SelectContent>
-                    {suppliers.map(supplier => (
+                    {suppliersList.map(supplier => (
                       <SelectItem key={supplier.id} value={supplier.id}>
                         {supplier.name}
                       </SelectItem>
@@ -1373,7 +1376,7 @@ export default function DiscountWalletPage({
                   <SelectValue placeholder="Select a supplier" />
                 </SelectTrigger>
                 <SelectContent>
-                  {suppliers.map(supplier => (
+                  {suppliersList.map(supplier => (
                     <SelectItem key={supplier.id} value={supplier.id}>
                       {supplier.name}
                     </SelectItem>

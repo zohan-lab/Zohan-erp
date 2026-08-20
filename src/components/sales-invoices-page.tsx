@@ -1,7 +1,7 @@
 import { getChangedByLabel, getChangedByRole } from '@/lib/security-utils'
 import { useState, useMemo, useEffect } from 'react'
 import { PeriodDateFilter, PeriodFilterState, defaultPeriodFilterState, isRecordInPeriod } from '@/components/period-date-filter'
-import { SalesInvoice, Customer, Item, InvoiceItem, CustomerPayment, PurchaseInvoice, PurchaseReturn, SalesReturn, AdditionalCharge } from '@/lib/types'
+import { SalesInvoice, Party, Customer, Item, InvoiceItem, CustomerPayment, PurchaseInvoice, PurchaseReturn, SalesReturn, AdditionalCharge } from '@/lib/types'
 import { buildPurchaseLayers, allocateSalesFIFO } from '@/lib/fifo-engine'
 import { calculateItemStockMap } from '@/lib/report-calculations'
 import { normalizeLineItem, getItemConversionFactor, getInvoiceQtyForUnit } from '@/lib/unit-conversion-service'
@@ -28,7 +28,7 @@ import { PartyFullPageEditor } from '@/components/party-full-page-editor'
 import { ItemEditorDialog } from '@/components/item-editor-dialog'
 import { cn } from '@/lib/utils'
 
-import { deleteSalesInvoice, deleteCustomerPayment, saveSalesInvoice, saveCustomerPayment, saveCustomer } from '@/lib/firebase-storage'
+import { deleteSalesInvoice, deleteCustomerPayment, saveSalesInvoice, saveCustomerPayment, saveCustomer, saveParty } from '@/lib/firebase-storage'
 import { ThreeDotDropdown } from '@/components/ui/three-dot-dropdown'
 
 interface SalesInvoicesPageProps {
@@ -37,8 +37,10 @@ interface SalesInvoicesPageProps {
   purchaseInvoices?: PurchaseInvoice[]
   purchaseReturns?: PurchaseReturn[]
   salesReturns?: SalesReturn[]
-  customers: Customer[]
-  setCustomers: (updater: (prev: Customer[]) => Customer[]) => void
+  parties?: Party[]
+  setParties?: (updater: (prev: Party[]) => Party[]) => void
+  customers?: Customer[]
+  setCustomers?: (updater: (prev: Customer[]) => Customer[]) => void
   customerPayments: CustomerPayment[]
   setCustomerPayments: (updater: (prev: CustomerPayment[]) => CustomerPayment[]) => void
   items: Item[]
@@ -59,7 +61,9 @@ export default function SalesInvoicesPage({
   purchaseInvoices = [],
   purchaseReturns = [],
   salesReturns = [],
-  customers,
+  parties,
+  setParties,
+  customers = [],
   setCustomers,
   customerPayments,
   setCustomerPayments,
@@ -72,6 +76,9 @@ export default function SalesInvoicesPage({
   onUpdateCashBank,
   activeCompanyId
 }: SalesInvoicesPageProps) {
+  const customersList = parties || customers || []
+  const setCustomersHandler = setParties || setCustomers || (() => {})
+
   const stockMap = useMemo(() => {
     return calculateItemStockMap(items, purchaseInvoices, salesInvoices, purchaseReturns, salesReturns)
   }, [items, purchaseInvoices, salesInvoices, purchaseReturns, salesReturns])
@@ -1032,17 +1039,16 @@ export default function SalesInvoicesPage({
   if (showQuickCustomer) {
     return (
       <PartyFullPageEditor
-        type="customer"
-        existingParties={customers}
+        type="party"
+        existingParties={customersList}
         onSave={(party) => {
-          const customer = party as Customer
-          setCustomers((prev) => [customer, ...prev])
+          setCustomersHandler((prev) => [party, ...prev])
           if (activeCompanyId) {
-            void saveCustomer(activeCompanyId, customer)
+            void saveParty(activeCompanyId, party)
           }
-          setSelectedCustomerId(customer.id)
+          setSelectedCustomerId(party.id)
           setShowQuickCustomer(false)
-          toast.success(`Customer "${customer.name}" created`)
+          toast.success(`Party "${party.name}" created`)
         }}
         onCancel={() => setShowQuickCustomer(false)}
         salesInvoices={salesInvoices}

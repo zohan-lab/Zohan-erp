@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { PurchaseInvoice, Payment, Supplier, PaymentAllocation } from '@/lib/types'
+import { PurchaseInvoice, Payment, Party, Supplier, PaymentAllocation } from '@/lib/types'
 import { calculatePaymentAllocations, formatCurrency, formatMT, getInvoiceQtyForUnit } from '@/lib/calculations'
 import { Warning, Clock, ArrowRight } from '@phosphor-icons/react'
 import { format, differenceInDays } from 'date-fns'
@@ -12,7 +12,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 interface CDExpiryAlertProps {
   purchaseInvoices: PurchaseInvoice[]
   payments: Payment[]
-  suppliers: Supplier[]
+  parties?: Party[]
+  suppliers?: Supplier[]
   onNavigateToReport?: () => void
 }
 
@@ -38,9 +39,11 @@ interface CDExpiryAlert {
 export default function CDExpiryAlert({
   purchaseInvoices,
   payments,
-  suppliers,
+  parties,
+  suppliers = [],
   onNavigateToReport
 }: CDExpiryAlertProps) {
+  const suppliersList = parties || suppliers || []
   const { allocations: paymentAllocations, paymentAdvanceInfo } = useMemo(() => {
     return calculatePaymentAllocations(payments, purchaseInvoices)
   }, [payments, purchaseInvoices])
@@ -50,7 +53,7 @@ export default function CDExpiryAlert({
     const today = new Date()
     
     purchaseInvoices.forEach(invoice => {
-      const supplier = suppliers.find(s => s.id === invoice.supplierId)
+      const supplier = suppliersList.find(s => s.id === invoice.supplierId)
       if (!supplier) return
       
       const allocatedAmount = paymentAllocations
